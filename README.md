@@ -2,6 +2,8 @@
 
 A C++20 and Qt Quick desktop application for AI-assisted software work: plan a task, coordinate model workers, inspect proposed changes, verify the combined result, and explicitly approve what reaches your project.
 
+Version 1.0 is primarily validated for **C++ and Qt/QML projects on Windows using MSVC x64 and CMake presets**. Other language and build ecosystems are not release-validated.
+
 Your workspace stays under your control. A model response is a proposal, not permission to modify files.
 
 ## Features
