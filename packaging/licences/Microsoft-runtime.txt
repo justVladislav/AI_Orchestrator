@@ -1,0 +1,20 @@
+Microsoft runtime and Windows SDK components
+============================================
+
+Copyright Microsoft Corporation. All rights reserved.
+
+The app-local msvcp140*, vcruntime140* binaries are copied unchanged from the
+Visual Studio 2026 x64 CRT redistributable folder. Their versions, hashes and
+origin are recorded in BUILD-INFO/BUILD-INFO.txt. These binaries are not
+relicensed under the application's GPL. The Universal CRT remains part of
+Windows and is not bundled.
+
+Microsoft Visual C++ V14 Redistributable and Runtime 2026 terms:
+https://visualstudio.microsoft.com/license-terms/vs2026-ga-visualcpp-v14-redist-runtime/
+
+d3dcompiler_47.dll, dxcompiler.dll and dxil.dll are deployed unchanged by Qt's
+windeployqt from the Windows SDK. See the supplied sdk_license.rtf and
+sdk_third_party_notices.rtf, including notices for the DirectX Shader Compiler.
+
+Redistribution information (the upstream terms, not this notice, govern):
+https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files

@@ -1,0 +1,21 @@
+{
+  "providers": [
+    {
+      "id": "mock",
+      "type": "mock",
+      "enabled": true
+    },
+    {
+      "id": "openai",
+      "type": "openai",
+      "enabled": false,
+      "apiKeyEnv": "OPENAI_API_KEY"
+    },
+    {
+      "id": "anthropic",
+      "type": "anthropic",
+      "enabled": false,
+      "apiKeyEnv": "ANTHROPIC_API_KEY"
+    }
+  ]
+}

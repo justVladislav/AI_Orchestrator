@@ -1,0 +1,22 @@
+{
+  "workflow": {
+    "name": "default-ai-orchestration",
+    "steps": [
+      {
+        "id": "plan",
+        "agents": ["architect"],
+        "dependsOn": []
+      },
+      {
+        "id": "parallel-build-quality-docs",
+        "agents": ["developer", "tester", "documentation"],
+        "dependsOn": ["plan"]
+      },
+      {
+        "id": "review",
+        "agents": ["reviewer"],
+        "dependsOn": ["parallel-build-quality-docs"]
+      }
+    ]
+  }
+}

@@ -1,0 +1,9 @@
+/build/
+/out/
+/.qt/
+/.qtc_clangd/
+.qtcreator/qtc-cmake-presets-*/
+CMakeUserPresets.json
+*.user
+.env
+

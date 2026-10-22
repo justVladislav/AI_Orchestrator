@@ -1,0 +1,78 @@
+name: Windows CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: build-and-test (${{ matrix.configuration }})
+    runs-on: windows-latest
+    # The first hosted run needed 27 min (Debug) and 42 min (Release) just to build ~50 test executables on a 4-core runner;
+    # 60 left no margin for a slow runner.
+    timeout-minutes: 120
+
+    strategy:
+      # One configuration failing must not hide the result of the other.
+      fail-fast: false
+      matrix:
+        configuration: [Debug, Release]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4.3.1
+        with:
+          version: 6.10.3
+          arch: win64_msvc2022_64
+          cache: true
+
+      - name: Configure MSVC environment
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          arch: x64
+
+      - name: Set up vcpkg
+        uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11.6
+        with:
+          vcpkgGitCommitId: 8defa4b8bc4c35071c678e87a0e140dd433489bb
+          vcpkgJsonGlob: First_AI_Agents/vcpkg.json
+          doNotCache: false
+
+      - name: Configure
+        shell: pwsh
+        run: >-
+          cmake -S . -B out/build/windows-ci-${{ matrix.configuration }} -G Ninja
+          -DCMAKE_BUILD_TYPE=${{ matrix.configuration }}
+          "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+          "-DCMAKE_PREFIX_PATH=$env:QT_ROOT_DIR"
+          "-DVCPKG_MANIFEST_DIR=${{ github.workspace }}/First_AI_Agents"
+          -DVCPKG_TARGET_TRIPLET=x64-windows
+
+      - name: Build
+        run: cmake --build out/build/windows-ci-${{ matrix.configuration }}
+
+      # The tests check with assert(); the build keeps it alive in Release test executables and the
+      # AIOrchestrator_AssertCanary_tests test fails if it is ever compiled out, so a green Release run still checks.
+      - name: Test
+        run: ctest --test-dir out/build/windows-ci-${{ matrix.configuration }} --output-on-failure
+
+      - name: Upload CTest diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-ctest-diagnostics-${{ matrix.configuration }}
+          path: out/build/windows-ci-${{ matrix.configuration }}/Testing/Temporary/
+          if-no-files-found: ignore

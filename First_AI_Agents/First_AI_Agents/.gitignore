@@ -1,0 +1,15 @@
+build/
+out/
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.obj
+*.pdb
+*.ilk
+*.exe
+workspace/output/*
+workspace/runs/*
+!workspace/output/.gitkeep
+!workspace/runs/.gitkeep

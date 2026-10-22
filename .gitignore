@@ -1,0 +1,48 @@
+# Build directories
+build/
+build-*/
+out/
+bin/
+obj/
+
+# Local agent/session state
+/.tmp/
+/.claude/
+
+# Qt Creator
+*.user
+*.user.*
+CMakeLists.txt.user*
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.VC.db
+*.VC.opendb
+
+# Compiled files
+*.exe
+*.dll
+*.lib
+*.obj
+*.pdb
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+
+# Environment and secrets
+.env
+.env.*
+*.key
+
+# Logs and databases
+*.log
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Generated legacy model reviews (not project documentation)
+First_AI_Agents/First_AI_Agents/ai_test_outputs/

@@ -1,0 +1,115 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "windows-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "installDir": "${sourceDir}/out/install/${presetName}",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "cl.exe",
+        "CMAKE_CXX_COMPILER": "cl.exe",
+        "CMAKE_TOOLCHAIN_FILE": "C:/c++_libs_tools/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        "CMAKE_PREFIX_PATH": "C:/Qt/6.11.1/msvc2022_64",
+        "VCPKG_MANIFEST_DIR": "${sourceDir}/../First_AI_Agents",
+        "VCPKG_TARGET_TRIPLET": "x64-windows"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "x64-debug",
+      "displayName": "UI AI Orchestrator - x64 Debug",
+      "inherits": "windows-base",
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "x64-release",
+      "displayName": "UI AI Orchestrator - x64 Release",
+      "inherits": "x64-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "macos-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "installDir": "${sourceDir}/out/install/${presetName}",
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "$env{HOME}/Qt/6.11.1/macos"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "macos-arm64-debug",
+      "displayName": "UI AI Orchestrator - macOS arm64 Debug",
+      "inherits": "macos-base",
+      "architecture": {
+        "value": "arm64",
+        "strategy": "external"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_OSX_ARCHITECTURES": "arm64"
+      }
+    },
+    {
+      "name": "macos-arm64-release",
+      "displayName": "UI AI Orchestrator - macOS arm64 Release",
+      "inherits": "macos-arm64-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "x64-debug",
+      "configurePreset": "x64-debug"
+    },
+    {
+      "name": "x64-release",
+      "configurePreset": "x64-release"
+    },
+    {
+      "name": "macos-arm64-debug",
+      "configurePreset": "macos-arm64-debug"
+    },
+    {
+      "name": "macos-arm64-release",
+      "configurePreset": "macos-arm64-release"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "x64-debug",
+      "configurePreset": "x64-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "macos-arm64-debug",
+      "configurePreset": "macos-arm64-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

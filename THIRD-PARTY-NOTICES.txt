@@ -1,0 +1,43 @@
+AI Orchestrator - third-party components
+=======================================
+
+The application's GPL-3.0-only licence does not relicense third-party material.
+Each dependency retains its original copyright and applicable licence terms.
+
+Windows portable distributions include:
+* nlohmann/json 3.12.0: Copyright (c) 2013-2025 Niels Lohmann; MIT licence.
+  This header-only library is compiled into the application. The full notice
+  is supplied in LICENCES/nlohmann-json.txt.
+* Qt: The Qt Company Ltd. and contributors; GPLv3/LGPLv3 and component-specific
+  licences. Some deployed modules (including Virtual Keyboard, Lottie and
+  Quick 3D utilities) are GPLv3, not LGPL-only. See the supplied Qt source,
+  LICENCES/Qt notices, licence texts and the original Qt SPDX inventories.
+* curl: Daniel Stenberg and contributors; curl licence (and embedded notices).
+* SQLite: public domain; see the supplied SQLite notice.
+* zlib: Jean-loup Gailly, Mark Adler and contributors; zlib licence.
+* Mesa llvmpipe and LLVM (opengl32sw.dll): their respective permissive licences.
+* Microsoft Visual C++ runtime and Windows SDK helper DLLs: Microsoft terms,
+  not this application's GPL. No ownership or relicensing claim is made.
+
+The package's LICENCES folder contains the notices collected from the exact
+installed dependencies, including third-party components embedded in Qt.
+BUILD-INFO identifies the actual versions and origins. Do not substitute this
+overview for those full notices or for the corresponding-source distribution.
+
+Source distribution
+-------------------
+The release must provide the application source archive and the companion Qt
+and vcpkg source archives produced by packaging/New-SourceBundle.ps1 alongside
+the binary ZIP. Keep the files in the same download location and accessible to
+the same recipients. Qt source includes its build scripts and licence files;
+BUILD-INFO retains the configuration of the prebuilt Qt used for this package.
+Source URLs in notices are supplementary, not a replacement for these archives.
+
+Upstream licence information:
+https://github.com/nlohmann/json/blob/v3.12.0/LICENSE.MIT
+https://doc.qt.io/qt-6/licensing.html
+https://curl.se/docs/copyright.html
+https://www.sqlite.org/copyright.html
+https://www.zlib.net/zlib_license.html
+https://docs.mesa3d.org/license.html
+https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files

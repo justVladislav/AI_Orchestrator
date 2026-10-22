@@ -1,0 +1,9 @@
+{
+  "name": "first-ai-agents",
+  "version-string": "0.1.0",
+  "builtin-baseline": "8defa4b8bc4c35071c678e87a0e140dd433489bb",
+  "dependencies": [
+    "curl",
+    "sqlite3"
+  ]
+}

@@ -1,0 +1,69 @@
+{
+  "agents": [
+    {
+      "id": "architect",
+      "name": "Architect",
+      "role": "Architecture planning",
+      "promptFile": "prompts/architect.md",
+      "provider": "OpenAIProvider",
+      "generationOptions": {
+        "model": "mock-architect",
+        "temperature": 0.2,
+        "maxOutputTokens": 10000,
+        "stream": false
+      }
+    },
+    {
+      "id": "developer",
+      "name": "Developer",
+      "role": "Implementation planning",
+      "promptFile": "prompts/developer.md",
+      "provider": "AnthropicProvider",
+      "generationOptions": {
+        "model": "mock-developer",
+        "temperature": 0.2,
+        "maxOutputTokens": 10000,
+        "stream": false
+      }
+    },
+    {
+      "id": "tester",
+      "name": "Tester",
+      "role": "Quality engineering",
+      "promptFile": "prompts/tester.md",
+      "provider": "OpenAIProvider",
+      "generationOptions": {
+        "model": "mock-tester",
+        "temperature": 0.1,
+        "maxOutputTokens": 10000,
+        "stream": false
+      }
+    },
+    {
+      "id": "reviewer",
+      "name": "Reviewer",
+      "role": "Independent review",
+      "promptFile": "prompts/reviewer.md",
+      "provider": "AnthropicProvider",
+      "generationOptions": {
+        "model": "mock-reviewer",
+        "temperature": 0.1,
+        "maxOutputTokens": 10000,
+        "stream": false
+      }
+    },
+    {
+      "id": "documentation",
+      "name": "Documentation Writer",
+      "role": "Developer documentation",
+      "promptFile": "prompts/documentation.md",
+      "provider": "AnthropicProvider",
+      "generationOptions": {
+        "model": "mock-documentation",
+        "temperature": 0.2,
+        "maxOutputTokens": 10000,
+        "stream": false
+      }
+    }
+  ]
+}
