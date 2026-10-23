@@ -1,0 +1,63 @@
+# SQLite persistence implementation boundaries
+
+This directory is private to the `AIOrchestrator_Persistence` target. Application
+services and the Qt adapter use repository interfaces; they must not include
+these implementation headers or access native SQLite handles.
+
+## Ownership
+
+- `SqliteConnection.hpp` defines the private `SqliteDatabase::Impl`. One database
+  object owns one native connection and one mutex. Repositories retain that
+  object through `shared_ptr`; extracting a repository must not open a separate
+  connection or introduce a per-repository mutex.
+- `SqlitePrimitives.hpp/.cpp` own statement finalization, error conversion,
+  parameter binding and primitive column/time conversions. They must not contain
+  feature DTOs, feature SQL, schema definitions or repository-specific JSON.
+- `comparison/SqliteComparisonSessionRepository.cpp` owns all Comparison session
+  queries, column order and selection JSON encoding/decoding. Its public class
+  remains declared in `includes/ai/infrastructure/SqliteRepositories.hpp` for
+  source compatibility.
+- The remaining repositories, database opening and historical migrations remain
+  in `../SqliteRepositories.cpp` during this incremental decomposition. That is
+  transitional code, not the destination for new unrelated features.
+
+The CMake target lists these translation units explicitly. The internal directory
+is not an exported include path. Do not turn the primitives header into another
+aggregate of every feature's persistence implementation.
+
+## Behaviour that a structural move must preserve
+
+Repository methods hold the shared mutex across their complete operation,
+including multi-statement transactions and the inspection of `sqlite3_changes`.
+Keep connection ownership, statement lifetime, SQL, binding/column order, public
+interfaces and observable error codes unchanged when extracting code.
+
+Do not amend applied migrations, increment the schema version, or change
+serialization formats merely to reorganise source files. Migration extraction
+and changes in database behaviour are separate review scopes.
+
+## Verification
+
+`AIOrchestrator_SqliteComparison_tests` exercises the public repository contract:
+round-trip/reopen and shared ownership, ordering/filtering, revision conflicts,
+failed writes, malformed persisted selections and concurrent revision winners.
+It was first run against the original monolithic implementation. It intentionally
+does not include the private headers above.
+
+Run that target together with `AIOrchestrator_Persistence_tests` and
+`AIOrchestrator_BackendRuntime_tests` after an extraction. The broader suites
+protect migrations, persistence transactions/recovery and the composition root.
+These are provider-free tests using temporary databases, not the user's profile.
+
+## Next decomposition steps
+
+1. Separate database opening and migration ownership without changing historical
+   SQL or upgrade behaviour.
+2. Extract additional feature-owned repositories and their row/JSON mappings in
+   small independently verified changes, retaining public compatibility.
+3. Gradually replace the aggregate public declaration header with feature entry
+   headers and a compatibility facade; do not combine that API/include migration
+   with an unverified storage behaviour change.
+
+Folder layout is only part of modularity: keep dependencies and tests owned by
+the feature instead of only moving filenames.
