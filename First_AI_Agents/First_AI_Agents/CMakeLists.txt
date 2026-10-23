@@ -765,6 +765,7 @@ if(AI_ORCHESTRATOR_BUILD_PERSISTENCE_TESTS)
         tests/Unit/RunDraftRepositoryTests.cpp
         tests/Unit/OutcomeBriefRepositoryTests.cpp
         tests/Unit/FollowUpPlanRequestRepositoryTests.cpp
+        tests/Unit/SqlitePlanningRepositoryTests.cpp
     )
     target_compile_features(AIOrchestrator_SqlitePlanning_tests PRIVATE cxx_std_20)
     target_link_libraries(AIOrchestrator_SqlitePlanning_tests

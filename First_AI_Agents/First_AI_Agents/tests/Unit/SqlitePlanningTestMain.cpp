@@ -8,6 +8,7 @@
 int runRunDraftRepositoryTests();
 int runOutcomeBriefRepositoryTests();
 int runFollowUpPlanRequestRepositoryTests();
+int runSqlitePlanningRepositoryTests();
 
 int main()
 {
@@ -15,6 +16,7 @@ int main()
         runRunDraftRepositoryTests();
         runOutcomeBriefRepositoryTests();
         runFollowUpPlanRequestRepositoryTests();
+        runSqlitePlanningRepositoryTests();
         std::cout << "SQLite planning repository tests passed\n";
         return 0;
     } catch (const std::exception& exception) {
