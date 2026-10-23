@@ -819,8 +819,10 @@ void testProfileUpdateReplacesRosterAtomically()
     replaced.assignments = {
         makeAssignment("documentation", "provider-1", "model-2", 5000),
         makeAssignment("architect", "provider-1", "model-1", 7000)};
+    replaced.providerBudget = fullBudget();
+    replaced.providerBudget.maxTurns = 5;
     require(profiles.update(replaced).success(), "Could not grow the roster again");
-    requireStoredProfile(profiles, replaced, "A regrown roster must be stored in full");
+    requireStoredProfile(profiles, replaced, "A regrown roster and a new budget must be stored in full");
     requireStoredProfile(profiles, other, "Rosters of other profiles must stay intact");
 
     const ExecutionProfile before = replaced;
