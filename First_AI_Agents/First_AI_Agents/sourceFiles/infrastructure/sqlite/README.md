@@ -58,9 +58,16 @@ these implementation headers or access native SQLite handles.
   check, the newer-schema refusal and all historical migration steps, plus
   `supportedSchemaVersion` and the follow-up SQL helpers. It is called only from
   `open()`, on a handle that is not yet published and that the caller closes.
-- The remaining repositories remain in `../SqliteRepositories.cpp` during this
-  incremental decomposition. That is transitional code, not the destination for
-  new unrelated features.
+- `execution/` (batch 7) holds the Run, execution manifest, workspace scope, manifest task
+  execution, work ledger, artifact and run warning repositories. `verification/` (batch 7) holds
+  the manifest verification continuation, manual handoff and baseline normalization repositories
+  with the verification environment and bootstrap repositories. `agents/` (batch 8) holds the model
+  execution (with quality evaluations) and the agent tool session and audit repositories;
+  `proposals/` (batch 8) holds the change proposal, approval and proposal review repositories.
+  Each file is the class with the helpers only it uses, copied from the former aggregate.
+- `SqliteRepositories.cpp` no longer exists: every repository implementation lives in its
+  feature directory. The public declarations stay in
+  `includes/ai/infrastructure/SqliteRepositories.hpp`.
 
 The CMake target lists these translation units explicitly. The internal directory
 is not an exported include path. Do not turn the primitives header into another
@@ -94,12 +101,10 @@ These are provider-free tests using temporary databases, not the user's profile.
 
 The [review and implementation design](../../../../../docs/architecture/sqlite-decomposition.md)
 defines the next agent's scope, private interfaces, migration invariants and
-acceptance checks. Phases 1, 2A and 2B are complete; the steps below are not
-implemented yet.
+acceptance checks. The implementation split (phases 1, 2A and 2B and batches 3-8) is complete.
+What is left is the public declaration header:
 
-1. Extract additional feature-owned repositories and their row/JSON mappings in
-   small independently verified changes, retaining public compatibility.
-2. Gradually replace the aggregate public declaration header with feature entry
+1. Gradually replace the aggregate public declaration header with feature entry
    headers and a compatibility facade; do not combine that API/include migration
    with an unverified storage behaviour change.
 

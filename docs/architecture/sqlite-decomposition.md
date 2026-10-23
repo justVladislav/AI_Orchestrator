@@ -3,10 +3,12 @@
 Status: phases 1, 2A and 2B implemented; of the feature batches, batch 3
 (`sqlite/catalog/`: providers, models and execution profiles), batch 4
 (`sqlite/projects/` and `sqlite/settings/`: projects, tasks, workspace state, project
-readiness, application settings and the verification scratch setting) batch 5
-(`sqlite/conversations/`: chat, chat memory, project memory and its compaction) and batch 6
-(`sqlite/planning/`: run drafts, Outcome Brief and follow-up plan requests) are implemented and
-batches 7-8 are designs, not implemented.
+readiness, application settings and the verification scratch setting), batch 5
+(`sqlite/conversations/`: chat, chat memory, project memory and its compaction), batch 6
+(`sqlite/planning/`: run drafts, Outcome Brief and follow-up plan requests), batch 7
+(`sqlite/execution/` and `sqlite/verification/`) and batch 8 (`sqlite/agents/` and
+`sqlite/proposals/`) are implemented. `SqliteRepositories.cpp` is gone; the public declaration
+header `SqliteRepositories.hpp` is unchanged and splitting it is a separate, later step.
 Reviewed on 2026-10-23. This document describes
 implementation boundaries and acceptance criteria, not the completion of the
 Backend architecture refactor.
@@ -29,6 +31,21 @@ new tests are not mutation-tested, there was no local Release build, and the
 failed-migration case relies on the existing v59/v65 refusal tests. Hosted
 Windows CI run 39985592008 later passed Debug and Release on public commit
 `2087a05`, which contains 2A and 2B.
+
+Batches 7 and 8 were a mechanical split only. Every remaining repository class moved, with the
+helpers only it uses, into its feature directory (execution: Run, execution manifest, workspace
+scope, manifest task execution, work ledger, artifact, run warning; verification: manifest
+verification continuation, manual handoff, baseline normalization, verification environment,
+verification bootstrap; agents: model execution, agent tool session, agent tool audit; proposals:
+change proposal, approval, proposal review). Methods and helpers are copied verbatim and keep their
+original relative order (helpers first, inside an anonymous namespace). No helper turned out to be
+shared between classes, so no new private header was needed. Each class is a commit of its own,
+checked against the previous revision (the aggregate is an ordered subsequence of it, every removed
+line is in the new file). After each batch one incremental build of the existing targets and one
+run of the existing suites: 10/10 after batch 7 and after batch 8, and the aggregate
+`First_AI_Agents_tests` once after batch 8. No test, test target or mutation run was added. The
+emptied `SqliteRepositories.cpp` (only includes, using declarations and empty namespaces were left)
+was removed in its own commit.
 
 Batch 6 (`SqliteRunDraftRepository`, `SqliteOutcomeBriefRepository` and
 `SqliteFollowUpPlanRepository`, `sqlite/planning/`): these three already had shared repository
