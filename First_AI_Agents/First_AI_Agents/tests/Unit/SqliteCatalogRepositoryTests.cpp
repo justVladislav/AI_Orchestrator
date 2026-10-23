@@ -2,12 +2,14 @@
 
 #include <sqlite3.h>
 
+#include <algorithm>
 #include <barrier>
 #include <chrono>
 #include <filesystem>
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -561,6 +563,417 @@ void testCorruptModelRowsFailClosed()
     require(onlyGood.success() && onlyGood.value().size() == 1,
         "A listing filtered to a healthy provider must still work");
 }
+
+void addCatalog(const std::shared_ptr<SqliteDatabase>& database)
+{
+    addProvider(database, "provider-1");
+    addProvider(database, "provider-2");
+    SqliteModelRepository models(database);
+    require(models.insert(model("model-1", "provider-1", "api-1", at(1000))).success()
+            && models.insert(model("model-2", "provider-1", "api-2", at(2000))).success()
+            && models.insert(model("model-3", "provider-2", "api-3", at(3000))).success(),
+        "Could not insert models for the profile tests");
+}
+
+StageModelAssignment makeAssignment(
+    std::string stage, std::string providerId, std::string modelId, std::int64_t timeoutMs)
+{
+    StageModelAssignment value;
+    value.stageType = std::move(stage);
+    value.providerId = std::move(providerId);
+    value.modelId = std::move(modelId);
+    value.timeout = std::chrono::milliseconds(timeoutMs);
+    return value;
+}
+
+ExecutionProfile makeProfile(std::string id, Time createdAt, std::vector<StageModelAssignment> roster = {})
+{
+    ExecutionProfile value;
+    value.id = std::move(id);
+    value.name = "Profile \"quoted\" \xE6\xB8\xAC\xE8\xA9\xA6";
+    value.workflowId = "catalog-test-workflow";
+    value.enabled = true;
+    value.isDefault = false;
+    value.assignments = std::move(roster);
+    value.createdAt = createdAt;
+    value.updatedAt = createdAt + std::chrono::milliseconds(7);
+    return value;
+}
+
+// Every limit carries a distinct value below its Backend ceiling so a swapped field is visible.
+ProviderExecutionBudgetOverrides fullBudget()
+{
+    ProviderExecutionBudgetOverrides value;
+    value.maxInputTokens = 400'000;
+    value.maxOutputTokens = 32'000;
+    value.maxTurns = 12;
+    value.maxToolCalls = 100;
+    value.maxToolResultBytes = 4ULL * 1024 * 1024;
+    value.maxWallTimeMs = 600'000;
+    value.maxRequestTimeMs = 120'000;
+    return value;
+}
+
+ExecutionProfile sortedByStage(ExecutionProfile value)
+{
+    std::sort(value.assignments.begin(), value.assignments.end(),
+        [](const StageModelAssignment& a, const StageModelAssignment& b) { return a.stageType < b.stageType; });
+    return value;
+}
+
+void requireSameProfile(const ExecutionProfile& actual, const ExecutionProfile& expected, const char* message)
+{
+    const auto& a = actual.providerBudget;
+    const auto& e = expected.providerBudget;
+    bool same = actual.id == expected.id && actual.name == expected.name
+        && actual.workflowId == expected.workflowId && actual.enabled == expected.enabled
+        && actual.isDefault == expected.isDefault && actual.createdAt == expected.createdAt
+        && actual.updatedAt == expected.updatedAt
+        && a.maxInputTokens == e.maxInputTokens && a.maxOutputTokens == e.maxOutputTokens
+        && a.maxTurns == e.maxTurns && a.maxToolCalls == e.maxToolCalls
+        && a.maxToolResultBytes == e.maxToolResultBytes && a.maxWallTimeMs == e.maxWallTimeMs
+        && a.maxRequestTimeMs == e.maxRequestTimeMs
+        && actual.assignments.size() == expected.assignments.size();
+    for (std::size_t i = 0; same && i < actual.assignments.size(); ++i) {
+        const auto& x = actual.assignments[i];
+        const auto& y = expected.assignments[i];
+        same = x.stageType == y.stageType && x.providerId == y.providerId && x.modelId == y.modelId
+            && x.timeout == y.timeout;
+    }
+    require(same, message);
+}
+
+// The profile as stored, with its roster in the stored (stage type) order.
+void requireStoredProfile(const SqliteExecutionProfileRepository& profiles, const ExecutionProfile& expected,
+    const char* message)
+{
+    const auto stored = profiles.findById(expected.id);
+    require(stored.success() && stored.value().has_value(), message);
+    requireSameProfile(*stored.value(), sortedByStage(expected), message);
+}
+
+std::vector<std::string> profileIds(const SqliteExecutionProfileRepository& profiles)
+{
+    const auto listed = profiles.listAll();
+    require(listed.success(), "Could not list execution profiles");
+    std::vector<std::string> result;
+    for (const auto& value : listed.value()) result.push_back(value.id);
+    return result;
+}
+
+void testProfileRoundTripOrderingAndReopen()
+{
+    Workspace workspace;
+    ExecutionProfile rich = makeProfile("profile-a", at(1000), {
+        makeAssignment("implementation", "provider-2", "model-3", 90'000),
+        makeAssignment("architect", "provider-1", "model-1", 60'000),
+        makeAssignment("documentation", "provider-1", "model-2", 30'000)});
+    rich.enabled = false;
+    rich.providerBudget = fullBudget();
+    const ExecutionProfile bare = makeProfile("profile-b", at(1000));
+    const ExecutionProfile late = makeProfile("profile-late", at(2000),
+        {makeAssignment("architect", "provider-1", "model-1", 15'000)});
+    using Ids = std::vector<std::string>;
+    {
+        const auto database = workspace.open();
+        addCatalog(database);
+        SqliteExecutionProfileRepository profiles(database);
+        const auto savedLate = profiles.insert(late);
+        require(savedLate.success(), "Could not insert a profile");
+        const auto savedBare = profiles.insert(bare);
+        require(savedBare.success(), "Could not insert a profile without a roster");
+        const auto savedRich = profiles.insert(rich);
+        require(savedRich.success(), "Could not insert a profile with a full roster and budget");
+        requireSameProfile(savedRich.value(), rich, "insert must return the profile as written");
+
+        requireStoredProfile(profiles, rich, "A stored profile must round-trip every field");
+        const auto stored = profiles.findById("profile-a");
+        require(stored.value()->assignments.size() == 3
+                && stored.value()->assignments[0].stageType == "architect"
+                && stored.value()->assignments[1].stageType == "documentation"
+                && stored.value()->assignments[2].stageType == "implementation",
+            "A roster must be read in stage type order whatever the insertion order was");
+        requireStoredProfile(profiles, bare, "A profile without a roster or budget must round-trip");
+        requireStoredProfile(profiles, late, "A later profile must round-trip");
+        require(profileIds(profiles) == Ids {"profile-a", "profile-b", "profile-late"},
+            "Profiles must be listed by creation time and then id");
+
+        const auto missing = profiles.findById("profile-missing");
+        require(missing.success() && !missing.value().has_value(), "A missing profile must read as absent");
+    }
+
+    const auto reopened = workspace.open();
+    SqliteExecutionProfileRepository profiles(reopened);
+    requireStoredProfile(profiles, rich, "A profile must survive reopening the database");
+    requireStoredProfile(profiles, late, "A roster must survive reopening the database");
+    require(profileIds(profiles) == Ids {"profile-a", "profile-b", "profile-late"},
+        "The listing order must survive reopening the database");
+    const auto listed = profiles.listAll();
+    require(listed.value()[0].assignments.size() == 3 && listed.value()[1].assignments.empty()
+            && listed.value()[2].assignments.size() == 1,
+        "A listing must attach each profile's own roster");
+}
+
+void testProfileWriteErrorsAreAtomic()
+{
+    Workspace workspace;
+    const auto database = workspace.open();
+    addCatalog(database);
+    SqliteExecutionProfileRepository profiles(database);
+    const ExecutionProfile first = makeProfile("profile-1", at(1000),
+        {makeAssignment("architect", "provider-1", "model-1", 60'000)});
+    require(profiles.insert(first).success(), "Could not insert the first profile");
+
+    const auto refuse = [&](ExecutionProfile attempt, const char* code, const char* message) {
+        const auto result = profiles.insert(std::move(attempt));
+        require(!result.success() && result.error()->code == code, message);
+        require(profileIds(profiles) == std::vector<std::string> {"profile-1"},
+            "A refused insert must not leave a profile or a partial roster behind");
+        requireStoredProfile(profiles, first, "A refused insert altered an existing profile");
+    };
+
+    ExecutionProfile duplicateId = makeProfile("profile-1", at(2000),
+        {makeAssignment("implementation", "provider-2", "model-3", 1000)});
+    duplicateId.name = "Must not replace the first profile";
+    refuse(duplicateId, "execution_profile.duplicate_id", "A repeated profile id must report execution_profile.duplicate_id");
+
+    refuse(makeProfile("profile-2", at(2000), {
+               makeAssignment("architect", "provider-1", "model-1", 1000),
+               makeAssignment("architect", "provider-1", "model-2", 2000)}),
+        "execution_profile.duplicate_stage_type",
+        "A repeated stage type must report execution_profile.duplicate_stage_type");
+    refuse(makeProfile("profile-2", at(2000), {
+               makeAssignment("architect", "provider-1", "model-1", 1000),
+               makeAssignment("implementation", "provider-1", "model-missing", 2000)}),
+        "persistence.write_failed", "An unknown model must be refused as a failed write");
+    refuse(makeProfile("profile-2", at(2000), {
+               makeAssignment("architect", "provider-missing", "model-1", 1000)}),
+        "persistence.write_failed", "An unknown provider must be refused as a failed write");
+    refuse(makeProfile("profile-2", at(2000), {
+               makeAssignment("architect", "provider-1", "model-1", 1000),
+               makeAssignment("implementation", "provider-1", "model-2", 0)}),
+        "persistence.write_failed", "A zero timeout must be refused as a failed write");
+    refuse(makeProfile("profile-2", at(2000), {
+               makeAssignment("architect", "provider-1", "model-1", -5)}),
+        "persistence.write_failed", "A negative timeout must be refused as a failed write");
+    refuse(makeProfile("profile-2", at(2000), {
+               makeAssignment("not-a-stage", "provider-1", "model-1", 1000)}),
+        "persistence.write_failed", "An unknown stage type must be refused as a failed write");
+
+    // Only one profile may be the default.
+    ExecutionProfile defaultProfile = makeProfile("profile-d1", at(3000));
+    defaultProfile.isDefault = true;
+    require(profiles.insert(defaultProfile).success(), "Could not insert a default profile");
+    ExecutionProfile secondDefault = makeProfile("profile-d2", at(4000));
+    secondDefault.isDefault = true;
+    const auto clash = profiles.insert(secondDefault);
+    require(!clash.success() && clash.error()->code == "persistence.write_failed",
+        "A second default profile must be refused as a failed write");
+    require(profileIds(profiles) == std::vector<std::string> {"profile-1", "profile-d1"},
+        "A refused default must not be stored");
+
+    // Every refusal rolled back; the connection must be outside a transaction.
+    const ExecutionProfile ok = makeProfile("profile-3", at(5000),
+        {makeAssignment("documentation", "provider-1", "model-2", 3000)});
+    require(profiles.insert(ok).success(), "The connection must be usable after refused inserts");
+    requireStoredProfile(profiles, ok, "A profile inserted after refusals must round-trip");
+}
+
+void testProfileUpdateReplacesRosterAtomically()
+{
+    Workspace workspace;
+    const auto database = workspace.open();
+    addCatalog(database);
+    SqliteExecutionProfileRepository profiles(database);
+    const ExecutionProfile original = [] {
+        ExecutionProfile value = makeProfile("profile-1", at(1000), {
+            makeAssignment("architect", "provider-1", "model-1", 60'000),
+            makeAssignment("implementation", "provider-1", "model-2", 45'000),
+            makeAssignment("documentation", "provider-2", "model-3", 30'000)});
+        value.providerBudget = fullBudget();
+        return value;
+    }();
+    ExecutionProfile other = makeProfile("profile-2", at(2000),
+        {makeAssignment("architect", "provider-1", "model-1", 11'000)});
+    require(profiles.insert(original).success() && profiles.insert(other).success(), "Could not insert profiles");
+
+    // A successful update replaces the profile and its whole roster.
+    ExecutionProfile replaced = original;
+    replaced.name = "Renamed \xE6\xB8\xAC";
+    replaced.workflowId = "other-workflow";
+    replaced.enabled = false;
+    replaced.providerBudget = {};
+    replaced.createdAt = at(1500);
+    replaced.updatedAt = at(9000);
+    replaced.assignments = {makeAssignment("implementation", "provider-2", "model-3", 12'345)};
+    const auto updated = profiles.update(replaced);
+    require(updated.success(), "Could not update a profile");
+    requireSameProfile(updated.value(), replaced, "update must return the profile as written");
+    requireStoredProfile(profiles, replaced, "An update must replace the fields and the whole roster");
+    requireStoredProfile(profiles, other, "An update must not touch another profile or its roster");
+
+    replaced.assignments.clear();
+    require(profiles.update(replaced).success(), "Could not update a profile to an empty roster");
+    requireStoredProfile(profiles, replaced, "An empty roster must clear the stored assignments");
+
+    replaced.assignments = {
+        makeAssignment("documentation", "provider-1", "model-2", 5000),
+        makeAssignment("architect", "provider-1", "model-1", 7000)};
+    require(profiles.update(replaced).success(), "Could not grow the roster again");
+    requireStoredProfile(profiles, replaced, "A regrown roster must be stored in full");
+    requireStoredProfile(profiles, other, "Rosters of other profiles must stay intact");
+
+    const ExecutionProfile before = replaced;
+    const auto refuse = [&](ExecutionProfile attempt, const char* code, const char* message) {
+        attempt.name = "Must not persist";
+        attempt.updatedAt = at(99'999);
+        const auto result = profiles.update(std::move(attempt));
+        require(!result.success() && result.error()->code == code, message);
+        requireStoredProfile(profiles, before, "A refused update changed the profile or its roster");
+        requireStoredProfile(profiles, other, "A refused update changed another profile");
+    };
+
+    // The old roster is deleted before the new one is written, so each of these fails after the delete.
+    ExecutionProfile attempt = before;
+    attempt.assignments = {
+        makeAssignment("architect", "provider-1", "model-1", 1000),
+        makeAssignment("architect", "provider-1", "model-2", 2000)};
+    refuse(attempt, "execution_profile.duplicate_stage_type",
+        "A repeated stage type in the new roster must report execution_profile.duplicate_stage_type");
+    attempt.assignments = {
+        makeAssignment("implementation", "provider-1", "model-1", 1000),
+        makeAssignment("documentation", "provider-1", "model-missing", 2000)};
+    refuse(attempt, "persistence.write_failed", "An unknown model in the new roster must be refused");
+    attempt.assignments = {
+        makeAssignment("architect", "provider-1", "model-1", 1000),
+        makeAssignment("implementation", "provider-1", "model-2", 0)};
+    refuse(attempt, "persistence.write_failed", "A zero timeout in the new roster must be refused");
+
+    // A clash on the single default fails on the profile row itself, before the roster is touched.
+    require(profiles.setDefaultProfile("profile-2").success(), "Could not set a default profile");
+    other.isDefault = true;
+    attempt = before;
+    attempt.isDefault = true;
+    refuse(attempt, "persistence.write_failed", "A second default through update must be refused");
+
+    const auto missing = profiles.update(makeProfile("profile-missing", at(1000),
+        {makeAssignment("architect", "provider-1", "model-1", 1000)}));
+    require(!missing.success() && missing.error()->code == "execution_profile.not_found",
+        "Updating a missing profile must report execution_profile.not_found");
+    const auto absent = profiles.findById("profile-missing");
+    require(absent.success() && !absent.value().has_value(), "A refused update must not create a profile");
+    require(profileIds(profiles) == std::vector<std::string> {"profile-1", "profile-2"},
+        "A refused update must not change the set of profiles");
+
+    // Every refusal rolled back; the connection must be outside a transaction.
+    ExecutionProfile finalState = before;
+    finalState.name = "Final";
+    finalState.assignments = {makeAssignment("implementation", "provider-1", "model-2", 6000)};
+    require(profiles.update(finalState).success(), "The connection must be usable after refused updates");
+    requireStoredProfile(profiles, finalState, "An update after refusals must apply in full");
+    requireStoredProfile(profiles, other, "The other profile must still be intact");
+}
+
+void testSetDefaultProfileIsAtomic()
+{
+    Workspace workspace;
+    const auto database = workspace.open();
+    addCatalog(database);
+    SqliteExecutionProfileRepository profiles(database);
+    const ExecutionProfile a = makeProfile("profile-a", at(1000),
+        {makeAssignment("architect", "provider-1", "model-1", 60'000)});
+    const ExecutionProfile b = makeProfile("profile-b", at(2000),
+        {makeAssignment("implementation", "provider-1", "model-2", 45'000)});
+    const ExecutionProfile c = makeProfile("profile-c", at(3000));
+    require(profiles.insert(a).success() && profiles.insert(b).success() && profiles.insert(c).success(),
+        "Could not insert profiles");
+
+    using Ids = std::vector<std::string>;
+    const auto defaults = [&] {
+        Ids result;
+        const auto listed = profiles.listAll();
+        require(listed.success(), "Could not list profiles");
+        for (const auto& value : listed.value()) if (value.isDefault) result.push_back(value.id);
+        return result;
+    };
+    require(defaults().empty(), "No profile may be the default initially");
+
+    require(profiles.setDefaultProfile("profile-a").success(), "Could not set the first default");
+    require(defaults() == Ids {"profile-a"}, "The first default did not apply");
+    require(profiles.setDefaultProfile("profile-b").success(), "Could not move the default");
+    require(defaults() == Ids {"profile-b"}, "Moving the default must leave exactly one");
+
+    // The refusal first clears the old default inside the transaction; it must be restored.
+    const auto missing = profiles.setDefaultProfile("profile-missing");
+    require(!missing.success() && missing.error()->code == "execution_profile.not_found",
+        "A missing profile must report execution_profile.not_found");
+    require(defaults() == Ids {"profile-b"}, "A refused default change lost the previous default");
+
+    require(profiles.setDefaultProfile("profile-b").success(), "Setting the current default again must succeed");
+    require(defaults() == Ids {"profile-b"}, "Re-setting the default must keep it");
+
+    // Only the flag changes: the rest of the profile and its roster stay as written.
+    ExecutionProfile expectedA = a;
+    ExecutionProfile expectedB = b;
+    expectedB.isDefault = true;
+    requireStoredProfile(profiles, expectedA, "Moving the default altered the former default's data");
+    requireStoredProfile(profiles, expectedB, "Setting the default altered the profile's data");
+
+    // A rolled-back transaction must not leave the connection inside one.
+    require(profiles.insert(makeProfile("profile-d", at(4000))).success(),
+        "The connection must be usable after a refused default change");
+    require(profiles.setDefaultProfile("profile-c").success(), "A later default change must work");
+    require(defaults() == Ids {"profile-c"}, "The later default change did not apply");
+}
+
+void testCorruptProfileRowsFailClosed()
+{
+    Workspace workspace;
+    {
+        const auto database = workspace.open();
+        addCatalog(database);
+        SqliteExecutionProfileRepository profiles(database);
+        for (const char* id : {"profile-good", "profile-bad-json", "profile-bad-type", "profile-bad-limit",
+                 "profile-bad-timeout", "profile-negative-timeout"}) {
+            require(profiles.insert(makeProfile(id, at(1000),
+                        {makeAssignment("architect", "provider-1", "model-1", 60'000)})).success(),
+                "Could not insert profiles");
+        }
+    }
+
+    workspace.sql("UPDATE execution_profiles SET provider_budget_json='{broken' WHERE id='profile-bad-json';");
+    workspace.sql("UPDATE execution_profiles SET provider_budget_json='{\"maxTurns\":\"many\"}' "
+                  "WHERE id='profile-bad-type';");
+    workspace.sql("UPDATE execution_profiles SET provider_budget_json='{\"maxTurns\":0}' "
+                  "WHERE id='profile-bad-limit';");
+    // The schema refuses these values, so the checks are switched off on the corrupting connection only.
+    workspace.sql("PRAGMA ignore_check_constraints=1; UPDATE execution_profile_assignments SET timeout_ms=0 "
+                  "WHERE profile_id='profile-bad-timeout';");
+    workspace.sql("PRAGMA ignore_check_constraints=1; UPDATE execution_profile_assignments SET timeout_ms=-1 "
+                  "WHERE profile_id='profile-negative-timeout';");
+
+    const auto database = workspace.open();
+    SqliteExecutionProfileRepository profiles(database);
+    const auto good = profiles.findById("profile-good");
+    require(good.success() && good.value().has_value() && good.value()->assignments.size() == 1,
+        "A valid profile must stay readable");
+
+    for (const char* id : {"profile-bad-json", "profile-bad-type"}) {
+        const auto bad = profiles.findById(id);
+        require(!bad.success() && bad.error()->code == "persistence.invalid_data",
+            "A profile with unreadable budget JSON must fail closed on findById");
+    }
+    const auto overLimit = profiles.findById("profile-bad-limit");
+    require(!overLimit.success() && overLimit.error()->code == "provider_budget.invalid_policy",
+        "A stored budget that the Backend would refuse must fail closed on findById");
+    for (const char* id : {"profile-bad-timeout", "profile-negative-timeout"}) {
+        const auto bad = profiles.findById(id);
+        require(!bad.success() && bad.error()->code == "persistence.invalid_data",
+            "A non-positive stored timeout must fail closed on findById");
+    }
+    const auto everything = profiles.listAll();
+    require(!everything.success(), "A listing that contains an invalid profile must fail rather than skip it");
+}
 } // namespace
 
 int main()
@@ -575,7 +988,12 @@ int main()
         testSetDefaultModelIsAtomic();
         testModelRemoveNotFoundAndInUse();
         testCorruptModelRowsFailClosed();
-        std::cout << "SQLite Catalog contracts: 9 passed\n";
+        testProfileRoundTripOrderingAndReopen();
+        testProfileWriteErrorsAreAtomic();
+        testProfileUpdateReplacesRosterAtomically();
+        testSetDefaultProfileIsAtomic();
+        testCorruptProfileRowsFailClosed();
+        std::cout << "SQLite Catalog contracts: 14 passed\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "SQLite Catalog contracts failed: " << error.what() << '\n';
