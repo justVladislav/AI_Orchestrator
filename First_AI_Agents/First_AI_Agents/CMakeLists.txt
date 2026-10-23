@@ -655,6 +655,7 @@ add_library(AIOrchestrator_Persistence STATIC
     sourceFiles/infrastructure/sqlite/execution/SqliteRunWorkspaceScopeRepository.cpp
     sourceFiles/infrastructure/sqlite/execution/SqliteExecutionManifestRepository.cpp
     sourceFiles/infrastructure/sqlite/execution/SqliteRunRepository.cpp
+    sourceFiles/infrastructure/sqlite/verification/SqliteManifestVerificationBaselineNormalizationRepository.cpp
     sourceFiles/infrastructure/sqlite/comparison/SqliteComparisonSessionRepository.cpp
     sourceFiles/infrastructure/sqlite/planning/SqliteFollowUpPlanRepository.cpp
     sourceFiles/infrastructure/sqlite/planning/SqliteOutcomeBriefRepository.cpp
