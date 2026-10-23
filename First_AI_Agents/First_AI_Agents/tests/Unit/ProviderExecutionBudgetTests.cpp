@@ -4,7 +4,9 @@
 #include <cassert>
 #include <chrono>
 #include <cstdint>
+#include <iostream>
 #include <limits>
+#include <mutex>
 #include <atomic>
 #include <stdexcept>
 #include <string>
@@ -1024,33 +1026,99 @@ void testParallelOwnersNeverStealReservationsOrExceedCeiling()
 
     std::atomic<std::uint64_t> admittedTotal {0};
     std::vector<std::atomic<std::uint64_t>> perOwner(kOwners);
+    std::mutex unexpectedMutex;
+    std::string unexpected;   // the first error that is outside the allowed set
+    const auto noteUnexpected = [&](const std::string& what) {
+        std::lock_guard lock(unexpectedMutex);
+        if (unexpected.empty()) unexpected = what;
+    };
     {
         std::vector<std::jthread> workers;
         for (int i = 0; i < kOwners; ++i) {
             workers.emplace_back([&, i] {
                 const std::string owner = "task-" + std::to_string(i);
                 for (int attempt = 0; attempt < 10; ++attempt) {
-                    if (guard.beginOwnedProviderTurn(owner).success()) {
-                        ++admittedTotal;
-                        ++perOwner[static_cast<std::size_t>(i)];
-                        assert(guard.completeProviderTurn(usage(1, 1)).success());
+                    const auto admitted = guard.beginOwnedProviderTurn(owner);
+                    if (!admitted.success()) {
+                        // Refused by the allocation, or by the Run-wide ceiling once any worker reached it.
+                        const std::string& code = admitted.error()->code;
+                        if (code != kTaskTurnAllocationExhaustedCode && code != "provider_budget.turn_limit_reached") {
+                            noteUnexpected("begin: " + code);
+                        }
+                        continue;
+                    }
+                    ++admittedTotal;
+                    ++perOwner[static_cast<std::size_t>(i)];
+                    // An admitted reply is always accounted. It returns success, or the Run's original stop
+                    // reason when a sibling reached the turn ceiling while this reply was still in flight.
+                    const auto completed = guard.completeProviderTurn(usage(1, 1));
+                    if (!completed.success() && completed.error()->code != "provider_budget.turn_limit_reached") {
+                        noteUnexpected("complete: " + completed.error()->code);
                     }
                 }
             });
         }
     }
+    if (!unexpected.empty()) std::cerr << "Unexpected provider budget error: " << unexpected << std::endl;
+    assert(unexpected.empty());
     // Never above the hard ceiling; every started turn is accounted exactly
     // once; and no owner lost its own reserved turns to another worker. (A
     // turn a worker leased ahead but never used is returned on release, so the
     // total may end just below the ceiling.)
     assert(admittedTotal.load() <= 30);
     assert(guard.usage().turnsStarted == admittedTotal.load());
+    assert(guard.usage().turnsCompleted == guard.usage().turnsStarted);
+    assert(guard.usage().inputTokens == admittedTotal.load());
+    assert(guard.usage().outputTokens == admittedTotal.load());
+    assert(guard.usage().usageAuthoritative);
     assert(guard.usage().turnsStarted + guard.reservedUnusedTurns() <= 30);
     for (int i = 0; i < kOwners; ++i) {
         assert(perOwner[static_cast<std::size_t>(i)].load() >= 2);
     }
     guard.releaseAllTurnReservations();
     assert(guard.reservedUnusedTurns() == 0);
+}
+
+// The interleaving that the stress test above may legitimately hit, built
+// deterministically: the reply of a turn that was admitted before the Run-wide
+// turn ceiling stopped the guard is still accounted, and it reports the
+// original stop reason instead of success.
+void testLateReplyAfterTheTurnCeilingIsAccountedAndKeepsTheStopReason()
+{
+    ProviderSessionBudgetGuard guard(turnsPolicy(2), {}, {}, {}, 2);
+    assert(guard.reserveTurns({{"a", 1}, {"b", 1}}).success());
+
+    assert(guard.beginOwnedProviderTurn("a").success());
+    assert(guard.beginOwnedProviderTurn("b").success());
+    assert(guard.usage().turnsStarted == 2);
+
+    // a's reply arrives first and frees its slot while b is still in flight.
+    assert(guard.completeProviderTurn(usage(1, 1)).success());
+    assert(guard.usage().turnsCompleted == 1);
+    assert(guard.usage().stopCode.empty());
+
+    // a asks for one more turn: the ceiling answers and the Run stops.
+    const auto extra = guard.beginOwnedProviderTurn("a");
+    assert(!extra.success());
+    assert(extra.error()->code == "provider_budget.turn_limit_reached");
+    assert(guard.usage().stopCode == "provider_budget.turn_limit_reached");
+    assert(guard.usage().turnsStarted == 2);
+
+    // b's reply arrives late: paid for, so it is accounted, and the original reason is returned.
+    const auto late = guard.completeProviderTurn(usage(1, 1));
+    assert(!late.success());
+    assert(late.error()->code == "provider_budget.turn_limit_reached");
+    assert(guard.usage().stopCode == "provider_budget.turn_limit_reached");
+    assert(guard.usage().turnsStarted == 2);
+    assert(guard.usage().turnsCompleted == 2);
+    assert(guard.usage().inputTokens == 2);
+    assert(guard.usage().outputTokens == 2);
+    assert(guard.usage().usageAuthoritative);
+
+    // The stop is sticky: nothing more is admitted.
+    const auto after = guard.beginOwnedProviderTurn("b");
+    assert(!after.success());
+    assert(after.error()->code == "provider_budget.turn_limit_reached");
 }
 
 // An unforced turn is always followed by an available one: the next turn is
@@ -1106,6 +1174,7 @@ int runProviderExecutionBudgetTests()
     testReleasingReservationReturnsUnusedTurnsToSurplus();
     testUnownedRequestsCannotConsumeReservedTurns();
     testParallelOwnersNeverStealReservationsOrExceedCeiling();
+    testLateReplyAfterTheTurnCeilingIsAccountedAndKeepsTheStopReason();
     testOwnerIsNeverRefusedAfterAnUnforcedTurn();
     testProfileOverridesCanOnlyLowerHardCeilings();
     testAttemptedThirteenthTurnIsNeverAdmitted();
