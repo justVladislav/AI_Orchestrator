@@ -490,6 +490,103 @@ void testChatPreparedTurnIsAtomic()
     require(messageIds(chats, "chat-1") == std::vector<std::string> {"message-existing", "turn-user", "turn-assistant"},
         "The turn's messages must follow the existing ones in creation order");
 }
+
+ChatMemorySegment makeChatMemory(std::string id, std::string conversationId, std::int64_t createdMs)
+{
+    ChatMemorySegment value;
+    value.id = std::move(id);
+    value.conversationId = std::move(conversationId);
+    value.firstMessageId = "message-first";
+    value.lastMessageId = "message-last";
+    value.summary = "Summary \"quoted\"\nsecond line \xE6\xB8\xAC\xE8\xA9\xA6";
+    value.sourceTokenCount = 5'000'000'000ULL;
+    value.summaryTokenCount = 4'000'000'000ULL;
+    value.createdAt = at(createdMs);
+    return value;
+}
+
+void requireSameChatMemory(const ChatMemorySegment& actual, const ChatMemorySegment& expected, const char* message)
+{
+    require(actual.id == expected.id && actual.conversationId == expected.conversationId
+            && actual.firstMessageId == expected.firstMessageId && actual.lastMessageId == expected.lastMessageId
+            && actual.summary == expected.summary && actual.sourceTokenCount == expected.sourceTokenCount
+            && actual.summaryTokenCount == expected.summaryTokenCount && actual.createdAt == expected.createdAt,
+        message);
+}
+
+std::vector<std::string> chatMemoryIds(const SqliteChatMemoryRepository& memory, const std::string& conversationId)
+{
+    const auto listed = memory.listMemorySegments(conversationId);
+    require(listed.success(), "Could not list chat memory segments");
+    std::vector<std::string> result;
+    for (const auto& value : listed.value()) result.push_back(value.id);
+    return result;
+}
+
+void testChatMemorySegmentsRoundTripOrderingRemovalAndErrors()
+{
+    Workspace workspace;
+    ChatMemorySegment early = makeChatMemory("segment-early", "chat-1", 1000);
+    early.firstMessageId = "message-1";
+    early.lastMessageId = "message-9";
+    const ChatMemorySegment tieB = makeChatMemory("segment-b", "chat-1", 2000);
+    const ChatMemorySegment tieA = makeChatMemory("segment-a", "chat-1", 2000);
+    const ChatMemorySegment other = makeChatMemory("segment-other", "chat-2", 1500);
+    const std::initializer_list<const ChatMemorySegment*> inInsertOrder {&tieB, &early, &other, &tieA};
+    using Ids = std::vector<std::string>;
+    {
+        const auto database = workspace.open();
+        addCatalogAndProjects(database, workspace);
+        SqliteChatRepository chats(database);
+        require(chats.insertConversation(makeConversation("chat-1", 1000)).success()
+                && chats.insertConversation(makeConversation("chat-2", 1000)).success(),
+            "Could not insert conversations");
+        SqliteChatMemoryRepository memory(database);
+        for (const ChatMemorySegment* value : inInsertOrder) {
+            const auto saved = memory.insertMemorySegment(*value);
+            require(saved.success(), "Could not insert a memory segment");
+            requireSameChatMemory(saved.value(), *value, "insert must return the segment as written");
+        }
+        for (const ChatMemorySegment* value : inInsertOrder) {
+            const auto found = memory.findMemorySegment(value->id);
+            require(found.success() && found.value().has_value(), "A stored segment must be found");
+            requireSameChatMemory(*found.value(), *value, "A segment must round-trip every field");
+        }
+        require(chatMemoryIds(memory, "chat-1") == Ids {"segment-early", "segment-a", "segment-b"},
+            "Segments must be listed by creation time and then id");
+        require(chatMemoryIds(memory, "chat-2") == Ids {"segment-other"}, "A listing must hold only its own conversation");
+        require(chatMemoryIds(memory, "chat-unknown").empty(), "An unknown conversation must list no segments");
+        const auto missing = memory.findMemorySegment("segment-missing");
+        require(missing.success() && !missing.value().has_value(), "A missing segment must read as absent");
+
+        const auto repeated = memory.insertMemorySegment(makeChatMemory("segment-a", "chat-2", 9000));
+        require(!repeated.success() && repeated.error()->code == "chat_memory.duplicate_id",
+            "A repeated segment id must report chat_memory.duplicate_id");
+        const auto orphan = memory.insertMemorySegment(makeChatMemory("segment-orphan", "chat-unknown", 9000));
+        require(!orphan.success() && orphan.error()->code == "chat_memory.conversation_not_found",
+            "A segment of an unknown conversation must report chat_memory.conversation_not_found");
+        require(chatMemoryIds(memory, "chat-1").size() == 3 && chatMemoryIds(memory, "chat-2").size() == 1,
+            "Refused inserts must not add rows");
+        const auto stillA = memory.findMemorySegment("segment-a");
+        requireSameChatMemory(*stillA.value(), tieA, "A refused insert altered an existing segment");
+
+        // Removal is per conversation, and an empty conversation is not an error.
+        require(memory.removeMemorySegments("chat-1").success(), "Could not remove a conversation's segments");
+        require(chatMemoryIds(memory, "chat-1").empty(), "Removal must clear the conversation's segments");
+        require(chatMemoryIds(memory, "chat-2") == Ids {"segment-other"}, "Removal must keep other conversations' segments");
+        require(memory.removeMemorySegments("chat-1").success(), "Removing from an empty conversation must succeed");
+        require(memory.removeMemorySegments("chat-unknown").success(), "Removing from an unknown conversation must succeed");
+        require(memory.insertMemorySegment(makeChatMemory("segment-new", "chat-1", 5000)).success(),
+            "The connection must be usable after refused writes");
+    }
+
+    const auto reopened = workspace.open();
+    SqliteChatMemoryRepository memory(reopened);
+    require(chatMemoryIds(memory, "chat-1") == Ids {"segment-new"}, "Segments must survive reopening the database");
+    SqliteChatRepository chats(reopened);
+    require(chats.removeConversation("chat-2").success(), "Could not remove a conversation");
+    require(chatMemoryIds(memory, "chat-2").empty(), "Removing a conversation must remove its memory segments");
+}
 } // namespace
 
 int main()
@@ -498,7 +595,8 @@ int main()
         testChatConversationsRoundTripOrderingUpdateAndRemoval();
         testChatMessagesRoundTripOrderingAndErrors();
         testChatPreparedTurnIsAtomic();
-        std::cout << "SQLite Conversations contracts: 3 passed\n";
+        testChatMemorySegmentsRoundTripOrderingRemovalAndErrors();
+        std::cout << "SQLite Conversations contracts: 4 passed\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "SQLite Conversations contracts failed: " << error.what() << '\n';
