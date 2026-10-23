@@ -587,6 +587,123 @@ void testChatMemorySegmentsRoundTripOrderingRemovalAndErrors()
     require(chats.removeConversation("chat-2").success(), "Could not remove a conversation");
     require(chatMemoryIds(memory, "chat-2").empty(), "Removing a conversation must remove its memory segments");
 }
+
+ProjectMemorySegment makeProjectMemory(std::string id, std::string projectId, std::int64_t createdMs)
+{
+    ProjectMemorySegment value;
+    value.id = std::move(id);
+    value.projectId = std::move(projectId);
+    value.runId = "run-that-no-longer-exists";   // run_id is deliberately not a foreign key
+    value.summary = "Summary \"quoted\"\nsecond line \xE6\xB8\xAC\xE8\xA9\xA6";
+    value.sourceTokenCount = 5'000'000'000ULL;
+    value.summaryTokenCount = 4'000'000'000ULL;
+    value.createdAt = at(createdMs);
+    return value;
+}
+
+void requireSameProjectMemory(const ProjectMemorySegment& actual, const ProjectMemorySegment& expected,
+    const char* message)
+{
+    require(actual.id == expected.id && actual.projectId == expected.projectId && actual.runId == expected.runId
+            && actual.summary == expected.summary && actual.sourceTokenCount == expected.sourceTokenCount
+            && actual.summaryTokenCount == expected.summaryTokenCount && actual.createdAt == expected.createdAt,
+        message);
+}
+
+std::vector<std::string> projectMemoryIds(const SqliteProjectMemoryRepository& memory, const std::string& projectId)
+{
+    const auto listed = memory.listMemorySegments(projectId);
+    require(listed.success(), "Could not list project memory segments");
+    std::vector<std::string> result;
+    for (const auto& value : listed.value()) result.push_back(value.id);
+    return result;
+}
+
+std::vector<std::string> recentProjectMemoryIds(
+    const SqliteProjectMemoryRepository& memory, const std::string& projectId, std::size_t limit,
+    std::uint64_t expectedTotal)
+{
+    const auto page = memory.listRecentMemorySegments(projectId, limit);
+    require(page.success(), "Could not list recent project memory segments");
+    require(page.value().totalCount == expectedTotal, "The recent page must report the project's total count");
+    std::vector<std::string> result;
+    for (const auto& value : page.value().newest) result.push_back(value.id);
+    return result;
+}
+
+void testProjectMemorySegmentsRoundTripOrderingRecentPageAndErrors()
+{
+    Workspace workspace;
+    const ProjectMemorySegment early = makeProjectMemory("segment-early", "project-1", 1000);
+    const ProjectMemorySegment tieB = makeProjectMemory("segment-b", "project-1", 2000);
+    const ProjectMemorySegment tieA = makeProjectMemory("segment-a", "project-1", 2000);
+    const ProjectMemorySegment other = makeProjectMemory("segment-other", "project-2", 1500);
+    const std::initializer_list<const ProjectMemorySegment*> inInsertOrder {&tieB, &early, &other, &tieA};
+    using Ids = std::vector<std::string>;
+    {
+        const auto database = workspace.open();
+        addCatalogAndProjects(database, workspace);
+        SqliteProjectMemoryRepository memory(database);
+        for (const ProjectMemorySegment* value : inInsertOrder) {
+            const auto saved = memory.insertMemorySegment(*value);
+            require(saved.success(), "Could not insert a memory segment");
+            requireSameProjectMemory(saved.value(), *value, "insert must return the segment as written");
+        }
+        for (const ProjectMemorySegment* value : inInsertOrder) {
+            const auto found = memory.findMemorySegment(value->id);
+            require(found.success() && found.value().has_value(), "A stored segment must be found");
+            requireSameProjectMemory(*found.value(), *value, "A segment must round-trip every field");
+        }
+        require(projectMemoryIds(memory, "project-1") == Ids {"segment-early", "segment-a", "segment-b"},
+            "Segments must be listed oldest first, with the id as tie-break");
+        require(projectMemoryIds(memory, "project-2") == Ids {"segment-other"}, "A listing must hold only its own project");
+        require(projectMemoryIds(memory, "project-unknown").empty(), "An unknown project must list no segments");
+        const auto missing = memory.findMemorySegment("segment-missing");
+        require(missing.success() && !missing.value().has_value(), "A missing segment must read as absent");
+
+        // The bounded read is newest first with the id descending as tie-break, plus the total count.
+        require(recentProjectMemoryIds(memory, "project-1", 2, 3) == Ids {"segment-b", "segment-a"},
+            "The recent page must hold the newest segments, newest first");
+        require(recentProjectMemoryIds(memory, "project-1", 10, 3) == Ids {"segment-b", "segment-a", "segment-early"},
+            "A limit above the count must return every segment, newest first");
+        require(recentProjectMemoryIds(memory, "project-1", 3, 3) == Ids {"segment-b", "segment-a", "segment-early"},
+            "A limit equal to the count must return every segment");
+        require(recentProjectMemoryIds(memory, "project-1", 0, 3).empty(),
+            "A zero limit must return no segments but still report the total");
+        require(recentProjectMemoryIds(memory, "project-2", 5, 1) == Ids {"segment-other"},
+            "The recent page must hold only its own project");
+        require(recentProjectMemoryIds(memory, "project-unknown", 5, 0).empty(),
+            "An unknown project must have an empty recent page");
+        const auto huge = memory.listRecentMemorySegments("project-1", std::numeric_limits<std::size_t>::max());
+        require(!huge.success() && huge.error()->code == "persistence.value_out_of_range",
+            "A limit beyond the signed 64-bit range is currently refused");
+
+        const auto repeated = memory.insertMemorySegment(makeProjectMemory("segment-a", "project-2", 9000));
+        require(!repeated.success() && repeated.error()->code == "project_memory.duplicate_id",
+            "A repeated segment id must report project_memory.duplicate_id");
+        const auto orphan = memory.insertMemorySegment(makeProjectMemory("segment-orphan", "project-unknown", 9000));
+        require(!orphan.success() && orphan.error()->code == "project_memory.project_not_found",
+            "A segment of an unknown project must report project_memory.project_not_found");
+        require(projectMemoryIds(memory, "project-1").size() == 3 && projectMemoryIds(memory, "project-2").size() == 1,
+            "Refused inserts must not add rows");
+        const auto stillA = memory.findMemorySegment("segment-a");
+        requireSameProjectMemory(*stillA.value(), tieA, "A refused insert altered an existing segment");
+
+        // Removal is per project, and an empty project is not an error.
+        require(memory.removeMemorySegments("project-1").success(), "Could not remove a project's segments");
+        require(projectMemoryIds(memory, "project-1").empty(), "Removal must clear the project's segments");
+        require(recentProjectMemoryIds(memory, "project-1", 5, 0).empty(), "Removal must clear the recent page too");
+        require(projectMemoryIds(memory, "project-2") == Ids {"segment-other"}, "Removal must keep other projects' segments");
+        require(memory.removeMemorySegments("project-1").success(), "Removing from an empty project must succeed");
+        require(memory.removeMemorySegments("project-unknown").success(), "Removing from an unknown project must succeed");
+        require(memory.insertMemorySegment(makeProjectMemory("segment-new", "project-1", 5000)).success(),
+            "The connection must be usable after refused writes");
+    }
+
+    const auto reopened = workspace.open();
+    SqliteProjectMemoryRepository memory(reopened);
+    require(projectMemoryIds(memory, "project-1") == Ids {"segment-new"}, "Segments must survive reopening the database");
+}
 } // namespace
 
 int main()
@@ -596,7 +713,8 @@ int main()
         testChatMessagesRoundTripOrderingAndErrors();
         testChatPreparedTurnIsAtomic();
         testChatMemorySegmentsRoundTripOrderingRemovalAndErrors();
-        std::cout << "SQLite Conversations contracts: 4 passed\n";
+        testProjectMemorySegmentsRoundTripOrderingRecentPageAndErrors();
+        std::cout << "SQLite Conversations contracts: 5 passed\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "SQLite Conversations contracts failed: " << error.what() << '\n';
