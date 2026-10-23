@@ -1,7 +1,9 @@
 # SQLite decomposition: review and implementation design
 
-Status: phases 1, 2A and 2B implemented; the feature batches below are designs,
-not implemented. Reviewed on 2026-10-23. This document describes
+Status: phases 1, 2A and 2B implemented; of the feature batches, batch 3 is
+partly implemented (providers and models extracted into `sqlite/catalog/`;
+execution profiles are still in the aggregate) and batches 4-8 are designs, not
+implemented. Reviewed on 2026-10-23. This document describes
 implementation boundaries and acceptance criteria, not the completion of the
 Backend architecture refactor.
 
@@ -49,8 +51,8 @@ edits (140 lines out of the aggregate, checked against the previous revision as 
 (round trip, ordering and reopen; duplicate/update/missing errors; schema CHECK
 failures that leave rows and the connection intact; concurrent writers). They
 passed on the old code first and again after the move; with the five existing
-suites: 6/6 in Debug. Not covered by those contracts: models and execution
-profiles, which remain in the aggregate.
+suites: 6/6 in Debug. Models were extracted next (previous paragraph); execution
+profiles remain in the aggregate and are not covered by these contracts.
 
 Phase 2B result (separate commit):
 `ensureSchema(sqlite3*)` in `sqlite/SqliteSchema.cpp` now holds the version check,
