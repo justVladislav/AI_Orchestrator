@@ -3,6 +3,7 @@
 #include "sqlite/SqlitePrimitives.hpp"
 #include "sqlite/catalog/SqliteProfileMapping.hpp"
 #include "sqlite/roster/SqliteRosterMapping.hpp"
+#include "sqlite/execution/SqliteRunStatusMapping.hpp"
 #include "sqlite/planning/SqliteRunDraftGroupStorage.hpp"
 
 #include "ai/application/ExecutionAcceptanceContract.hpp"
@@ -109,6 +110,7 @@ using sqlite_detail::readAssignment;
 using sqlite_detail::serializeStringVector;
 using sqlite_detail::parseStringVector;
 using sqlite_detail::readRunAssignment;
+using sqlite_detail::runStatusFromString;
 using sqlite_detail::insertRunDraftGroupRows;
 using sqlite_detail::findRunDraftGroupWhere;
 using sqlite_detail::readRunDraftGroupDrafts;
@@ -493,19 +495,6 @@ common::Result<application::ExecutionManifest> executionManifestFromJson(
             "manifest.corrupt_snapshot",
             std::string("Stored execution manifest is invalid: ") + exception.what()));
     }
-}
-
-std::optional<RunStatus> runStatusFromString(std::string_view value)
-{
-    if (value == "prepared") return RunStatus::Prepared;
-    if (value == "queued") return RunStatus::Queued;
-    if (value == "running") return RunStatus::Running;
-    if (value == "cancelling") return RunStatus::Cancelling;
-    if (value == "completed") return RunStatus::Completed;
-    if (value == "failed") return RunStatus::Failed;
-    if (value == "cancelled") return RunStatus::Cancelled;
-    if (value == "interrupted") return RunStatus::Interrupted;
-    return std::nullopt;
 }
 
 std::optional<StageStatus> stageStatusFromString(std::string_view value)
