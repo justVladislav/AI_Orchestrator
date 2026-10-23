@@ -31,6 +31,11 @@ these implementation headers or access native SQLite handles.
   task-to-run links, the active project singleton, and the per-project readiness record
   with its upsert. The readiness configure mechanism lives in the application layer and is
   not part of this directory.
+- `conversations/` (batch 5) holds `SqliteChatRepository` (conversations, messages, the
+  prepared-turn transaction and the project context attachment writes),
+  `SqliteChatMemoryRepository`, `SqliteProjectMemoryRepository` (including the bounded
+  recent page read under one lock) and `SqliteProjectMemoryCompactionRepository` (the atomic
+  commit that removes the source segments, inserts the result and records the provenance).
 - `settings/` (batch 4) holds `SqliteApplicationSettingsRepository` (the optimistic-revision
   update and the enum mapping) and `SqliteVerificationScratchSettingRepository` (the
   singleton upsert and the path encoding). Permission and safety checks of the scratch

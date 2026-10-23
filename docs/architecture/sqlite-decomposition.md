@@ -1,10 +1,11 @@
 # SQLite decomposition: review and implementation design
 
 Status: phases 1, 2A and 2B implemented; of the feature batches, batch 3
-(`sqlite/catalog/`: providers, models and execution profiles) and batch 4
+(`sqlite/catalog/`: providers, models and execution profiles), batch 4
 (`sqlite/projects/` and `sqlite/settings/`: projects, tasks, workspace state, project
-readiness, application settings and the verification scratch setting) are implemented and
-batches 5-8 are designs, not implemented.
+readiness, application settings and the verification scratch setting) and batch 5
+(`sqlite/conversations/`: chat, chat memory, project memory and its compaction) are
+implemented and batches 6-8 are designs, not implemented.
 Reviewed on 2026-10-23. This document describes
 implementation boundaries and acceptance criteria, not the completion of the
 Backend architecture refactor.
@@ -27,6 +28,38 @@ new tests are not mutation-tested, there was no local Release build, and the
 failed-migration case relies on the existing v59/v65 refusal tests. Hosted
 Windows CI run 39985592008 later passed Debug and Release on public commit
 `2087a05`, which contains 2A and 2B.
+
+Batch 5 (`SqliteChatRepository`, `SqliteChatMemoryRepository`, `SqliteProjectMemoryRepository`
+and `SqliteProjectMemoryCompactionRepository`, `sqlite/conversations/`): a new
+`AIOrchestrator_SqliteConversations_tests` with 8 contracts, each added for its repository and
+run against the aggregate first. Chat: conversations with 64-bit token magnitudes, the
+pinned-then-newest-then-id listing, refused inserts and updates, update replacing every field,
+removal cascading to its own messages only; messages with every role and status, empty
+provider/model ids stored as NULL, update replacing every field and `chat.message_not_found`,
+a project context refused outside a prepared turn, an unknown stored role or status failing
+closed; prepared turns with identity and role violations refused and a rollback after a first
+insert and after a failed conversation update. The context attachment itself stays covered by
+the existing monolith test. Chat memory: every field, ordering, per-conversation listing and
+removal, `chat_memory.duplicate_id`, `chat_memory.conversation_not_found`, reopen and the
+cascade. Project memory: every field, ordering, the bounded recent page (limits below, equal
+to and above the count, zero, unknown project, total count; a limit beyond int64 is currently
+refused), `project_memory.duplicate_id`, `project_memory.project_not_found` and per-project
+removal. Compaction: records with their sources in order, a completed record refused outside
+the atomic commit, and the commit with inconsistent fields, a missing, foreign or repeated
+source (`project_memory.compaction_conflict`) and a duplicate result or record id, each
+leaving memory and provenance unchanged, then the accepted commit. Each repository then moved
+in a commit of its own without edits (chat 283 lines, chat memory 112, project memory 153,
+compaction 245; their helpers moved with them and have no other users). The nine Debug suites
+passed after each move (9/9), and the aggregate `First_AI_Agents_tests` (which exercises these
+repositories through the chat and memory services) passed once after the last move. A one-shot
+mutation check on the four new files, scored by the Conversations suite only, killed 20 of 24
+mutants. The four survivors are the removals of the `id` tie-break in the message listing, the
+chat memory listing, the recent project memory page and the compaction listing; each table has an
+index on (owner, created_at_ms, id), so they survived presumably because of the index scan
+order, and equivalence is not established. Pinned, not endorsed: an unreadable
+`source_segment_ids` of a compaction record reads as an empty list and non-string entries are
+skipped. Not claimed: a local Release build, concurrency contracts for these repositories, or
+mutation testing of the context attachment writes.
 
 Batch 4, second part (`SqliteWorkspaceStateRepository`, `SqliteProjectReadinessRepository`,
 `SqliteVerificationScratchSettingRepository` and `SqliteApplicationSettingsRepository`): each
