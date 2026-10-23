@@ -9,11 +9,12 @@ Your workspace stays under your control. A model response is a proposal, not per
 ## Features
 
 - **Multi-model workflows:** OpenAI and Anthropic adapters, execution profiles, task planning and bounded worker scheduling. A deterministic Mock path supports development and tests.
+- **Next-run drafts:** turn a goal and an existing Run's outcome into a model-proposed plan, review it, then confirm creation of saved drafts. You choose the execution configuration and launch each Run explicitly.
 - **Reviewable changes:** file-level proposals, diffs, recorded verification findings, approval/rejection and explicit Apply.
 - **Project readiness:** selected CMake preset checks, automatic child-process MSVC/Windows SDK environment setup, and persisted readiness that is reused while configuration inputs remain unchanged.
 - **Persistent work:** projects, Runs, stages, chats, artifacts, proposals and project memory backed by SQLite and local file stores.
 - **Usage visibility:** provider turns, token usage, estimated cost and configured execution budgets.
-- **Desktop tools:** provider/model management, credentials, project context, chats, comparisons and Run diagnostics.
+- **Desktop tools:** provider/model management, credentials, project context, chats, experimental comparisons and Run diagnostics.
 
 ## Download and launch
 
@@ -49,6 +50,15 @@ Mock uses deterministic simulated responses, not a real AI model, and makes no b
 Real-provider calls use your own account and may incur charges. Configured prices and displayed estimates are not a substitute for your provider's billing records.
 
 A successful build or lint check is not proof that every requested behaviour is correct. Review the diff and exercise the changed feature.
+
+### Plan the next Runs
+
+1. From a completed Run, open **Plan next Run...**, describe the next goal, choose the planning model and how to split the work, and select any available file excerpts to include.
+2. Review the quote and included context before authorising the paid planning call.
+3. Review the returned plan, task boundaries, dependencies and any contracts. Confirm it to save the proposed **Drafts**.
+4. Open a draft in **New Run**, complete or review its lead/worker models, budgets and other settings, then start it yourself. An existing roster template can supply previously chosen settings.
+
+The model generates a plan; drafts are saved only after your confirmation. Planning never starts a Run or applies changes automatically. Providers, models and budgets for execution remain user choices. Failed Runs offer the corresponding **Plan recovery...** action.
 
 ### Preparing a project for verification
 
@@ -173,6 +183,7 @@ The manifest/parser checks are in [Test-ReleasePackaging.ps1](packaging/verify/T
 
 ## Known limits in 1.0
 
+- Comparison is experimental and partially implemented. Response synthesis and per-result retry are unavailable in 1.0. Automated scores use deterministic text heuristics and should not be interpreted as proof of answer correctness or model quality.
 - Real-provider execution implements OpenAI and Anthropic adapters only. The `openai_compatible` and `local` provider kinds may be stored, but their execution adapters are not implemented in 1.0.
 - Project verification supports MSVC x64/CMake presets, not MinGW or ARM. Qt project-template generation and a full verification-profile editor are not included.
 - The portable executable is unsigned; there is no installer.
