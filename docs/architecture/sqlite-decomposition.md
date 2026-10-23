@@ -24,6 +24,24 @@ failed-migration case relies on the existing v59/v65 refusal tests. Hosted
 Windows CI run 39985592008 later passed Debug and Release on public commit
 `2087a05`, which contains 2A and 2B.
 
+Batch 3, second repository (`SqliteModelRepository`, `sqlite/catalog/`): the class,
+`modelColumns`, `readModel` and `bindModel` moved without edits (378 lines out of the
+aggregate, checked against the previous revision). Five more contracts were added to
+`AIOrchestrator_SqliteCatalog_tests` (now 9) and passed on the old code first: flat,
+cache, one-hour and long-context prices with ordering and provider filter; duplicate
+id / apiModelId, missing, foreign-key and out-of-range write errors and an update that
+keeps the stored default flag; `setDefaultModel` keeping the previous default and a
+usable connection after each refusal; `remove` with `model.not_found` / `model.in_use`;
+invalid long-context rows failing closed on `findById` and `listAll`. After the move the
+six Debug suites passed (6/6). A one-shot mutation check on the new file, scored by the
+Catalog suite only, killed 11 of 11 mutants (rollback removed, tie-break removed,
+provider filter dropped, remove/update accepting a missing id, narrowed in-use mapping,
+update resetting the default, tier check disabled, a swapped price binding, a broken
+duplicate-id mapping, zero-row default treated as success); the output of M1-M4 was
+lost on the first pass and they were run again. The source was restored byte-for-byte.
+Not covered: execution profiles, which remain in the aggregate, and the
+negative-value branch of `readModel` (no test writes a negative price into a model row).
+
 Batch 3, first repository (`SqliteProviderRepository`, `sqlite/catalog/`): the
 public class, `providerColumns`, `readProvider` and `bindProvider` moved without
 edits (140 lines out of the aggregate, checked against the previous revision as in

@@ -17,10 +17,12 @@ these implementation headers or access native SQLite handles.
   queries, column order and selection JSON encoding/decoding. Its public class
   remains declared in `includes/ai/infrastructure/SqliteRepositories.hpp` for
   source compatibility.
-- `catalog/SqliteProviderRepository.cpp` owns the provider table queries and its
-  row mapping/binding (batch 3, first repository). Its public class stays declared
-  in `includes/ai/infrastructure/SqliteRepositories.hpp`. Models and execution
-  profiles are still in the aggregate.
+- `catalog/SqliteProviderRepository.cpp` and `catalog/SqliteModelRepository.cpp`
+  own the provider and model table queries with their row mapping/binding (batch 3).
+  The model file also owns the price columns, the long-context tier check on every
+  read, the default-model transaction and the in-use check on removal. Their public
+  classes stay declared in `includes/ai/infrastructure/SqliteRepositories.hpp`.
+  Execution profiles are still in the aggregate.
 - `SqliteDatabase.cpp` owns `SqliteDatabase` construction, `open()` and `path()`:
   filesystem preparation, native open and PRAGMAs, then one call to `ensureSchema`.
   `pathToUtf8` / `pathFromUtf8` live in the primitives.
