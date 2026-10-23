@@ -517,6 +517,49 @@ void testTaskRunLinks()
     require(unchanged.success() && unchanged.value() == Ids {"run-m", "run-z"},
         "Refused links must not change the existing ones");
 }
+
+void testWorkspaceActiveProject()
+{
+    Workspace workspace;
+    const auto activeId = [](const SqliteWorkspaceStateRepository& state) -> std::optional<ProjectId> {
+        const auto active = state.activeProjectId();
+        require(active.success(), "Could not read the active project");
+        return active.value();
+    };
+    {
+        const auto database = workspace.open();
+        addProject(database, workspace, "project-1");
+        addProject(database, workspace, "project-2");
+        SqliteWorkspaceStateRepository state(database);
+        require(!activeId(state).has_value(), "A new workspace must have no active project");
+
+        require(state.setActiveProjectId(ProjectId("project-1")).success(), "Could not select a project");
+        require(activeId(state) == std::optional<ProjectId>("project-1"), "The selected project must be active");
+        require(state.setActiveProjectId(ProjectId("project-2")).success(), "Could not switch the project");
+        require(activeId(state) == std::optional<ProjectId>("project-2"), "Switching must replace the selection");
+
+        // A refused selection keeps the previous one and leaves the connection usable.
+        const auto unknown = state.setActiveProjectId(ProjectId("project-unknown"));
+        require(!unknown.success() && unknown.error()->code == "workspace.project_not_found",
+            "An unknown project must report workspace.project_not_found");
+        require(activeId(state) == std::optional<ProjectId>("project-2"),
+            "A refused selection must keep the previous active project");
+
+        // The state is shared by every repository object on the same connection.
+        SqliteWorkspaceStateRepository other(database);
+        require(activeId(other) == std::optional<ProjectId>("project-2"), "A second repository must see the selection");
+
+        require(state.setActiveProjectId(std::nullopt).success(), "Could not clear the selection");
+        require(!activeId(state).has_value() && !activeId(other).has_value(), "Clearing must leave no active project");
+        require(state.setActiveProjectId(ProjectId("project-1")).success(), "Could not select after clearing");
+    }
+
+    const auto reopened = workspace.open();
+    SqliteWorkspaceStateRepository state(reopened);
+    require(activeId(state) == std::optional<ProjectId>("project-1"), "The selection must survive reopening");
+    require(state.setActiveProjectId(ProjectId("project-2")).success(), "The reopened state must accept a change");
+    require(activeId(state) == std::optional<ProjectId>("project-2"), "The change after reopening must apply");
+}
 } // namespace
 
 int main()
@@ -530,7 +573,8 @@ int main()
         testTaskWriteErrorsAndUpdate();
         testCorruptTaskRowsFailClosed();
         testTaskRunLinks();
-        std::cout << "SQLite Projects contracts: 8 passed\n";
+        testWorkspaceActiveProject();
+        std::cout << "SQLite Projects contracts: 9 passed\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "SQLite Projects contracts failed: " << error.what() << '\n';
