@@ -756,6 +756,21 @@ if(AI_ORCHESTRATOR_BUILD_PERSISTENCE_TESTS)
     )
     ai_orchestrator_configure_target(AIOrchestrator_SqliteConversations_tests)
     add_test(NAME AIOrchestrator_SqliteConversations_tests COMMAND AIOrchestrator_SqliteConversations_tests)
+
+    # The planning repositories reuse the shared repository contracts that also run inside
+    # AIOrchestrator_Persistence_tests; this scoped executable runs only those suites.
+    add_executable(AIOrchestrator_SqlitePlanning_tests
+        tests/Unit/SqlitePlanningTestMain.cpp
+        tests/Unit/RunDraftRepositoryTests.cpp
+        tests/Unit/OutcomeBriefRepositoryTests.cpp
+        tests/Unit/FollowUpPlanRequestRepositoryTests.cpp
+    )
+    target_compile_features(AIOrchestrator_SqlitePlanning_tests PRIVATE cxx_std_20)
+    target_link_libraries(AIOrchestrator_SqlitePlanning_tests
+        PRIVATE AIOrchestrator::Persistence ${AIOrchestrator_Sqlite3_Target}
+    )
+    ai_orchestrator_configure_target(AIOrchestrator_SqlitePlanning_tests)
+    add_test(NAME AIOrchestrator_SqlitePlanning_tests COMMAND AIOrchestrator_SqlitePlanning_tests)
 endif()
 
 # Backend-owned composition root: owns persistence, repositories, the Mock
