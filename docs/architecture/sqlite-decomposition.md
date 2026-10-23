@@ -3,9 +3,10 @@
 Status: phases 1, 2A and 2B implemented; of the feature batches, batch 3
 (`sqlite/catalog/`: providers, models and execution profiles), batch 4
 (`sqlite/projects/` and `sqlite/settings/`: projects, tasks, workspace state, project
-readiness, application settings and the verification scratch setting) and batch 5
-(`sqlite/conversations/`: chat, chat memory, project memory and its compaction) are
-implemented and batches 6-8 are designs, not implemented.
+readiness, application settings and the verification scratch setting) batch 5
+(`sqlite/conversations/`: chat, chat memory, project memory and its compaction) and batch 6
+(`sqlite/planning/`: run drafts, Outcome Brief and follow-up plan requests) are implemented and
+batches 7-8 are designs, not implemented.
 Reviewed on 2026-10-23. This document describes
 implementation boundaries and acceptance criteria, not the completion of the
 Backend architecture refactor.
@@ -28,6 +29,24 @@ new tests are not mutation-tested, there was no local Release build, and the
 failed-migration case relies on the existing v59/v65 refusal tests. Hosted
 Windows CI run 39985592008 later passed Debug and Release on public commit
 `2087a05`, which contains 2A and 2B.
+
+Batch 6 (`SqliteRunDraftRepository`, `SqliteOutcomeBriefRepository` and
+`SqliteFollowUpPlanRepository`, `sqlite/planning/`): these three already had shared repository
+contracts that run against SQLite inside `AIOrchestrator_Persistence_tests`, so they were only
+moved, each in a commit of its own without edits (run drafts 745 lines, Outcome Brief 459,
+follow-up requests 575, checked against the previous revision as in 2A). A scoped
+`AIOrchestrator_SqlitePlanning_tests` (about 35 s) runs exactly those suites. Three small private
+helpers were extracted first, each byte-identical: the JSON string list and roster assignment row
+(`roster/`), the stored Run status (`execution/`), and, in the run draft commit, a header for the
+three group storage functions that the follow-up confirm still calls (only the six namespace lines
+around them changed, anonymous namespace to `sqlite_detail`). One round of contracts was added
+for the run draft repository where a mutation run on the moved file showed gaps next to the
+shared contract (typed errors and rollback of a single insert, roster read order, damaged rows).
+The ten Debug suites passed after each move (10/10). A mutation run on the follow-up file left two
+survivors that are not pursued: the compare-and-set guard `follow_up.state_changed` (its update
+runs inside the transaction that loaded the row, so the branch is practically unreachable) and
+the `run_draft_group.duplicate_source_request` mapping (reachable only through the follow-up
+confirm). Not claimed: a local Release build, concurrency contracts for these repositories.
 
 Batch 5 (`SqliteChatRepository`, `SqliteChatMemoryRepository`, `SqliteProjectMemoryRepository`
 and `SqliteProjectMemoryCompactionRepository`, `sqlite/conversations/`): a new

@@ -36,6 +36,13 @@ these implementation headers or access native SQLite handles.
   `SqliteChatMemoryRepository`, `SqliteProjectMemoryRepository` (including the bounded
   recent page read under one lock) and `SqliteProjectMemoryCompactionRepository` (the atomic
   commit that removes the source segments, inserts the result and records the provenance).
+- `planning/` (batch 6) holds `SqliteRunDraftRepository`, `SqliteOutcomeBriefRepository` and
+  `SqliteFollowUpPlanRepository`. The run draft group storage that the follow-up confirm also
+  calls is declared in the private `planning/SqliteRunDraftGroupStorage.hpp`.
+- `roster/SqliteRosterMapping.hpp/.cpp` (the JSON string list and the roster assignment row shared
+  by Runs and run drafts) and `execution/SqliteRunStatusMapping.hpp/.cpp` (the stored Run status,
+  shared by the Run reader, the work ledger and the Outcome Brief reader) are small private
+  helpers; batch 7 will add the Run code to `execution/`.
 - `settings/` (batch 4) holds `SqliteApplicationSettingsRepository` (the optimistic-revision
   update and the enum mapping) and `SqliteVerificationScratchSettingRepository` (the
   singleton upsert and the path encoding). Permission and safety checks of the scratch
