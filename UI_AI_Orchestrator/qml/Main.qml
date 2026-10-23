@@ -20,9 +20,14 @@ ApplicationWindow {
     readonly property real rawScaleFactor: Math.min(width / designWidth,
                                                     height / designHeight)
                                               * interfaceScaleMultiplier
-    readonly property real scaleFactor: Math.max(minimumScaleFactor,
-                                                 Math.min(maximumScaleFactor,
-                                                          rawScaleFactor))
+    readonly property real targetScaleFactor: Math.max(minimumScaleFactor,
+                                                       Math.min(maximumScaleFactor,
+                                                                rawScaleFactor))
+    // Applied scale: follows targetScaleFactor in steps (scaleThrottle), so a
+    // live window resize does not re-evaluate every dp() binding on each frame.
+    // Deliberately not bound to targetScaleFactor; the initial value is
+    // assigned once in Component.onCompleted.
+    property real scaleFactor: 1.0
 
     readonly property string themeMode: backend.settings.themeMode
     property string currentSection: "overview"
@@ -78,6 +83,17 @@ ApplicationWindow {
         toolTipText: appTheme.tooltipText
         link: appTheme.link
         linkVisited: appTheme.linkVisited
+    }
+
+    Component.onCompleted: scaleFactor = targetScaleFactor
+
+    Timer {
+        id: scaleThrottle
+
+        interval: 100
+        repeat: true
+        running: root.scaleFactor !== root.targetScaleFactor
+        onTriggered: root.scaleFactor = root.targetScaleFactor
     }
 
     AppTheme {
