@@ -704,6 +704,245 @@ void testProjectMemorySegmentsRoundTripOrderingRecentPageAndErrors()
     SqliteProjectMemoryRepository memory(reopened);
     require(projectMemoryIds(memory, "project-1") == Ids {"segment-new"}, "Segments must survive reopening the database");
 }
+
+ProjectMemoryCompactionRecord makeCompaction(std::string id, std::string projectId,
+    ProjectMemoryCompactionStatus status, std::int64_t createdMs, std::vector<std::string> sources)
+{
+    ProjectMemoryCompactionRecord value;
+    value.id = std::move(id);
+    value.projectId = std::move(projectId);
+    value.providerId = "provider-1";
+    value.modelId = "model-1";
+    value.sourceSegmentIds = std::move(sources);
+    value.sourceContentHash = std::string(64, 'c');
+    value.inputTokens = 5'000'000'000ULL;
+    value.outputTokens = 4'000'000'000ULL;
+    value.costMicros = 3'000'000'000ULL;
+    value.status = status;
+    if (status != ProjectMemoryCompactionStatus::Completed) {
+        value.errorCode = "compaction.provider_failed";
+        value.errorMessage = "Provider said \"no\"\nsecond line \xE6\xB8\xAC\xE8\xA9\xA6";
+    }
+    value.createdAt = at(createdMs);
+    return value;
+}
+
+void requireSameCompaction(const ProjectMemoryCompactionRecord& actual, const ProjectMemoryCompactionRecord& expected,
+    const char* message)
+{
+    require(actual.id == expected.id && actual.projectId == expected.projectId
+            && actual.providerId == expected.providerId && actual.modelId == expected.modelId
+            && actual.sourceSegmentIds == expected.sourceSegmentIds
+            && actual.sourceContentHash == expected.sourceContentHash
+            && actual.resultSegmentId == expected.resultSegmentId && actual.inputTokens == expected.inputTokens
+            && actual.outputTokens == expected.outputTokens && actual.costMicros == expected.costMicros
+            && actual.status == expected.status && actual.errorCode == expected.errorCode
+            && actual.errorMessage == expected.errorMessage && actual.createdAt == expected.createdAt,
+        message);
+}
+
+std::vector<ProjectMemoryCompactionRecord> compactionRecords(
+    const SqliteProjectMemoryCompactionRepository& compaction, const std::string& projectId)
+{
+    const auto listed = compaction.listCompactionRecords(projectId);
+    require(listed.success(), "Could not list compaction records");
+    return listed.value();
+}
+
+void testCompactionRecordsRoundTripOrderingAndErrors()
+{
+    Workspace workspace;
+    const ProjectMemoryCompactionRecord failed = makeCompaction(
+        "record-failed", "project-1", ProjectMemoryCompactionStatus::Failed, 2000, {"segment-z", "segment-a", "segment-m"});
+    const ProjectMemoryCompactionRecord cancelledB = makeCompaction(
+        "record-b", "project-1", ProjectMemoryCompactionStatus::Cancelled, 3000, {});
+    const ProjectMemoryCompactionRecord cancelledA = makeCompaction(
+        "record-a", "project-1", ProjectMemoryCompactionStatus::Cancelled, 3000, {"segment-1"});
+    const ProjectMemoryCompactionRecord early = makeCompaction(
+        "record-early", "project-1", ProjectMemoryCompactionStatus::Failed, 1000, {"segment-2"});
+    const ProjectMemoryCompactionRecord other = makeCompaction(
+        "record-other", "project-2", ProjectMemoryCompactionStatus::Failed, 1500, {"segment-3"});
+    const std::initializer_list<const ProjectMemoryCompactionRecord*> inInsertOrder {
+        &cancelledB, &failed, &other, &cancelledA, &early};
+    {
+        const auto database = workspace.open();
+        addCatalogAndProjects(database, workspace);
+        SqliteProjectMemoryCompactionRepository compaction(database);
+        for (const ProjectMemoryCompactionRecord* value : inInsertOrder) {
+            require(compaction.insertCompactionRecord(*value).success(), "Could not insert a compaction record");
+        }
+        const auto listed = compactionRecords(compaction, "project-1");
+        require(listed.size() == 4 && listed[0].id == "record-early" && listed[1].id == "record-failed"
+                    && listed[2].id == "record-a" && listed[3].id == "record-b",
+            "Records must be listed by creation time and then id");
+        requireSameCompaction(listed[1], failed, "A record must round-trip every field, with its sources in order");
+        requireSameCompaction(listed[2], cancelledA, "A cancelled record must round-trip");
+        requireSameCompaction(listed[3], cancelledB, "A record without sources must round-trip");
+        requireSameCompaction(compactionRecords(compaction, "project-2").at(0), other, "Records must be listed per project");
+        require(compactionRecords(compaction, "project-unknown").empty(), "An unknown project must list no records");
+
+        // Only unsuccessful attempts are inserted directly; a completed one needs the atomic commit.
+        ProjectMemoryCompactionRecord completed = failed;
+        completed.id = "record-completed";
+        completed.status = ProjectMemoryCompactionStatus::Completed;
+        completed.resultSegmentId = "segment-result";
+        const auto refusedCompleted = compaction.insertCompactionRecord(completed);
+        require(!refusedCompleted.success() && refusedCompleted.error()->code == "project_memory.invalid_compaction_commit",
+            "A completed record must not be inserted directly");
+        const auto repeated = compaction.insertCompactionRecord(
+            makeCompaction("record-a", "project-2", ProjectMemoryCompactionStatus::Failed, 9000, {}));
+        require(!repeated.success() && repeated.error()->code == "project_memory.duplicate_id",
+            "A repeated record id must report project_memory.duplicate_id");
+        const auto orphan = compaction.insertCompactionRecord(
+            makeCompaction("record-orphan", "project-unknown", ProjectMemoryCompactionStatus::Failed, 9000, {}));
+        require(!orphan.success() && orphan.error()->code == "project_memory.project_not_found",
+            "A record of an unknown project must report project_memory.project_not_found");
+        require(compactionRecords(compaction, "project-1").size() == 4 && compactionRecords(compaction, "project-2").size() == 1,
+            "Refused inserts must not add rows");
+        require(compaction.insertCompactionRecord(
+                    makeCompaction("record-new", "project-1", ProjectMemoryCompactionStatus::Failed, 5000, {})).success(),
+            "The connection must be usable after refused writes");
+    }
+
+    const auto reopened = workspace.open();
+    SqliteProjectMemoryCompactionRepository compaction(reopened);
+    const auto listed = compactionRecords(compaction, "project-1");
+    require(listed.size() == 5 && listed.back().id == "record-new", "Records must survive reopening the database");
+    requireSameCompaction(listed[1], failed, "A record must survive reopening unchanged");
+}
+
+void testSuccessfulCompactionCommitIsAtomic()
+{
+    Workspace workspace;
+    const auto database = workspace.open();
+    addCatalogAndProjects(database, workspace);
+    SqliteProjectMemoryRepository memory(database);
+    SqliteProjectMemoryCompactionRepository compaction(database);
+    for (const char* id : {"segment-1", "segment-2", "segment-3", "segment-keep"}) {
+        require(memory.insertMemorySegment(makeProjectMemory(id, "project-1", 1000)).success(),
+            "Could not insert a memory segment");
+    }
+    require(memory.insertMemorySegment(makeProjectMemory("segment-other", "project-2", 1000)).success(),
+        "Could not insert another project's memory segment");
+    using Ids = std::vector<std::string>;
+
+    const auto completedRecord = [](const char* recordId, std::vector<std::string> sources, const char* resultId) {
+        ProjectMemoryCompactionRecord record = makeCompaction(
+            recordId, "project-1", ProjectMemoryCompactionStatus::Completed, 5000, std::move(sources));
+        record.resultSegmentId = resultId;
+        return record;
+    };
+    const auto result = [](const char* id) { return makeProjectMemory(id, "project-1", 5000); };
+    const auto requireUnchanged = [&](const char* message) {
+        require(projectMemoryIds(memory, "project-1") == Ids {"segment-1", "segment-2", "segment-3", "segment-keep"},
+            message);
+        require(projectMemoryIds(memory, "project-2") == Ids {"segment-other"}, message);
+        require(compactionRecords(compaction, "project-1").empty(), message);
+    };
+    const auto requireRefused = [&](const ProjectMemoryCompactionRecord& record, ProjectMemorySegment segment,
+                                    const char* code, const char* message) {
+        const auto refused = compaction.commitSuccessfulCompaction(record, std::move(segment));
+        require(!refused.success() && refused.error()->code == code, message);
+        requireUnchanged("A refused compaction commit changed memory or provenance");
+    };
+
+    // Field consistency is checked before anything is touched.
+    constexpr const char* invalidCommit = "project_memory.invalid_compaction_commit";
+    ProjectMemoryCompactionRecord notCompleted = completedRecord("record-1", {"segment-1"}, "segment-result");
+    notCompleted.status = ProjectMemoryCompactionStatus::Failed;
+    requireRefused(notCompleted, result("segment-result"), invalidCommit, "A record that is not completed must be refused");
+    ProjectMemoryCompactionRecord noResultId = completedRecord("record-1", {"segment-1"}, "segment-result");
+    noResultId.resultSegmentId.reset();
+    requireRefused(noResultId, result("segment-result"), invalidCommit, "A record without a result id must be refused");
+    requireRefused(completedRecord("record-1", {"segment-1"}, "segment-result"), result("segment-different"), invalidCommit,
+        "A result segment with another id must be refused");
+    ProjectMemorySegment otherProject = result("segment-result");
+    otherProject.projectId = "project-2";
+    requireRefused(completedRecord("record-1", {"segment-1"}, "segment-result"), otherProject, invalidCommit,
+        "A result segment of another project must be refused");
+    requireRefused(completedRecord("record-1", {}, "segment-result"), result("segment-result"), invalidCommit,
+        "A compaction without sources must be refused");
+
+    // A stale or foreign source fails the whole commit and restores what was already deleted.
+    constexpr const char* conflict = "project_memory.compaction_conflict";
+    requireRefused(completedRecord("record-1", {"segment-1", "segment-ghost"}, "segment-result"), result("segment-result"),
+        conflict, "A missing source must report project_memory.compaction_conflict");
+    requireRefused(completedRecord("record-1", {"segment-1", "segment-other"}, "segment-result"), result("segment-result"),
+        conflict, "A source of another project must report project_memory.compaction_conflict");
+    requireRefused(completedRecord("record-1", {"segment-2", "segment-2"}, "segment-result"), result("segment-result"),
+        conflict, "A repeated source must report project_memory.compaction_conflict");
+    // Failures after the sources were deleted and the result inserted roll everything back.
+    requireRefused(completedRecord("record-1", {"segment-1", "segment-2"}, "segment-keep"), result("segment-keep"),
+        "project_memory.duplicate_id", "A result id that already exists must report project_memory.duplicate_id");
+    {
+        const auto failedRecord = compaction.insertCompactionRecord(
+            makeCompaction("record-taken", "project-1", ProjectMemoryCompactionStatus::Failed, 4000, {}));
+        require(failedRecord.success(), "Could not insert a failed record");
+    }
+    const auto takenRecord = compaction.commitSuccessfulCompaction(
+        completedRecord("record-taken", {"segment-1", "segment-2"}, "segment-result"), result("segment-result"));
+    require(!takenRecord.success() && takenRecord.error()->code == "project_memory.duplicate_id",
+        "A record id that already exists must report project_memory.duplicate_id");
+    require(projectMemoryIds(memory, "project-1") == Ids {"segment-1", "segment-2", "segment-3", "segment-keep"},
+        "A failed record insert must restore the sources and drop the result segment");
+    require(compactionRecords(compaction, "project-1").size() == 1, "A failed commit must not add a record");
+
+    // The accepted commit replaces exactly the sources with the result and records the provenance together.
+    const ProjectMemoryCompactionRecord accepted = completedRecord(
+        "record-ok", {"segment-3", "segment-1", "segment-2"}, "segment-result");
+    require(compaction.commitSuccessfulCompaction(accepted, result("segment-result")).success(),
+        "Could not commit a successful compaction");
+    require(projectMemoryIds(memory, "project-1") == Ids {"segment-keep", "segment-result"},
+        "A commit must remove exactly the sources and add the result");
+    require(projectMemoryIds(memory, "project-2") == Ids {"segment-other"}, "A commit must not touch another project");
+    const auto records = compactionRecords(compaction, "project-1");
+    require(records.size() == 2 && records[0].id == "record-taken" && records[1].id == "record-ok",
+        "The commit must add its record");
+    requireSameCompaction(records[1], accepted, "The provenance must keep the sources in their original order");
+    const auto found = memory.findMemorySegment("segment-result");
+    require(found.success() && found.value().has_value(), "The result segment must be stored");
+    requireSameProjectMemory(*found.value(), result("segment-result"), "The result segment must round-trip");
+}
+
+void testCorruptCompactionRowsAreHandledAsPinned()
+{
+    Workspace workspace;
+    {
+        const auto database = workspace.open();
+        addCatalogAndProjects(database, workspace);
+        SqliteProjectMemoryCompactionRepository compaction(database);
+        require(compaction.insertCompactionRecord(
+                    makeCompaction("record-good", "project-2", ProjectMemoryCompactionStatus::Failed, 1000, {"segment-1"})).success()
+                && compaction.insertCompactionRecord(
+                    makeCompaction("record-bad-status", "project-1", ProjectMemoryCompactionStatus::Failed, 1000, {})).success()
+                && compaction.insertCompactionRecord(
+                    makeCompaction("record-bad-sources", "project-1", ProjectMemoryCompactionStatus::Failed, 2000, {"a", "b"})).success(),
+            "Could not insert compaction records");
+    }
+    workspace.sql("PRAGMA ignore_check_constraints=1; "
+                  "UPDATE project_memory_compaction_records SET status='mystery' WHERE id='record-bad-status';");
+    // Pinned as the current behaviour, not as a design goal: an unreadable source list reads as empty and
+    // non-string entries are skipped.
+    workspace.sql("UPDATE project_memory_compaction_records SET source_segment_ids='not json' "
+                  "WHERE id='record-bad-sources';");
+
+    const auto database = workspace.open();
+    SqliteProjectMemoryCompactionRepository compaction(database);
+    require(compactionRecords(compaction, "project-2").size() == 1, "A healthy project must stay readable");
+    const auto bad = compaction.listCompactionRecords("project-1");
+    require(!bad.success() && bad.error()->code == "persistence.read_failed",
+        "An unknown stored status must fail the listing closed");
+
+    workspace.sql("UPDATE project_memory_compaction_records SET status='failed' WHERE id='record-bad-status';");
+    const auto garbled = compactionRecords(compaction, "project-1");
+    require(garbled.size() == 2 && garbled[1].id == "record-bad-sources" && garbled[1].sourceSegmentIds.empty(),
+        "An unreadable source list currently reads as empty");
+    workspace.sql("UPDATE project_memory_compaction_records SET source_segment_ids='[\"a\",1,\"b\",null]' "
+                  "WHERE id='record-bad-sources';");
+    const auto mixed = compactionRecords(compaction, "project-1");
+    require(mixed.size() == 2 && mixed[1].sourceSegmentIds == std::vector<std::string> {"a", "b"},
+        "Non-string source entries are currently skipped");
+}
 } // namespace
 
 int main()
@@ -714,7 +953,10 @@ int main()
         testChatPreparedTurnIsAtomic();
         testChatMemorySegmentsRoundTripOrderingRemovalAndErrors();
         testProjectMemorySegmentsRoundTripOrderingRecentPageAndErrors();
-        std::cout << "SQLite Conversations contracts: 5 passed\n";
+        testCompactionRecordsRoundTripOrderingAndErrors();
+        testSuccessfulCompactionCommitIsAtomic();
+        testCorruptCompactionRowsAreHandledAsPinned();
+        std::cout << "SQLite Conversations contracts: 8 passed\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "SQLite Conversations contracts failed: " << error.what() << '\n';
