@@ -51,6 +51,10 @@ These are provider-free tests using temporary databases, not the user's profile.
 
 ## Next decomposition steps
 
+The [review and implementation design](../../../../../docs/architecture/sqlite-decomposition.md)
+defines the next agent's scope, private interfaces, migration invariants and
+acceptance checks. Phase 1 is complete; the steps below are not implemented yet.
+
 1. Separate database opening and migration ownership without changing historical
    SQL or upgrade behaviour.
 2. Extract additional feature-owned repositories and their row/JSON mappings in

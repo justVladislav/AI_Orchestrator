@@ -25,6 +25,10 @@ interfaces. See the [SQLite implementation boundaries](sourceFiles/infrastructur
 for ownership of the shared connection, low-level SQL primitives, feature
 repositories and the checks required for structural moves.
 
+The [decomposition review and next-step design](../../docs/architecture/sqlite-decomposition.md)
+records the completed first extraction, its verification limits, the database
+lifecycle/schema split and the subsequent feature boundaries.
+
 ## Build and test
 
 Prefer the unified repository preset from the repository root:
