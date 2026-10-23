@@ -658,6 +658,7 @@ add_library(AIOrchestrator_Persistence STATIC
     sourceFiles/infrastructure/sqlite/verification/SqliteManifestVerificationBaselineNormalizationRepository.cpp
     sourceFiles/infrastructure/sqlite/verification/SqliteManifestVerificationManualHandoffRepository.cpp
     sourceFiles/infrastructure/sqlite/verification/SqliteManifestVerificationContinuationRepository.cpp
+    sourceFiles/infrastructure/sqlite/verification/SqliteVerificationEnvironmentRepository.cpp
     sourceFiles/infrastructure/sqlite/comparison/SqliteComparisonSessionRepository.cpp
     sourceFiles/infrastructure/sqlite/planning/SqliteFollowUpPlanRepository.cpp
     sourceFiles/infrastructure/sqlite/planning/SqliteOutcomeBriefRepository.cpp
