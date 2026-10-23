@@ -1,8 +1,26 @@
 # SQLite decomposition: review and implementation design
 
-Status: phase 1 implemented; phase 2 below is a design, not implemented.
-Reviewed on 2026-10-23. This document describes implementation boundaries and
-acceptance criteria, not the completion of the Backend architecture refactor.
+Status: phase 1 and phase 2A implemented; phase 2B and the feature batches below
+are designs, not implemented. Reviewed on 2026-10-23. This document describes
+implementation boundaries and acceptance criteria, not the completion of the
+Backend architecture refactor.
+
+Phase 2A (database lifecycle) result, local primary checkout only, not pushed: the
+constructor, destructor, `open()` (with the unchanged migration body), `path()`,
+`supportedSchemaVersion` and both follow-up SQL helpers now live in
+`sqlite/SqliteDatabase.cpp`; `pathToUtf8` / `pathFromUtf8` moved unchanged into
+`sqlite/SqlitePrimitives`. The aggregate shrank from 15,327 to 11,449 lines. The
+move was checked mechanically against `HEAD`: the new aggregate is an ordered
+subsequence of the old one, all 3,779 non-blank removed lines are present in the
+new files with the same multiplicity, and the moved blocks are byte-identical
+(CRLF-normalised). Three missing lifecycle contracts were added to
+`SqliteRepositoryTests.cpp` (newer schema leaves the future marker, sentinel rows
+and tables untouched across repeated refusals; a parent that is a file gives
+`persistence.directory_failed`; a Cyrillic/CJK database location round-trips and
+reopens) and were run against the phase-1 code first, then after the move. Debug
+build of the five affected targets and their ctest: 5/5 passed. Not claimed: the
+new tests are not mutation-tested, no Release build or hosted CI ran for this
+step, and the failed-migration case relies on the existing v59/v65 refusal tests.
 
 Paths below are relative to `First_AI_Agents/First_AI_Agents/` unless stated
 otherwise. The [implementation guide](../../First_AI_Agents/First_AI_Agents/sourceFiles/infrastructure/sqlite/README.md)

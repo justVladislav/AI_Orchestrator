@@ -135,4 +135,19 @@ std::optional<std::string> optionalText(sqlite3_stmt* statement, int column)
     return columnText(statement, column);
 }
 
+// std::filesystem::path has no portable narrow encoding across platforms
+// (native() is UTF-16 on Windows). Persist an explicit UTF-8 encoding so the
+// database file itself is portable and non-ASCII project paths round-trip.
+std::string pathToUtf8(const std::filesystem::path& path)
+{
+    const std::u8string value = path.generic_u8string();
+    return {reinterpret_cast<const char*>(value.data()), value.size()};
+}
+
+std::filesystem::path pathFromUtf8(const std::string& value)
+{
+    const auto* begin = reinterpret_cast<const char8_t*>(value.data());
+    return std::filesystem::path(std::u8string(begin, begin + value.size()));
+}
+
 } // namespace ai::infrastructure::sqlite_detail

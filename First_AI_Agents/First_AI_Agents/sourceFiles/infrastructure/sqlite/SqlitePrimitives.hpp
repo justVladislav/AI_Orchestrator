@@ -8,6 +8,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -52,5 +53,7 @@ common::Result<void> bindOptionalTime(sqlite3* handle, sqlite3_stmt* statement, 
 std::optional<std::chrono::system_clock::time_point> optionalTime(sqlite3_stmt* statement, int column);
 std::string columnText(sqlite3_stmt* statement, int column);
 std::optional<std::string> optionalText(sqlite3_stmt* statement, int column);
+std::string pathToUtf8(const std::filesystem::path& path);
+std::filesystem::path pathFromUtf8(const std::string& value);
 
 } // namespace ai::infrastructure::sqlite_detail

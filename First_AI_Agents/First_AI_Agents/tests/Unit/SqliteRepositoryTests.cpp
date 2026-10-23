@@ -22,6 +22,7 @@
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <mutex>
 #include <optional>
 #include <stdexcept>
@@ -167,6 +168,107 @@ void testMigrationRejectsNewerSchema()
     require(!opened.success(), "A newer SQLite schema must be rejected");
     require(opened.error()->code == "migration.unsupported_version",
         "Unexpected error for a newer SQLite schema");
+}
+
+void testNewerSchemaRefusalPreservesFutureMarkerAndRows()
+{
+    TemporaryPersistenceWorkspace workspace;
+    fs::create_directories(workspace.databasePath.parent_path());
+    const std::u8string path = workspace.databasePath.generic_u8string();
+    const std::string utf8Path(reinterpret_cast<const char*>(path.data()), path.size());
+
+    {
+        sqlite3* handle = nullptr;
+        require(sqlite3_open_v2(utf8Path.c_str(), &handle, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr)
+                == SQLITE_OK,
+            "Could not create future-version DB through native sqlite3");
+        require(sqlite3_exec(handle,
+                    "CREATE TABLE future_sentinel (id INTEGER PRIMARY KEY, note TEXT NOT NULL);"
+                    "INSERT INTO future_sentinel(id, note) VALUES (1, 'kept');"
+                    "PRAGMA user_version = 999;",
+                    nullptr, nullptr, nullptr)
+                == SQLITE_OK,
+            "Could not prepare the future-version fixture");
+        sqlite3_close_v2(handle);
+    }
+
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        const auto opened = SqliteDatabase::open(workspace.databasePath);
+        require(!opened.success() && opened.error()->code == "migration.unsupported_version",
+            "A newer schema must be refused on every attempt");
+    }
+
+    sqlite3* handle = nullptr;
+    require(sqlite3_open_v2(utf8Path.c_str(), &handle, SQLITE_OPEN_READONLY, nullptr) == SQLITE_OK,
+        "Could not inspect the refused database");
+    const auto scalar = [&](const char* sql) {
+        sqlite3_stmt* statement = nullptr;
+        require(sqlite3_prepare_v2(handle, sql, -1, &statement, nullptr) == SQLITE_OK, "Inspection query failed");
+        require(sqlite3_step(statement) == SQLITE_ROW, "Inspection query returned no row");
+        const int value = sqlite3_column_int(statement, 0);
+        sqlite3_finalize(statement);
+        return value;
+    };
+    require(scalar("PRAGMA user_version;") == 999, "The refused database lost its future version marker");
+    require(scalar("SELECT COUNT(*) FROM future_sentinel WHERE note = 'kept';") == 1,
+        "The refused database lost its sentinel row");
+    require(scalar("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name <> 'future_sentinel';") == 0,
+        "Refusing a newer schema must not create any application table");
+    sqlite3_close_v2(handle);
+}
+
+void testOpenRefusesDatabaseUnderNonDirectoryParent()
+{
+    TemporaryPersistenceWorkspace workspace;
+    const fs::path blocker = workspace.root / "not-a-directory";
+    {
+        std::ofstream file(blocker, std::ios::binary);
+        file << "plain file";
+        require(file.good(), "Could not create the blocking file");
+    }
+
+    const auto opened = SqliteDatabase::open(blocker / "orchestrator.sqlite3");
+    require(!opened.success() && opened.error()->code == "persistence.directory_failed",
+        "A parent that is a file must be reported as persistence.directory_failed");
+    require(fs::is_regular_file(blocker), "The blocking file must be left untouched");
+}
+
+void testUnicodeDatabaseLocationRoundTripsAndReopens()
+{
+    TemporaryPersistenceWorkspace workspace;
+    // Escapes keep the source ASCII-only; the directory names are Cyrillic and CJK.
+    const fs::path unicodeRoot = workspace.root
+        / fs::path(std::u8string(u8"Данные-数据"));
+    const fs::path unicodeProjectRoot = unicodeRoot / fs::path(std::u8string(u8"проект"));
+    const fs::path databasePath = unicodeRoot / "state" / "orchestrator.sqlite3";
+    fs::create_directories(unicodeProjectRoot);
+    const std::string unicodeName = [] {
+        const std::u8string value = u8"Проект 测试";
+        return std::string(reinterpret_cast<const char*>(value.data()), value.size());
+    }();
+    ProjectId projectId;
+
+    {
+        const auto opened = SqliteDatabase::open(databasePath);
+        require(opened.success(), "Could not open a database in a Cyrillic/CJK directory");
+        require(opened.value()->path() == databasePath, "The database must report the path it was opened with");
+        SqliteProjectRepository projects(opened.value());
+        ProjectService projectService(projects);
+        const auto created = projectService.createProject({unicodeName, "Unicode location", unicodeProjectRoot});
+        require(created.success(), "Could not persist a project under a Unicode location");
+        projectId = created.value().id;
+    }
+
+    require(fs::is_regular_file(databasePath), "The database file must exist in the Unicode directory");
+
+    const auto reopened = SqliteDatabase::open(databasePath);
+    require(reopened.success(), "Could not reopen a database in a Cyrillic/CJK directory");
+    SqliteProjectRepository projects(reopened.value());
+    const auto project = projects.findById(projectId);
+    require(project.success() && project.value().has_value(), "Project did not survive reopen in a Unicode location");
+    require(project.value()->name == unicodeName, "Unicode project name did not round-trip");
+    require(project.value()->rootPath == fs::weakly_canonical(unicodeProjectRoot),
+        "Unicode project root did not round-trip");
 }
 
 void testRepositoriesPersistAndReopen()
@@ -3592,6 +3694,9 @@ PRAGMA user_version = 64;
 int runSqliteRepositoryTests()
 {
     testMigrationRejectsNewerSchema();
+    testNewerSchemaRefusalPreservesFutureMarkerAndRows();
+    testOpenRefusesDatabaseUnderNonDirectoryParent();
+    testUnicodeDatabaseLocationRoundTripsAndReopens();
     testSharedRunRepositoryContracts();
     testRepositoriesPersistAndReopen();
     testLongContextPersistsReopensAndReachesWorkflowRunner();

@@ -17,9 +17,13 @@ these implementation headers or access native SQLite handles.
   queries, column order and selection JSON encoding/decoding. Its public class
   remains declared in `includes/ai/infrastructure/SqliteRepositories.hpp` for
   source compatibility.
-- The remaining repositories, database opening and historical migrations remain
-  in `../SqliteRepositories.cpp` during this incremental decomposition. That is
-  transitional code, not the destination for new unrelated features.
+- `SqliteDatabase.cpp` owns `SqliteDatabase` construction, `open()` and `path()`:
+  filesystem preparation, native open, PRAGMAs and (for now) the whole historical
+  migration body, plus `supportedSchemaVersion` and the follow-up SQL helpers.
+  `pathToUtf8` / `pathFromUtf8` live in the primitives.
+- The remaining repositories remain in `../SqliteRepositories.cpp` during this
+  incremental decomposition. That is transitional code, not the destination for
+  new unrelated features.
 
 The CMake target lists these translation units explicitly. The internal directory
 is not an exported include path. Do not turn the primitives header into another
@@ -53,10 +57,11 @@ These are provider-free tests using temporary databases, not the user's profile.
 
 The [review and implementation design](../../../../../docs/architecture/sqlite-decomposition.md)
 defines the next agent's scope, private interfaces, migration invariants and
-acceptance checks. Phase 1 is complete; the steps below are not implemented yet.
+acceptance checks. Phases 1 and 2A are complete; the steps below are not
+implemented yet.
 
-1. Separate database opening and migration ownership without changing historical
-   SQL or upgrade behaviour.
+1. Isolate the migration body behind a private `ensureSchema(sqlite3*)` (phase 2B)
+   without changing historical SQL or upgrade behaviour.
 2. Extract additional feature-owned repositories and their row/JSON mappings in
    small independently verified changes, retaining public compatibility.
 3. Gradually replace the aggregate public declaration header with feature entry
