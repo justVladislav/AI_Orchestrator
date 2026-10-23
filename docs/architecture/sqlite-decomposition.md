@@ -5,7 +5,7 @@ not implemented. Reviewed on 2026-10-23. This document describes
 implementation boundaries and acceptance criteria, not the completion of the
 Backend architecture refactor.
 
-Phase 2A (database lifecycle) result, local primary checkout only, not pushed: the
+Phase 2A (database lifecycle) result: the
 constructor, destructor, `open()` (with the unchanged migration body), `path()`,
 `supportedSchemaVersion` and both follow-up SQL helpers now live in
 `sqlite/SqliteDatabase.cpp`; `pathToUtf8` / `pathFromUtf8` moved unchanged into
@@ -19,10 +19,22 @@ and tables untouched across repeated refusals; a parent that is a file gives
 `persistence.directory_failed`; a Cyrillic/CJK database location round-trips and
 reopens) and were run against the phase-1 code first, then after the move. Debug
 build of the five affected targets and their ctest: 5/5 passed. Not claimed: the
-new tests are not mutation-tested, no Release build or hosted CI ran for this
-step, and the failed-migration case relies on the existing v59/v65 refusal tests.
+new tests are not mutation-tested, there was no local Release build, and the
+failed-migration case relies on the existing v59/v65 refusal tests. Hosted
+Windows CI run 39985592008 later passed Debug and Release on public commit
+`2087a05`, which contains 2A and 2B.
 
-Phase 2B result (separate commit, local primary checkout only, not pushed):
+Batch 3, first repository (`SqliteProviderRepository`, `sqlite/catalog/`): the
+public class, `providerColumns`, `readProvider` and `bindProvider` moved without
+edits (140 lines out of the aggregate, checked against the previous revision as in
+2A). The new `AIOrchestrator_SqliteCatalog_tests` pins four provider contracts
+(round trip, ordering and reopen; duplicate/update/missing errors; schema CHECK
+failures that leave rows and the connection intact; concurrent writers). They
+passed on the old code first and again after the move; with the five existing
+suites: 6/6 in Debug. Not covered by those contracts: models and execution
+profiles, which remain in the aggregate.
+
+Phase 2B result (separate commit):
 `ensureSchema(sqlite3*)` in `sqlite/SqliteSchema.cpp` now holds the version check,
 the newer-schema refusal and every historical step, together with
 `supportedSchemaVersion` and the follow-up SQL helpers; `SqliteDatabase::open()`
@@ -35,7 +47,7 @@ The existing v65 refusal test was extended: after the blocking value is repaired
 the same database upgrades, the seeded model survives and the version reaches 70.
 Debug build and the five suites: 5/5 passed. The extended test was run only
 against the post-move code (it needed no rerun on the old code because the
-refusal half is unchanged); Release and hosted CI have not run for this step.
+refusal half is unchanged). Hosted CI for 2A and 2B: see above.
 
 Paths below are relative to `First_AI_Agents/First_AI_Agents/` unless stated
 otherwise. The [implementation guide](../../First_AI_Agents/First_AI_Agents/sourceFiles/infrastructure/sqlite/README.md)

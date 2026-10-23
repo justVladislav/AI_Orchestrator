@@ -1233,8 +1233,6 @@ constexpr const char* stageColumns =
     "model_id, input_tokens, output_tokens, error_message, started_at_ms, finished_at_ms";
 constexpr const char* artifactColumns =
     "id, run_id, stage_id, kind, name, media_type, relative_path, byte_size, sha256, created_at_ms";
-constexpr const char* providerColumns =
-    "id, name, kind, base_url, enabled, credential_reference, created_at_ms, updated_at_ms";
 constexpr const char* modelColumns =
     "id, provider_id, api_model_id, display_name, context_window_tokens, max_output_tokens, "
     "input_price_micros_per_million_tokens, output_price_micros_per_million_tokens, enabled, "
@@ -1266,37 +1264,6 @@ constexpr const char* runDraftAssignmentColumns =
     "draft_id, stage_type, provider_id, model_id, timeout_ms, agent_name, role, instructions, "
     "position, lead_architect, dependencies_json, max_attempts, fallback_provider_id, fallback_model_id, "
     "workspace_access";
-
-common::Result<Provider> readProvider(sqlite3_stmt* statement)
-{
-    Provider provider;
-    provider.id = columnText(statement, 0);
-    provider.name = columnText(statement, 1);
-    provider.kind = columnText(statement, 2);
-    provider.baseUrl = columnText(statement, 3);
-    provider.enabled = sqlite3_column_int(statement, 4) != 0;
-    provider.credentialReference = optionalText(statement, 5);
-    provider.createdAt = fromMilliseconds(sqlite3_column_int64(statement, 6));
-    provider.updatedAt = fromMilliseconds(sqlite3_column_int64(statement, 7));
-    return common::Result<Provider>::ok(std::move(provider));
-}
-
-common::Result<void> bindProvider(sqlite3* handle, sqlite3_stmt* statement, const Provider& provider)
-{
-    const common::Result<void> bindings[] = {
-        bindText(handle, statement, 1, provider.id),
-        bindText(handle, statement, 2, provider.name),
-        bindText(handle, statement, 3, provider.kind),
-        bindText(handle, statement, 4, provider.baseUrl),
-        bindInt64(handle, statement, 5, provider.enabled ? 1 : 0),
-        bindNullableText(handle, statement, 6, provider.credentialReference),
-        bindInt64(handle, statement, 7, toMilliseconds(provider.createdAt)),
-        bindInt64(handle, statement, 8, toMilliseconds(provider.updatedAt))};
-    for (const auto& binding : bindings) {
-        if (!binding.success()) return common::Result<void>::failure(*binding.error());
-    }
-    return common::Result<void>::ok();
-}
 
 common::Result<Model> readModel(sqlite3_stmt* statement)
 {
@@ -6808,113 +6775,6 @@ common::Result<void> SqliteWorkspaceStateRepository::setActiveProjectId(
             databaseError(handle, "persistence.write_failed", "Could not update workspace state"));
     }
     return common::Result<void>::ok();
-}
-
-SqliteProviderRepository::SqliteProviderRepository(std::shared_ptr<SqliteDatabase> database)
-    : database_(std::move(database))
-{
-}
-
-common::Result<Provider> SqliteProviderRepository::insert(Provider provider)
-{
-    std::lock_guard lock(database_->impl_->mutex);
-    sqlite3* handle = database_->impl_->handle;
-    Statement statement;
-    const auto prepared = prepare(handle,
-        "INSERT INTO providers (id,name,kind,base_url,enabled,credential_reference,created_at_ms,"
-        "updated_at_ms) VALUES (?,?,?,?,?,?,?,?);",
-        statement);
-    if (!prepared.success()) return common::Result<Provider>::failure(*prepared.error());
-    const auto bound = bindProvider(handle, statement.get(), provider);
-    if (!bound.success()) return common::Result<Provider>::failure(*bound.error());
-    if (sqlite3_step(statement.get()) != SQLITE_DONE) {
-        if (sqlite3_extended_errcode(handle) == SQLITE_CONSTRAINT_PRIMARYKEY) {
-            return common::Result<Provider>::failure(
-                error("provider.duplicate_id", "Provider id already exists"));
-        }
-        return common::Result<Provider>::failure(
-            databaseError(handle, "persistence.write_failed", "Could not insert provider"));
-    }
-    return common::Result<Provider>::ok(std::move(provider));
-}
-
-common::Result<Provider> SqliteProviderRepository::update(Provider provider)
-{
-    std::lock_guard lock(database_->impl_->mutex);
-    sqlite3* handle = database_->impl_->handle;
-    Statement statement;
-    const auto prepared = prepare(handle,
-        "UPDATE providers SET name=?,kind=?,base_url=?,enabled=?,credential_reference=?,"
-        "created_at_ms=?,updated_at_ms=? WHERE id=?;",
-        statement);
-    if (!prepared.success()) return common::Result<Provider>::failure(*prepared.error());
-    const common::Result<void> bindings[] = {
-        bindText(handle, statement.get(), 1, provider.name),
-        bindText(handle, statement.get(), 2, provider.kind),
-        bindText(handle, statement.get(), 3, provider.baseUrl),
-        bindInt64(handle, statement.get(), 4, provider.enabled ? 1 : 0),
-        bindNullableText(handle, statement.get(), 5, provider.credentialReference),
-        bindInt64(handle, statement.get(), 6, toMilliseconds(provider.createdAt)),
-        bindInt64(handle, statement.get(), 7, toMilliseconds(provider.updatedAt)),
-        bindText(handle, statement.get(), 8, provider.id)};
-    for (const auto& binding : bindings) {
-        if (!binding.success()) return common::Result<Provider>::failure(*binding.error());
-    }
-    if (sqlite3_step(statement.get()) != SQLITE_DONE) {
-        return common::Result<Provider>::failure(
-            databaseError(handle, "persistence.write_failed", "Could not update provider"));
-    }
-    if (sqlite3_changes(handle) == 0) {
-        return common::Result<Provider>::failure(error("provider.not_found", "Provider not found"));
-    }
-    return common::Result<Provider>::ok(std::move(provider));
-}
-
-common::Result<std::optional<Provider>> SqliteProviderRepository::findById(
-    const application::ProviderId& id) const
-{
-    std::lock_guard lock(database_->impl_->mutex);
-    sqlite3* handle = database_->impl_->handle;
-    Statement statement;
-    const std::string sql = std::string("SELECT ") + providerColumns + " FROM providers WHERE id=?;";
-    const auto prepared = prepare(handle, sql.c_str(), statement);
-    if (!prepared.success()) return common::Result<std::optional<Provider>>::failure(*prepared.error());
-    const auto bound = bindText(handle, statement.get(), 1, id);
-    if (!bound.success()) return common::Result<std::optional<Provider>>::failure(*bound.error());
-    const int step = sqlite3_step(statement.get());
-    if (step == SQLITE_DONE) return common::Result<std::optional<Provider>>::ok(std::nullopt);
-    if (step != SQLITE_ROW) {
-        return common::Result<std::optional<Provider>>::failure(
-            databaseError(handle, "persistence.read_failed", "Could not read provider"));
-    }
-    const auto provider = readProvider(statement.get());
-    if (!provider.success()) return common::Result<std::optional<Provider>>::failure(*provider.error());
-    return common::Result<std::optional<Provider>>::ok(provider.value());
-}
-
-common::Result<std::vector<Provider>> SqliteProviderRepository::listAll() const
-{
-    std::lock_guard lock(database_->impl_->mutex);
-    sqlite3* handle = database_->impl_->handle;
-    Statement statement;
-    const std::string sql = std::string("SELECT ") + providerColumns
-        + " FROM providers ORDER BY created_at_ms,id;";
-    const auto prepared = prepare(handle, sql.c_str(), statement);
-    if (!prepared.success()) return common::Result<std::vector<Provider>>::failure(*prepared.error());
-
-    std::vector<Provider> providers;
-    for (;;) {
-        const int step = sqlite3_step(statement.get());
-        if (step == SQLITE_DONE) break;
-        if (step != SQLITE_ROW) {
-            return common::Result<std::vector<Provider>>::failure(
-                databaseError(handle, "persistence.read_failed", "Could not list providers"));
-        }
-        auto provider = readProvider(statement.get());
-        if (!provider.success()) return common::Result<std::vector<Provider>>::failure(*provider.error());
-        providers.push_back(provider.value());
-    }
-    return common::Result<std::vector<Provider>>::ok(std::move(providers));
 }
 
 SqliteModelRepository::SqliteModelRepository(std::shared_ptr<SqliteDatabase> database)
