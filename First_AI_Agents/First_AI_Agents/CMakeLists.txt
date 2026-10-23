@@ -716,6 +716,16 @@ if(AI_ORCHESTRATOR_BUILD_PERSISTENCE_TESTS)
     )
     ai_orchestrator_configure_target(AIOrchestrator_SqliteCatalog_tests)
     add_test(NAME AIOrchestrator_SqliteCatalog_tests COMMAND AIOrchestrator_SqliteCatalog_tests)
+
+    add_executable(AIOrchestrator_SqliteProjects_tests
+        tests/Unit/SqliteProjectsRepositoryTests.cpp
+    )
+    target_compile_features(AIOrchestrator_SqliteProjects_tests PRIVATE cxx_std_20)
+    target_link_libraries(AIOrchestrator_SqliteProjects_tests
+        PRIVATE AIOrchestrator::Persistence ${AIOrchestrator_Sqlite3_Target}
+    )
+    ai_orchestrator_configure_target(AIOrchestrator_SqliteProjects_tests)
+    add_test(NAME AIOrchestrator_SqliteProjects_tests COMMAND AIOrchestrator_SqliteProjects_tests)
 endif()
 
 # Backend-owned composition root: owns persistence, repositories, the Mock
