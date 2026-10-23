@@ -1,9 +1,8 @@
 # SQLite decomposition: review and implementation design
 
-Status: phases 1, 2A and 2B implemented; of the feature batches, batch 3 is
-partly implemented (providers and models extracted into `sqlite/catalog/`;
-execution profiles are still in the aggregate) and batches 4-8 are designs, not
-implemented. Reviewed on 2026-10-23. This document describes
+Status: phases 1, 2A and 2B implemented; of the feature batches, batch 3
+(`sqlite/catalog/`: providers, models and execution profiles) is implemented and
+batches 4-8 are designs, not implemented. Reviewed on 2026-10-23. This document describes
 implementation boundaries and acceptance criteria, not the completion of the
 Backend architecture refactor.
 
@@ -26,6 +25,32 @@ failed-migration case relies on the existing v59/v65 refusal tests. Hosted
 Windows CI run 39985592008 later passed Debug and Release on public commit
 `2087a05`, which contains 2A and 2B.
 
+Batch 3, third repository (`SqliteExecutionProfileRepository`, `sqlite/catalog/`):
+first the mapping that profiles share with the run draft code (`providerBudgetOverridesJson`,
+`parseProviderBudgetOverrides`, `readAssignment`) moved byte-identically into
+`catalog/SqliteProfileMapping.hpp/.cpp` (62 lines out of the aggregate, a commit of its
+own), then the class, `executionProfileColumns`, `executionProfileAssignmentColumns`,
+`readExecutionProfile`, `bindExecutionProfile` and `fetchAssignmentsForProfile` moved
+without edits (342 lines out of the aggregate, checked against the previous revision as
+in 2A). Five more contracts were added to `AIOrchestrator_SqliteCatalog_tests` (now 14)
+and passed on the old code first: round trip with a full budget, a roster read in stage
+type order, listing order and reopen; write errors (repeated id, repeated stage type,
+unknown model or provider, non-positive timeout, unknown stage type, second default)
+that leave no partial profile or roster; `update` replacing the whole roster (smaller,
+empty, regrown) with the previous profile and roster intact after failures that happen
+once the old roster was already deleted; `setDefaultProfile` keeping the previous
+default and a usable connection after a refusal; a corrupt budget, a budget the Backend
+would refuse and non-positive stored timeouts failing closed. A one-shot mutation check
+on the new file, scored by the Catalog suite only, ran 14 mutants: 13 killed and 1
+survived. The survivor (the `,id` tie-break of `listAll`) is equivalent in practice, the
+`(created_at_ms, id)` index returns the same order without it (checked with the query
+plan). A further mutant (`update` binding an empty budget) first survived because no
+contract updated a profile to a non-empty budget; the contract was strengthened in its
+own commit, run against the pre-move code, and only that mutant was rerun and killed.
+After the move the six Debug suites passed (6/6). Not claimed: a local Release build,
+mutation testing of `SqliteProfileMapping` (moved unchanged) or concurrency contracts
+for profiles. Profiles have no `remove`, so there is no in-use contract.
+
 Batch 3, second repository (`SqliteModelRepository`, `sqlite/catalog/`): the class,
 `modelColumns`, `readModel` and `bindModel` moved without edits (378 lines out of the
 aggregate, checked against the previous revision). Five more contracts were added to
@@ -41,8 +66,7 @@ provider filter dropped, remove/update accepting a missing id, narrowed in-use m
 update resetting the default, tier check disabled, a swapped price binding, a broken
 duplicate-id mapping, zero-row default treated as success); the output of M1-M4 was
 lost on the first pass and they were run again. The source was restored byte-for-byte.
-Not covered: execution profiles, which remain in the aggregate, and the
-negative-value branch of `readModel` (no test writes a negative price into a model row).
+Not covered: the negative-value branch of `readModel` (no test writes a negative price into a model row).
 
 Batch 3, first repository (`SqliteProviderRepository`, `sqlite/catalog/`): the
 public class, `providerColumns`, `readProvider` and `bindProvider` moved without
@@ -51,8 +75,8 @@ edits (140 lines out of the aggregate, checked against the previous revision as 
 (round trip, ordering and reopen; duplicate/update/missing errors; schema CHECK
 failures that leave rows and the connection intact; concurrent writers). They
 passed on the old code first and again after the move; with the five existing
-suites: 6/6 in Debug. Models were extracted next (previous paragraph); execution
-profiles remain in the aggregate and are not covered by these contracts.
+suites: 6/6 in Debug. Models were extracted next and execution profiles after
+them (the paragraphs above).
 
 Phase 2B result (separate commit):
 `ensureSchema(sqlite3*)` in `sqlite/SqliteSchema.cpp` now holds the version check,

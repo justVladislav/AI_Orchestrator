@@ -17,12 +17,18 @@ these implementation headers or access native SQLite handles.
   queries, column order and selection JSON encoding/decoding. Its public class
   remains declared in `includes/ai/infrastructure/SqliteRepositories.hpp` for
   source compatibility.
-- `catalog/SqliteProviderRepository.cpp` and `catalog/SqliteModelRepository.cpp`
-  own the provider and model table queries with their row mapping/binding (batch 3).
-  The model file also owns the price columns, the long-context tier check on every
-  read, the default-model transaction and the in-use check on removal. Their public
-  classes stay declared in `includes/ai/infrastructure/SqliteRepositories.hpp`.
-  Execution profiles are still in the aggregate.
+- `catalog/SqliteProviderRepository.cpp`, `catalog/SqliteModelRepository.cpp` and
+  `catalog/SqliteExecutionProfileRepository.cpp` own the provider, model and
+  execution profile table queries with their row mapping/binding (batch 3). The
+  model file also owns the price columns, the long-context tier check on every
+  read, the default-model transaction and the in-use check on removal. The profile
+  file owns the roster replacement and default-profile transactions and the
+  deterministic roster read order. Their public classes stay declared in
+  `includes/ai/infrastructure/SqliteRepositories.hpp`.
+- `catalog/SqliteProfileMapping.hpp/.cpp` hold the mapping that execution profiles
+  share with the run draft code still in the aggregate: the provider budget override
+  JSON and the narrow assignment row. It is a private feature helper, not a
+  primitive.
 - `SqliteDatabase.cpp` owns `SqliteDatabase` construction, `open()` and `path()`:
   filesystem preparation, native open and PRAGMAs, then one call to `ensureSchema`.
   `pathToUtf8` / `pathFromUtf8` live in the primitives.
