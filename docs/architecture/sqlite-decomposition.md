@@ -1,9 +1,10 @@
 # SQLite decomposition: review and implementation design
 
 Status: phases 1, 2A and 2B implemented; of the feature batches, batch 3
-(`sqlite/catalog/`: providers, models and execution profiles) is implemented, batch 4
-is started (projects and tasks are in `sqlite/projects/`; workspace state, settings,
-scratch settings and readiness are not) and batches 5-8 are designs, not implemented.
+(`sqlite/catalog/`: providers, models and execution profiles) and batch 4
+(`sqlite/projects/` and `sqlite/settings/`: projects, tasks, workspace state, project
+readiness, application settings and the verification scratch setting) are implemented and
+batches 5-8 are designs, not implemented.
 Reviewed on 2026-10-23. This document describes
 implementation boundaries and acceptance criteria, not the completion of the
 Backend architecture refactor.
@@ -27,6 +28,33 @@ failed-migration case relies on the existing v59/v65 refusal tests. Hosted
 Windows CI run 39985592008 later passed Debug and Release on public commit
 `2087a05`, which contains 2A and 2B.
 
+Batch 4, second part (`SqliteWorkspaceStateRepository`, `SqliteProjectReadinessRepository`,
+`SqliteVerificationScratchSettingRepository` and `SqliteApplicationSettingsRepository`): each
+repository got its missing contracts first, run against the aggregate, and then moved in a
+commit of its own without edits (workspace state 54 lines, scratch setting 52, application
+settings 104, readiness 103; none of them has private helpers). Contracts added to
+`AIOrchestrator_SqliteProjects_tests` (now 12): the active project (select, switch, clear, an
+unknown project reporting `workspace.project_not_found` without losing the previous
+selection, state shared by two repository objects, reopen) and readiness (all four states
+with every field and a Unicode target, an upsert replacing only its own project's record,
+`project.not_found` for an unknown project, a Ready record with an incomplete proof refused
+while the stored record stays, an unknown stored state failing closed). A new
+`AIOrchestrator_SqliteSettings_tests` (5 contracts): the scratch setting (store, Unicode
+overwrite, clear, the 1..2048 byte bound with refusals that keep the previous value, a missing
+singleton row recreated by the next store, reopen) and the application settings (seeded
+defaults, every field at both ends of the allowed ranges with set and cleared optionals,
+revision conflicts including two writers from one revision, refused writes that keep the
+stored settings, unknown enum values failing closed and a missing settings row). Existing
+tests of the scratch setting and of readiness (`VerificationScratch_tests`,
+`ProjectReadiness_tests`) were kept and still pass. The eight Debug suites passed after each
+move (8/8). A one-shot mutation check on the four new files, scored by the Projects and
+Settings suites, killed 14 of 14 mutants (foreign key mappings, the update row, a NULL
+last-success time, the failure message of an upsert, the state binding, the scratch upsert and
+row, the conflict check, the revision 0 guard, two column reads and a swapped binding).
+Pinned, not endorsed: an unreadable `targets_json` of a readiness row reads as an empty target
+list and non-string entries are skipped. Not claimed: a local Release build, or concurrency
+contracts for these four repositories.
+
 Batch 4, first part (`SqliteProjectRepository` and `SqliteTaskRepository`,
 `sqlite/projects/`): a new `AIOrchestrator_SqliteProjects_tests` with 8 contracts passed on
 the old code first. Projects: round trip with every status and a Unicode root, listing
@@ -46,8 +74,7 @@ killed 13 of 13 mutants (duplicate id and path mappings, missing-row acceptance 
 updated times, an inverted flag, swapped due and planned bindings, link order and
 `INSERT OR REPLACE` turned into `IGNORE`). Not claimed: a local Release build, mutation
 testing of the insert binding of tasks and of the remaining `readTask` columns, or
-concurrency contracts for tasks. Workspace state, settings, scratch settings and project
-readiness remain in the aggregate.
+concurrency contracts for tasks.
 
 Batch 3, third repository (`SqliteExecutionProfileRepository`, `sqlite/catalog/`):
 first the mapping that profiles share with the run draft code (`providerBudgetOverridesJson`,

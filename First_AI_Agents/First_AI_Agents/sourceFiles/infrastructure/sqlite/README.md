@@ -25,11 +25,16 @@ these implementation headers or access native SQLite handles.
   file owns the roster replacement and default-profile transactions and the
   deterministic roster read order. Their public classes stay declared in
   `includes/ai/infrastructure/SqliteRepositories.hpp`.
-- `projects/SqliteProjectRepository.cpp` and `projects/SqliteTaskRepository.cpp` own the
-  project and task table queries with their row mapping/binding (batch 4, first part):
-  the duplicate id / duplicate root path mapping, the exact root path lookup, the task
-  listing order and the task-to-run links. Workspace state, settings, scratch settings and
-  project readiness are still in the aggregate.
+- `projects/` (batch 4) holds `SqliteProjectRepository`, `SqliteTaskRepository`,
+  `SqliteWorkspaceStateRepository` and `SqliteProjectReadinessRepository`: the duplicate id /
+  duplicate root path mapping, the exact root path lookup, the task listing order and the
+  task-to-run links, the active project singleton, and the per-project readiness record
+  with its upsert. The readiness configure mechanism lives in the application layer and is
+  not part of this directory.
+- `settings/` (batch 4) holds `SqliteApplicationSettingsRepository` (the optimistic-revision
+  update and the enum mapping) and `SqliteVerificationScratchSettingRepository` (the
+  singleton upsert and the path encoding). Permission and safety checks of the scratch
+  folder stay in the service.
 - `catalog/SqliteProfileMapping.hpp/.cpp` hold the mapping that execution profiles
   share with the run draft code still in the aggregate: the provider budget override
   JSON and the narrow assignment row. It is a private feature helper, not a
