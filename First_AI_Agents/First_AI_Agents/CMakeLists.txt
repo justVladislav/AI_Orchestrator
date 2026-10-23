@@ -638,6 +638,7 @@ endif()
 add_library(AIOrchestrator_Persistence STATIC
     sourceFiles/infrastructure/SqliteRepositories.cpp
     sourceFiles/infrastructure/sqlite/SqliteDatabase.cpp
+    sourceFiles/infrastructure/sqlite/SqliteSchema.cpp
     sourceFiles/infrastructure/sqlite/SqlitePrimitives.cpp
     sourceFiles/infrastructure/sqlite/comparison/SqliteComparisonSessionRepository.cpp
     sourceFiles/infrastructure/DatabaseOwnerLock.cpp

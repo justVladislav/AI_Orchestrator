@@ -1,7 +1,7 @@
 # SQLite decomposition: review and implementation design
 
-Status: phase 1 and phase 2A implemented; phase 2B and the feature batches below
-are designs, not implemented. Reviewed on 2026-10-23. This document describes
+Status: phases 1, 2A and 2B implemented; the feature batches below are designs,
+not implemented. Reviewed on 2026-10-23. This document describes
 implementation boundaries and acceptance criteria, not the completion of the
 Backend architecture refactor.
 
@@ -22,6 +22,21 @@ build of the five affected targets and their ctest: 5/5 passed. Not claimed: the
 new tests are not mutation-tested, no Release build or hosted CI ran for this
 step, and the failed-migration case relies on the existing v59/v65 refusal tests.
 
+Phase 2B result (separate commit, local primary checkout only, not pushed):
+`ensureSchema(sqlite3*)` in `sqlite/SqliteSchema.cpp` now holds the version check,
+the newer-schema refusal and every historical step, together with
+`supportedSchemaVersion` and the follow-up SQL helpers; `SqliteDatabase::open()`
+calls it after the PRAGMAs and keeps the handle (and its cleanup) in `Impl`. The
+only edits inside the 3,560 moved body lines are `impl->handle` -> `handle` (207
+places) and the outer `Result<shared_ptr<SqliteDatabase>>::failure(` ->
+`Result<void>::failure(`; this was verified line by line against the 2A revision,
+and the constants, helpers and the remaining lifecycle code are byte-identical.
+The existing v65 refusal test was extended: after the blocking value is repaired
+the same database upgrades, the seeded model survives and the version reaches 70.
+Debug build and the five suites: 5/5 passed. The extended test was run only
+against the post-move code (it needed no rerun on the old code because the
+refusal half is unchanged); Release and hosted CI have not run for this step.
+
 Paths below are relative to `First_AI_Agents/First_AI_Agents/` unless stated
 otherwise. The [implementation guide](../../First_AI_Agents/First_AI_Agents/sourceFiles/infrastructure/sqlite/README.md)
 describes the current ownership rules.
@@ -39,7 +54,8 @@ lines out is a first verified boundary, not resolution of the entire gap.
 | Native handle and shared mutex | `sqlite/SqliteConnection.hpp`, private `SqliteDatabase::Impl` | Same ownership and cleanup; repositories retain the shared database |
 | Statements, bindings and primitive conversions | `sqlite/SqlitePrimitives.hpp/.cpp` | Moved bodies preserve finalization, numeric range checks and errors |
 | Comparison SQL, row mapping and selection JSON | `sqlite/comparison/SqliteComparisonSessionRepository.cpp` | Same queries, column/binding order, locking and revision checks |
-| Opening and schema upgrades | Remaining aggregate `.cpp` | Next extraction; schema remains 70 |
+| Opening, PRAGMAs and lifecycle | `sqlite/SqliteDatabase.cpp` (since 2A) | Same open order and cleanup; calls `ensureSchema` after the PRAGMAs |
+| Schema upgrades | `sqlite/SqliteSchema.hpp/.cpp` (since 2B) | One private `ensureSchema(sqlite3*)`; historical steps unchanged; schema remains 70 |
 | Repository declarations | `includes/ai/infrastructure/SqliteRepositories.hpp` | Unchanged compatibility surface |
 
 No blocking issue was found in the phase-1 move. This conclusion covers the

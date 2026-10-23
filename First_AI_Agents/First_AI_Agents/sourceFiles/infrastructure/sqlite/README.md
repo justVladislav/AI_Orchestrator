@@ -18,9 +18,12 @@ these implementation headers or access native SQLite handles.
   remains declared in `includes/ai/infrastructure/SqliteRepositories.hpp` for
   source compatibility.
 - `SqliteDatabase.cpp` owns `SqliteDatabase` construction, `open()` and `path()`:
-  filesystem preparation, native open, PRAGMAs and (for now) the whole historical
-  migration body, plus `supportedSchemaVersion` and the follow-up SQL helpers.
+  filesystem preparation, native open and PRAGMAs, then one call to `ensureSchema`.
   `pathToUtf8` / `pathFromUtf8` live in the primitives.
+- `SqliteSchema.hpp/.cpp` own the private `ensureSchema(sqlite3*)`: the version
+  check, the newer-schema refusal and all historical migration steps, plus
+  `supportedSchemaVersion` and the follow-up SQL helpers. It is called only from
+  `open()`, on a handle that is not yet published and that the caller closes.
 - The remaining repositories remain in `../SqliteRepositories.cpp` during this
   incremental decomposition. That is transitional code, not the destination for
   new unrelated features.
@@ -57,14 +60,12 @@ These are provider-free tests using temporary databases, not the user's profile.
 
 The [review and implementation design](../../../../../docs/architecture/sqlite-decomposition.md)
 defines the next agent's scope, private interfaces, migration invariants and
-acceptance checks. Phases 1 and 2A are complete; the steps below are not
+acceptance checks. Phases 1, 2A and 2B are complete; the steps below are not
 implemented yet.
 
-1. Isolate the migration body behind a private `ensureSchema(sqlite3*)` (phase 2B)
-   without changing historical SQL or upgrade behaviour.
-2. Extract additional feature-owned repositories and their row/JSON mappings in
+1. Extract additional feature-owned repositories and their row/JSON mappings in
    small independently verified changes, retaining public compatibility.
-3. Gradually replace the aggregate public declaration header with feature entry
+2. Gradually replace the aggregate public declaration header with feature entry
    headers and a compatibility facade; do not combine that API/include migration
    with an unverified storage behaviour change.
 

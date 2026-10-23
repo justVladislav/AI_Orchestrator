@@ -3687,6 +3687,23 @@ PRAGMA user_version = 64;
         "v65 refusal did not explain the new one-hour price invariant");
     require(schemaVersionIs(partial.databasePath, 64).empty(),
         "A refused v65 migration raised the schema version");
+
+    // Removing the blocker must let the very same database upgrade: the refused
+    // step left nothing behind, and the seeded rows survive the retry.
+    require(rawSql(partial.databasePath,
+                "UPDATE models SET long_context_cache_write_one_hour_price_micros_per_million_tokens=0 "
+                "WHERE id='partial-duration-model';")
+                .empty(),
+        "Could not remove the v65 blocker from the fixture");
+    const auto recovered = SqliteDatabase::open(partial.databasePath);
+    require(recovered.success(), "The v65 database did not upgrade after its blocker was removed");
+    SqliteModelRepository recoveredModels(recovered.value());
+    const auto recoveredModel = recoveredModels.findById("partial-duration-model");
+    require(recoveredModel.success() && recoveredModel.value().has_value()
+            && recoveredModel.value()->providerId == "partial-duration-provider",
+        "The seeded model did not survive the recovered upgrade");
+    require(schemaVersionIs(partial.databasePath, 70).empty(),
+        "The recovered database did not reach the current schema version");
 }
 
 } // namespace
