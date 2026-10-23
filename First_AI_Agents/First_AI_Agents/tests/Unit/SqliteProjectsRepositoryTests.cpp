@@ -560,6 +560,184 @@ void testWorkspaceActiveProject()
     require(state.setActiveProjectId(ProjectId("project-2")).success(), "The reopened state must accept a change");
     require(activeId(state) == std::optional<ProjectId>("project-2"), "The change after reopening must apply");
 }
+
+ProjectReadinessRecord makeReadiness(std::string projectId, ProjectReadinessState state)
+{
+    ProjectReadinessRecord value;
+    value.projectId = std::move(projectId);
+    value.projectRoot = "C:/work/" + value.projectId;
+    value.state = state;
+    value.checkedAt = at(10'000);
+    return value;
+}
+
+// A record that satisfies the schema's rule for Ready: the whole proof is present.
+ProjectReadinessRecord makeReadyReadiness(std::string projectId)
+{
+    ProjectReadinessRecord value = makeReadiness(std::move(projectId), ProjectReadinessState::Ready);
+    value.configurePreset = "local";
+    value.buildPreset = "local-build";
+    value.binaryDir = "build/local";
+    value.inputsFingerprint = std::string(64, 'a');
+    value.toolchainIdentity = "msvc=14.51;sdk=10.0.26100.0";
+    value.targets = {"all", "app", "\xE6\xB8\xAC\xE8\xA9\xA6"};
+    value.targetsComplete = true;
+    value.checkedAt = at(20'000);
+    value.lastSuccessAt = at(20'000);
+    return value;
+}
+
+void requireSameReadiness(const ProjectReadinessRecord& actual, const ProjectReadinessRecord& expected,
+    const char* message)
+{
+    require(actual.projectId == expected.projectId && actual.projectRoot == expected.projectRoot
+            && actual.configurePreset == expected.configurePreset && actual.buildPreset == expected.buildPreset
+            && actual.binaryDir == expected.binaryDir && actual.state == expected.state
+            && actual.inputsFingerprint == expected.inputsFingerprint
+            && actual.toolchainIdentity == expected.toolchainIdentity && actual.targets == expected.targets
+            && actual.targetsComplete == expected.targetsComplete && actual.checkedAt == expected.checkedAt
+            && actual.lastSuccessAt == expected.lastSuccessAt && actual.failureCode == expected.failureCode
+            && actual.failureMessage == expected.failureMessage,
+        message);
+}
+
+void requireStoredReadiness(const SqliteProjectReadinessRepository& readiness, const ProjectReadinessRecord& expected,
+    const char* message)
+{
+    const auto found = readiness.find(expected.projectId);
+    require(found.success() && found.value().has_value(), message);
+    requireSameReadiness(*found.value(), expected, message);
+}
+
+void testReadinessEveryStateRoundTripsAndProjectsAreIsolated()
+{
+    Workspace workspace;
+    const ProjectReadinessRecord unverified = makeReadiness("project-1", ProjectReadinessState::Unverified);
+    const ProjectReadinessRecord ready = makeReadyReadiness("project-2");
+    ProjectReadinessRecord stale = makeReadyReadiness("project-3");
+    stale.state = ProjectReadinessState::Stale;
+    stale.targetsComplete = false;
+    stale.targets.clear();
+    stale.checkedAt = at(30'000);
+    stale.lastSuccessAt = at(20'000);
+    ProjectReadinessRecord failed = makeReadiness("project-4", ProjectReadinessState::Failed);
+    failed.configurePreset = "local";
+    failed.buildPreset = "local-build";
+    failed.binaryDir = "build/local";
+    failed.inputsFingerprint = std::string(64, 'b');
+    failed.toolchainIdentity = "msvc=14.51";
+    failed.checkedAt = at(40'000);
+    failed.failureCode = "project_setup.configure_failed";
+    failed.failureMessage = "LNK1104: cannot open \"file\"\nsecond line \xE6\xB8\xAC";
+    const ProjectReadinessRecord* all[] = {&unverified, &ready, &stale, &failed};
+    {
+        const auto database = workspace.open();
+        for (const auto* record : all) addProject(database, workspace, record->projectId);
+        SqliteProjectReadinessRepository readiness(database);
+        const auto none = readiness.find("project-1");
+        require(none.success() && !none.value().has_value(), "A project starts with no readiness record");
+        const auto unknown = readiness.find("project-unknown");
+        require(unknown.success() && !unknown.value().has_value(), "An unknown project has no readiness record");
+
+        for (const auto* record : all) require(readiness.upsert(*record).success(), "Could not store a readiness record");
+        for (const auto* record : all) requireStoredReadiness(readiness, *record, "A readiness record must round-trip every field");
+
+        // Upserting one project replaces only its own record, whatever state it moves through.
+        ProjectReadinessRecord moved = ready;
+        moved.state = ProjectReadinessState::Failed;
+        moved.lastSuccessAt.reset();
+        moved.failureCode = "project_setup.build_failed";
+        moved.failureMessage = "C1083";
+        moved.checkedAt = at(50'000);
+        require(readiness.upsert(moved).success(), "Could not move a record to Failed");
+        requireStoredReadiness(readiness, moved, "An upsert must replace the whole record");
+        for (const auto* record : all) {
+            if (record == &ready) continue;
+            requireStoredReadiness(readiness, *record, "An upsert for one project changed another project's record");
+        }
+        require(readiness.upsert(ready).success(), "Could not move the record back to Ready");
+        requireStoredReadiness(readiness, ready, "The record must be replaceable again, clearing the failure");
+    }
+
+    const auto reopened = workspace.open();
+    SqliteProjectReadinessRepository readiness(reopened);
+    for (const auto* record : all) requireStoredReadiness(readiness, *record, "Readiness must survive reopening the database");
+}
+
+void testReadinessRefusedWritesKeepTheStoredRecord()
+{
+    Workspace workspace;
+    const auto database = workspace.open();
+    addProject(database, workspace, "project-1");
+    SqliteProjectReadinessRepository readiness(database);
+    const ProjectReadinessRecord ready = makeReadyReadiness("project-1");
+    require(readiness.upsert(ready).success(), "Could not store a readiness record");
+
+    const auto ghost = readiness.upsert(makeReadyReadiness("project-unknown"));
+    require(!ghost.success() && ghost.error()->code == "project.not_found",
+        "A record for an unknown project must report project.not_found");
+    const auto absent = readiness.find("project-unknown");
+    require(absent.success() && !absent.value().has_value(), "A refused record must not be stored");
+
+    // The schema refuses a Ready record whose proof is incomplete.
+    for (const char* missing : {"fingerprint", "toolchain", "preset", "success"}) {
+        ProjectReadinessRecord unproven = ready;
+        unproven.failureMessage = "Must not persist";
+        if (std::string(missing) == "fingerprint") unproven.inputsFingerprint.clear();
+        if (std::string(missing) == "toolchain") unproven.toolchainIdentity.clear();
+        if (std::string(missing) == "preset") unproven.buildPreset.clear();
+        if (std::string(missing) == "success") unproven.lastSuccessAt.reset();
+        const auto refused = readiness.upsert(unproven);
+        require(!refused.success() && refused.error()->code == "persistence.write_failed",
+            "A Ready record without its full proof must be refused as a failed write");
+        requireStoredReadiness(readiness, ready, "A refused upsert changed the stored record");
+    }
+
+    ProjectReadinessRecord next = ready;
+    next.state = ProjectReadinessState::Stale;
+    next.checkedAt = at(60'000);
+    require(readiness.upsert(next).success(), "The connection must be usable after refused writes");
+    requireStoredReadiness(readiness, next, "An upsert after refusals must apply in full");
+}
+
+void testReadinessCorruptRowsAreHandledAsPinned()
+{
+    Workspace workspace;
+    {
+        const auto database = workspace.open();
+        for (const char* id : {"project-good", "project-bad-state", "project-bad-targets"}) {
+            addProject(database, workspace, id);
+        }
+        SqliteProjectReadinessRepository readiness(database);
+        require(readiness.upsert(makeReadyReadiness("project-good")).success()
+                && readiness.upsert(makeReadyReadiness("project-bad-state")).success()
+                && readiness.upsert(makeReadyReadiness("project-bad-targets")).success(),
+            "Could not store readiness records");
+    }
+    workspace.sql("PRAGMA ignore_check_constraints=1; "
+                  "UPDATE project_verification_readiness SET state='maybe' WHERE project_id='project-bad-state';");
+    // Pinned as the current behaviour, not as a design goal: an unreadable target list reads as empty and
+    // non-string entries are skipped.
+    workspace.sql("UPDATE project_verification_readiness SET targets_json='not json' "
+                  "WHERE project_id='project-bad-targets';");
+
+    const auto database = workspace.open();
+    SqliteProjectReadinessRepository readiness(database);
+    requireStoredReadiness(readiness, makeReadyReadiness("project-good"), "A valid record must stay readable");
+    const auto bad = readiness.find("project-bad-state");
+    require(!bad.success() && bad.error()->code == "persistence.invalid_data",
+        "An unknown stored state must fail closed");
+
+    const auto garbled = readiness.find("project-bad-targets");
+    require(garbled.success() && garbled.value().has_value() && garbled.value()->targets.empty(),
+        "An unreadable target list currently reads as empty");
+    workspace.sql("UPDATE project_verification_readiness SET targets_json='[\"a\",1,\"b\",null]' "
+                  "WHERE project_id='project-bad-targets';");
+    const auto mixed = readiness.find("project-bad-targets");
+    require(mixed.success() && mixed.value().has_value()
+            && mixed.value()->targets == std::vector<std::string> {"a", "b"},
+        "Non-string target entries are currently skipped");
+}
 } // namespace
 
 int main()
@@ -574,7 +752,10 @@ int main()
         testCorruptTaskRowsFailClosed();
         testTaskRunLinks();
         testWorkspaceActiveProject();
-        std::cout << "SQLite Projects contracts: 9 passed\n";
+        testReadinessEveryStateRoundTripsAndProjectsAreIsolated();
+        testReadinessRefusedWritesKeepTheStoredRecord();
+        testReadinessCorruptRowsAreHandledAsPinned();
+        std::cout << "SQLite Projects contracts: 12 passed\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "SQLite Projects contracts failed: " << error.what() << '\n';
