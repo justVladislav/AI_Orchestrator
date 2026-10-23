@@ -41,12 +41,13 @@ empty, regrown) with the previous profile and roster intact after failures that 
 once the old roster was already deleted; `setDefaultProfile` keeping the previous
 default and a usable connection after a refusal; a corrupt budget, a budget the Backend
 would refuse and non-positive stored timeouts failing closed. A one-shot mutation check
-on the new file, scored by the Catalog suite only, ran 14 mutants: 13 killed and 1
-survived. The survivor (the `,id` tie-break of `listAll`) is equivalent in practice, the
-`(created_at_ms, id)` index returns the same order without it (checked with the query
-plan). A further mutant (`update` binding an empty budget) first survived because no
-contract updated a profile to a non-empty budget; the contract was strengthened in its
-own commit, run against the pre-move code, and only that mutant was rerun and killed.
+on the new file, scored by the Catalog suite only, ran 14 mutants: 13 killed, M7
+survived. M7 (the `,id` tie-break of `listAll`) survived, presumably because the
+`(created_at_ms, id)` index scan returns the same order; equivalence is not established,
+since a different query plan would not guarantee that order. M9 (`update` binding an
+empty budget) first survived too, because no contract updated a profile to a non-empty
+budget; the contract was strengthened in its own commit, run against the pre-move code,
+and only M9 was rerun and killed.
 After the move the six Debug suites passed (6/6). Not claimed: a local Release build,
 mutation testing of `SqliteProfileMapping` (moved unchanged) or concurrency contracts
 for profiles. Profiles have no `remove`, so there is no in-use contract.
