@@ -1,8 +1,10 @@
 # SQLite decomposition: review and implementation design
 
 Status: phases 1, 2A and 2B implemented; of the feature batches, batch 3
-(`sqlite/catalog/`: providers, models and execution profiles) is implemented and
-batches 4-8 are designs, not implemented. Reviewed on 2026-10-23. This document describes
+(`sqlite/catalog/`: providers, models and execution profiles) is implemented, batch 4
+is started (projects and tasks are in `sqlite/projects/`; workspace state, settings,
+scratch settings and readiness are not) and batches 5-8 are designs, not implemented.
+Reviewed on 2026-10-23. This document describes
 implementation boundaries and acceptance criteria, not the completion of the
 Backend architecture refactor.
 
@@ -24,6 +26,28 @@ new tests are not mutation-tested, there was no local Release build, and the
 failed-migration case relies on the existing v59/v65 refusal tests. Hosted
 Windows CI run 39985592008 later passed Debug and Release on public commit
 `2087a05`, which contains 2A and 2B.
+
+Batch 4, first part (`SqliteProjectRepository` and `SqliteTaskRepository`,
+`sqlite/projects/`): a new `AIOrchestrator_SqliteProjects_tests` with 8 contracts passed on
+the old code first. Projects: round trip with every status and a Unicode root, listing
+order, lookup by the exact root path and reopen; repeated id, repeated root path, missing
+project and a root path clash on update; an unknown status failing closed; concurrent
+writers. Tasks: every status and priority with optional dates, update-time order with an
+id tie-break and the project filter; write errors and an update that keeps the owning
+project and the creation time; an unknown status or priority failing closed; run links in
+link order, a run moving between tasks and refused links. Each repository then moved in a
+commit of its own with its private helpers and without edits (project: `projectColumns`,
+`projectStatusFromString`, `readProject`, `bindProject`, 181 lines; task:
+`taskColumns`, `taskStatusFromString`, `taskPriorityFromString`, `readTask`, 213 lines), checked
+against the previous revision as in 2A. The seven Debug suites passed after each move
+(7/7). A one-shot mutation check on both new files, scored by the Projects suite only,
+killed 13 of 13 mutants (duplicate id and path mappings, missing-row acceptance in both
+`update` methods, both id tie-breaks, a status and a priority mapping, swapped created and
+updated times, an inverted flag, swapped due and planned bindings, link order and
+`INSERT OR REPLACE` turned into `IGNORE`). Not claimed: a local Release build, mutation
+testing of the insert binding of tasks and of the remaining `readTask` columns, or
+concurrency contracts for tasks. Workspace state, settings, scratch settings and project
+readiness remain in the aggregate.
 
 Batch 3, third repository (`SqliteExecutionProfileRepository`, `sqlite/catalog/`):
 first the mapping that profiles share with the run draft code (`providerBudgetOverridesJson`,
