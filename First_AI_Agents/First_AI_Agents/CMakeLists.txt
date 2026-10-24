@@ -636,7 +636,47 @@ else()
 endif()
 
 add_library(AIOrchestrator_Persistence STATIC
-    sourceFiles/infrastructure/SqliteRepositories.cpp
+    sourceFiles/infrastructure/sqlite/SqliteDatabase.cpp
+    sourceFiles/infrastructure/sqlite/SqliteSchema.cpp
+    sourceFiles/infrastructure/sqlite/SqlitePrimitives.cpp
+    sourceFiles/infrastructure/sqlite/catalog/SqliteExecutionProfileRepository.cpp
+    sourceFiles/infrastructure/sqlite/catalog/SqliteModelRepository.cpp
+    sourceFiles/infrastructure/sqlite/catalog/SqliteProfileMapping.cpp
+    sourceFiles/infrastructure/sqlite/catalog/SqliteProviderRepository.cpp
+    sourceFiles/infrastructure/sqlite/conversations/SqliteChatMemoryRepository.cpp
+    sourceFiles/infrastructure/sqlite/conversations/SqliteChatRepository.cpp
+    sourceFiles/infrastructure/sqlite/conversations/SqliteProjectMemoryRepository.cpp
+    sourceFiles/infrastructure/sqlite/conversations/SqliteProjectMemoryCompactionRepository.cpp
+    sourceFiles/infrastructure/sqlite/execution/SqliteArtifactRepository.cpp
+    sourceFiles/infrastructure/sqlite/execution/SqliteRunWarningRepository.cpp
+    sourceFiles/infrastructure/sqlite/execution/SqliteManifestTaskExecutionRepository.cpp
+    sourceFiles/infrastructure/sqlite/execution/SqliteManifestWorkLedgerRepository.cpp
+    sourceFiles/infrastructure/sqlite/execution/SqliteRunWorkspaceScopeRepository.cpp
+    sourceFiles/infrastructure/sqlite/execution/SqliteExecutionManifestRepository.cpp
+    sourceFiles/infrastructure/sqlite/execution/SqliteRunRepository.cpp
+    sourceFiles/infrastructure/sqlite/verification/SqliteManifestVerificationBaselineNormalizationRepository.cpp
+    sourceFiles/infrastructure/sqlite/verification/SqliteManifestVerificationManualHandoffRepository.cpp
+    sourceFiles/infrastructure/sqlite/verification/SqliteManifestVerificationContinuationRepository.cpp
+    sourceFiles/infrastructure/sqlite/verification/SqliteVerificationEnvironmentRepository.cpp
+    sourceFiles/infrastructure/sqlite/verification/SqliteVerificationBootstrapRepository.cpp
+    sourceFiles/infrastructure/sqlite/agents/SqliteModelExecutionRepository.cpp
+    sourceFiles/infrastructure/sqlite/proposals/SqliteChangeProposalRepository.cpp
+    sourceFiles/infrastructure/sqlite/proposals/SqliteChangeApprovalRepository.cpp
+    sourceFiles/infrastructure/sqlite/proposals/SqliteProposalReviewRepository.cpp
+    sourceFiles/infrastructure/sqlite/agents/SqliteAgentToolSessionRepository.cpp
+    sourceFiles/infrastructure/sqlite/agents/SqliteAgentToolAuditRepository.cpp
+    sourceFiles/infrastructure/sqlite/comparison/SqliteComparisonSessionRepository.cpp
+    sourceFiles/infrastructure/sqlite/planning/SqliteFollowUpPlanRepository.cpp
+    sourceFiles/infrastructure/sqlite/planning/SqliteOutcomeBriefRepository.cpp
+    sourceFiles/infrastructure/sqlite/planning/SqliteRunDraftRepository.cpp
+    sourceFiles/infrastructure/sqlite/execution/SqliteRunStatusMapping.cpp
+    sourceFiles/infrastructure/sqlite/projects/SqliteProjectReadinessRepository.cpp
+    sourceFiles/infrastructure/sqlite/roster/SqliteRosterMapping.cpp
+    sourceFiles/infrastructure/sqlite/projects/SqliteProjectRepository.cpp
+    sourceFiles/infrastructure/sqlite/projects/SqliteTaskRepository.cpp
+    sourceFiles/infrastructure/sqlite/projects/SqliteWorkspaceStateRepository.cpp
+    sourceFiles/infrastructure/sqlite/settings/SqliteApplicationSettingsRepository.cpp
+    sourceFiles/infrastructure/sqlite/settings/SqliteVerificationScratchSettingRepository.cpp
     sourceFiles/infrastructure/DatabaseOwnerLock.cpp
     sourceFiles/infrastructure/FileArtifactStore.cpp
     sourceFiles/infrastructure/ChangeProposalStore.cpp
@@ -686,6 +726,74 @@ if(AI_ORCHESTRATOR_BUILD_PERSISTENCE_TESTS)
     )
     ai_orchestrator_configure_target(AIOrchestrator_Persistence_tests)
     add_test(NAME AIOrchestrator_Persistence_tests COMMAND AIOrchestrator_Persistence_tests)
+
+    # Feature-owned persistence contracts also run against the monolithic
+    # adapter before extraction; they must not depend on private SQLite helpers.
+    add_executable(AIOrchestrator_SqliteComparison_tests
+        tests/Unit/SqliteComparisonRepositoryTests.cpp
+    )
+    target_compile_features(AIOrchestrator_SqliteComparison_tests PRIVATE cxx_std_20)
+    target_link_libraries(AIOrchestrator_SqliteComparison_tests
+        PRIVATE AIOrchestrator::Persistence ${AIOrchestrator_Sqlite3_Target}
+    )
+    ai_orchestrator_configure_target(AIOrchestrator_SqliteComparison_tests)
+    add_test(NAME AIOrchestrator_SqliteComparison_tests COMMAND AIOrchestrator_SqliteComparison_tests)
+
+    add_executable(AIOrchestrator_SqliteCatalog_tests
+        tests/Unit/SqliteCatalogRepositoryTests.cpp
+    )
+    target_compile_features(AIOrchestrator_SqliteCatalog_tests PRIVATE cxx_std_20)
+    target_link_libraries(AIOrchestrator_SqliteCatalog_tests
+        PRIVATE AIOrchestrator::Persistence ${AIOrchestrator_Sqlite3_Target}
+    )
+    ai_orchestrator_configure_target(AIOrchestrator_SqliteCatalog_tests)
+    add_test(NAME AIOrchestrator_SqliteCatalog_tests COMMAND AIOrchestrator_SqliteCatalog_tests)
+
+    add_executable(AIOrchestrator_SqliteProjects_tests
+        tests/Unit/SqliteProjectsRepositoryTests.cpp
+    )
+    target_compile_features(AIOrchestrator_SqliteProjects_tests PRIVATE cxx_std_20)
+    target_link_libraries(AIOrchestrator_SqliteProjects_tests
+        PRIVATE AIOrchestrator::Persistence ${AIOrchestrator_Sqlite3_Target}
+    )
+    ai_orchestrator_configure_target(AIOrchestrator_SqliteProjects_tests)
+    add_test(NAME AIOrchestrator_SqliteProjects_tests COMMAND AIOrchestrator_SqliteProjects_tests)
+
+    add_executable(AIOrchestrator_SqliteSettings_tests
+        tests/Unit/SqliteSettingsRepositoryTests.cpp
+    )
+    target_compile_features(AIOrchestrator_SqliteSettings_tests PRIVATE cxx_std_20)
+    target_link_libraries(AIOrchestrator_SqliteSettings_tests
+        PRIVATE AIOrchestrator::Persistence ${AIOrchestrator_Sqlite3_Target}
+    )
+    ai_orchestrator_configure_target(AIOrchestrator_SqliteSettings_tests)
+    add_test(NAME AIOrchestrator_SqliteSettings_tests COMMAND AIOrchestrator_SqliteSettings_tests)
+
+    add_executable(AIOrchestrator_SqliteConversations_tests
+        tests/Unit/SqliteConversationsRepositoryTests.cpp
+    )
+    target_compile_features(AIOrchestrator_SqliteConversations_tests PRIVATE cxx_std_20)
+    target_link_libraries(AIOrchestrator_SqliteConversations_tests
+        PRIVATE AIOrchestrator::Persistence ${AIOrchestrator_Sqlite3_Target}
+    )
+    ai_orchestrator_configure_target(AIOrchestrator_SqliteConversations_tests)
+    add_test(NAME AIOrchestrator_SqliteConversations_tests COMMAND AIOrchestrator_SqliteConversations_tests)
+
+    # The planning repositories reuse the shared repository contracts that also run inside
+    # AIOrchestrator_Persistence_tests; this scoped executable runs only those suites.
+    add_executable(AIOrchestrator_SqlitePlanning_tests
+        tests/Unit/SqlitePlanningTestMain.cpp
+        tests/Unit/RunDraftRepositoryTests.cpp
+        tests/Unit/OutcomeBriefRepositoryTests.cpp
+        tests/Unit/FollowUpPlanRequestRepositoryTests.cpp
+        tests/Unit/SqlitePlanningRepositoryTests.cpp
+    )
+    target_compile_features(AIOrchestrator_SqlitePlanning_tests PRIVATE cxx_std_20)
+    target_link_libraries(AIOrchestrator_SqlitePlanning_tests
+        PRIVATE AIOrchestrator::Persistence ${AIOrchestrator_Sqlite3_Target}
+    )
+    ai_orchestrator_configure_target(AIOrchestrator_SqlitePlanning_tests)
+    add_test(NAME AIOrchestrator_SqlitePlanning_tests COMMAND AIOrchestrator_SqlitePlanning_tests)
 endif()
 
 # Backend-owned composition root: owns persistence, repositories, the Mock

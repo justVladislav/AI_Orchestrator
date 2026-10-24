@@ -1,0 +1,465 @@
+# SQLite decomposition: review and implementation design
+
+Status: phases 1, 2A and 2B implemented; of the feature batches, batch 3
+(`sqlite/catalog/`: providers, models and execution profiles), batch 4
+(`sqlite/projects/` and `sqlite/settings/`: projects, tasks, workspace state, project
+readiness, application settings and the verification scratch setting), batch 5
+(`sqlite/conversations/`: chat, chat memory, project memory and its compaction), batch 6
+(`sqlite/planning/`: run drafts, Outcome Brief and follow-up plan requests), batch 7
+(`sqlite/execution/` and `sqlite/verification/`) and batch 8 (`sqlite/agents/` and
+`sqlite/proposals/`) are implemented. `SqliteRepositories.cpp` is gone; the public declaration
+header `SqliteRepositories.hpp` is unchanged and splitting it is a separate, later step.
+Reviewed on 2026-10-23. This document describes
+implementation boundaries and acceptance criteria, not the completion of the
+Backend architecture refactor.
+
+Phase 2A (database lifecycle) result: the
+constructor, destructor, `open()` (with the unchanged migration body), `path()`,
+`supportedSchemaVersion` and both follow-up SQL helpers now live in
+`sqlite/SqliteDatabase.cpp`; `pathToUtf8` / `pathFromUtf8` moved unchanged into
+`sqlite/SqlitePrimitives`. The aggregate shrank from 15,327 to 11,449 lines. The
+move was checked mechanically against `HEAD`: the new aggregate is an ordered
+subsequence of the old one, all 3,779 non-blank removed lines are present in the
+new files with the same multiplicity, and the moved blocks are byte-identical
+(CRLF-normalised). Three missing lifecycle contracts were added to
+`SqliteRepositoryTests.cpp` (newer schema leaves the future marker, sentinel rows
+and tables untouched across repeated refusals; a parent that is a file gives
+`persistence.directory_failed`; a Cyrillic/CJK database location round-trips and
+reopens) and were run against the phase-1 code first, then after the move. Debug
+build of the five affected targets and their ctest: 5/5 passed. Not claimed: the
+new tests are not mutation-tested, there was no local Release build, and the
+failed-migration case relies on the existing v59/v65 refusal tests. Hosted
+Windows CI run 39985592008 later passed Debug and Release on public commit
+`2087a05`, which contains 2A and 2B.
+
+Batches 7 and 8 were a mechanical split only. Every remaining repository class moved, with the
+helpers only it uses, into its feature directory (execution: Run, execution manifest, workspace
+scope, manifest task execution, work ledger, artifact, run warning; verification: manifest
+verification continuation, manual handoff, baseline normalization, verification environment,
+verification bootstrap; agents: model execution, agent tool session, agent tool audit; proposals:
+change proposal, approval, proposal review). Methods and helpers are copied verbatim and keep their
+original relative order (helpers first, inside an anonymous namespace). No helper turned out to be
+shared between classes, so no new private header was needed. Each class is a commit of its own,
+checked against the previous revision (the aggregate is an ordered subsequence of it, every removed
+line is in the new file). After each batch one incremental build of the existing targets and one
+run of the existing suites: 10/10 after batch 7 and after batch 8, and the aggregate
+`First_AI_Agents_tests` once after batch 8. No test, test target or mutation run was added. The
+emptied `SqliteRepositories.cpp` (only includes, using declarations and empty namespaces were left)
+was removed in its own commit.
+
+Batch 6 (`SqliteRunDraftRepository`, `SqliteOutcomeBriefRepository` and
+`SqliteFollowUpPlanRepository`, `sqlite/planning/`): these three already had shared repository
+contracts that run against SQLite inside `AIOrchestrator_Persistence_tests`, so they were only
+moved, each in a commit of its own without edits (run drafts 745 lines, Outcome Brief 459,
+follow-up requests 575, checked against the previous revision as in 2A). A scoped
+`AIOrchestrator_SqlitePlanning_tests` (about 35 s) runs exactly those suites. Three small private
+helpers were extracted first, each byte-identical: the JSON string list and roster assignment row
+(`roster/`), the stored Run status (`execution/`), and, in the run draft commit, a header for the
+three group storage functions that the follow-up confirm still calls (only the six namespace lines
+around them changed, anonymous namespace to `sqlite_detail`). One round of contracts was added
+for the run draft repository where a mutation run on the moved file showed gaps next to the
+shared contract (typed errors and rollback of a single insert, roster read order, damaged rows).
+The ten Debug suites passed after each move (10/10). A mutation run on the follow-up file left two
+survivors that are not pursued: the compare-and-set guard `follow_up.state_changed` (its update
+runs inside the transaction that loaded the row, so the branch is practically unreachable) and
+the `run_draft_group.duplicate_source_request` mapping (reachable only through the follow-up
+confirm). Not claimed: a local Release build, concurrency contracts for these repositories.
+
+Batch 5 (`SqliteChatRepository`, `SqliteChatMemoryRepository`, `SqliteProjectMemoryRepository`
+and `SqliteProjectMemoryCompactionRepository`, `sqlite/conversations/`): a new
+`AIOrchestrator_SqliteConversations_tests` with 8 contracts, each added for its repository and
+run against the aggregate first. Chat: conversations with 64-bit token magnitudes, the
+pinned-then-newest-then-id listing, refused inserts and updates, update replacing every field,
+removal cascading to its own messages only; messages with every role and status, empty
+provider/model ids stored as NULL, update replacing every field and `chat.message_not_found`,
+a project context refused outside a prepared turn, an unknown stored role or status failing
+closed; prepared turns with identity and role violations refused and a rollback after a first
+insert and after a failed conversation update. The context attachment itself stays covered by
+the existing monolith test. Chat memory: every field, ordering, per-conversation listing and
+removal, `chat_memory.duplicate_id`, `chat_memory.conversation_not_found`, reopen and the
+cascade. Project memory: every field, ordering, the bounded recent page (limits below, equal
+to and above the count, zero, unknown project, total count; a limit beyond int64 is currently
+refused), `project_memory.duplicate_id`, `project_memory.project_not_found` and per-project
+removal. Compaction: records with their sources in order, a completed record refused outside
+the atomic commit, and the commit with inconsistent fields, a missing, foreign or repeated
+source (`project_memory.compaction_conflict`) and a duplicate result or record id, each
+leaving memory and provenance unchanged, then the accepted commit. Each repository then moved
+in a commit of its own without edits (chat 283 lines, chat memory 112, project memory 153,
+compaction 245; their helpers moved with them and have no other users). The nine Debug suites
+passed after each move (9/9), and the aggregate `First_AI_Agents_tests` (which exercises these
+repositories through the chat and memory services) passed once after the last move. A one-shot
+mutation check on the four new files, scored by the Conversations suite only, killed 20 of 24
+mutants. The four survivors are the removals of the `id` tie-break in the message listing, the
+chat memory listing, the recent project memory page and the compaction listing; each table has an
+index on (owner, created_at_ms, id), so they survived presumably because of the index scan
+order, and equivalence is not established. Pinned, not endorsed: an unreadable
+`source_segment_ids` of a compaction record reads as an empty list and non-string entries are
+skipped. Not claimed: a local Release build, concurrency contracts for these repositories, or
+mutation testing of the context attachment writes.
+
+Batch 4, second part (`SqliteWorkspaceStateRepository`, `SqliteProjectReadinessRepository`,
+`SqliteVerificationScratchSettingRepository` and `SqliteApplicationSettingsRepository`): each
+repository got its missing contracts first, run against the aggregate, and then moved in a
+commit of its own without edits (workspace state 54 lines, scratch setting 52, application
+settings 104, readiness 103; none of them has private helpers). Contracts added to
+`AIOrchestrator_SqliteProjects_tests` (now 12): the active project (select, switch, clear, an
+unknown project reporting `workspace.project_not_found` without losing the previous
+selection, state shared by two repository objects, reopen) and readiness (all four states
+with every field and a Unicode target, an upsert replacing only its own project's record,
+`project.not_found` for an unknown project, a Ready record with an incomplete proof refused
+while the stored record stays, an unknown stored state failing closed). A new
+`AIOrchestrator_SqliteSettings_tests` (5 contracts): the scratch setting (store, Unicode
+overwrite, clear, the 1..2048 byte bound with refusals that keep the previous value, a missing
+singleton row recreated by the next store, reopen) and the application settings (seeded
+defaults, every field at both ends of the allowed ranges with set and cleared optionals,
+revision conflicts including two writers from one revision, refused writes that keep the
+stored settings, unknown enum values failing closed and a missing settings row). Existing
+tests of the scratch setting and of readiness (`VerificationScratch_tests`,
+`ProjectReadiness_tests`) were kept and still pass. The eight Debug suites passed after each
+move (8/8). A one-shot mutation check on the four new files, scored by the Projects and
+Settings suites, killed 14 of 14 mutants (foreign key mappings, the update row, a NULL
+last-success time, the failure message of an upsert, the state binding, the scratch upsert and
+row, the conflict check, the revision 0 guard, two column reads and a swapped binding).
+Pinned, not endorsed: an unreadable `targets_json` of a readiness row reads as an empty target
+list and non-string entries are skipped. Not claimed: a local Release build, or concurrency
+contracts for these four repositories.
+
+Batch 4, first part (`SqliteProjectRepository` and `SqliteTaskRepository`,
+`sqlite/projects/`): a new `AIOrchestrator_SqliteProjects_tests` with 8 contracts passed on
+the old code first. Projects: round trip with every status and a Unicode root, listing
+order, lookup by the exact root path and reopen; repeated id, repeated root path, missing
+project and a root path clash on update; an unknown status failing closed; concurrent
+writers. Tasks: every status and priority with optional dates, update-time order with an
+id tie-break and the project filter; write errors and an update that keeps the owning
+project and the creation time; an unknown status or priority failing closed; run links in
+link order, a run moving between tasks and refused links. Each repository then moved in a
+commit of its own with its private helpers and without edits (project: `projectColumns`,
+`projectStatusFromString`, `readProject`, `bindProject`, 181 lines; task:
+`taskColumns`, `taskStatusFromString`, `taskPriorityFromString`, `readTask`, 213 lines), checked
+against the previous revision as in 2A. The seven Debug suites passed after each move
+(7/7). A one-shot mutation check on both new files, scored by the Projects suite only,
+killed 13 of 13 mutants (duplicate id and path mappings, missing-row acceptance in both
+`update` methods, both id tie-breaks, a status and a priority mapping, swapped created and
+updated times, an inverted flag, swapped due and planned bindings, link order and
+`INSERT OR REPLACE` turned into `IGNORE`). Not claimed: a local Release build, mutation
+testing of the insert binding of tasks and of the remaining `readTask` columns, or
+concurrency contracts for tasks.
+
+Batch 3, third repository (`SqliteExecutionProfileRepository`, `sqlite/catalog/`):
+first the mapping that profiles share with the run draft code (`providerBudgetOverridesJson`,
+`parseProviderBudgetOverrides`, `readAssignment`) moved byte-identically into
+`catalog/SqliteProfileMapping.hpp/.cpp` (62 lines out of the aggregate, a commit of its
+own), then the class, `executionProfileColumns`, `executionProfileAssignmentColumns`,
+`readExecutionProfile`, `bindExecutionProfile` and `fetchAssignmentsForProfile` moved
+without edits (342 lines out of the aggregate, checked against the previous revision as
+in 2A). Five more contracts were added to `AIOrchestrator_SqliteCatalog_tests` (now 14)
+and passed on the old code first: round trip with a full budget, a roster read in stage
+type order, listing order and reopen; write errors (repeated id, repeated stage type,
+unknown model or provider, non-positive timeout, unknown stage type, second default)
+that leave no partial profile or roster; `update` replacing the whole roster (smaller,
+empty, regrown) with the previous profile and roster intact after failures that happen
+once the old roster was already deleted; `setDefaultProfile` keeping the previous
+default and a usable connection after a refusal; a corrupt budget, a budget the Backend
+would refuse and non-positive stored timeouts failing closed. A one-shot mutation check
+on the new file, scored by the Catalog suite only, ran 14 mutants: 13 killed, M7
+survived. M7 (the `,id` tie-break of `listAll`) survived, presumably because the
+`(created_at_ms, id)` index scan returns the same order; equivalence is not established,
+since a different query plan would not guarantee that order. M9 (`update` binding an
+empty budget) first survived too, because no contract updated a profile to a non-empty
+budget; the contract was strengthened in its own commit, run against the pre-move code,
+and only M9 was rerun and killed.
+After the move the six Debug suites passed (6/6). Not claimed: a local Release build,
+mutation testing of `SqliteProfileMapping` (moved unchanged) or concurrency contracts
+for profiles. Profiles have no `remove`, so there is no in-use contract.
+
+Batch 3, second repository (`SqliteModelRepository`, `sqlite/catalog/`): the class,
+`modelColumns`, `readModel` and `bindModel` moved without edits (378 lines out of the
+aggregate, checked against the previous revision). Five more contracts were added to
+`AIOrchestrator_SqliteCatalog_tests` (now 9) and passed on the old code first: flat,
+cache, one-hour and long-context prices with ordering and provider filter; duplicate
+id / apiModelId, missing, foreign-key and out-of-range write errors and an update that
+keeps the stored default flag; `setDefaultModel` keeping the previous default and a
+usable connection after each refusal; `remove` with `model.not_found` / `model.in_use`;
+invalid long-context rows failing closed on `findById` and `listAll`. After the move the
+six Debug suites passed (6/6). A one-shot mutation check on the new file, scored by the
+Catalog suite only, killed 11 of 11 mutants (rollback removed, tie-break removed,
+provider filter dropped, remove/update accepting a missing id, narrowed in-use mapping,
+update resetting the default, tier check disabled, a swapped price binding, a broken
+duplicate-id mapping, zero-row default treated as success); the output of M1-M4 was
+lost on the first pass and they were run again. The source was restored byte-for-byte.
+Not covered: the negative-value branch of `readModel` (no test writes a negative price into a model row).
+
+Batch 3, first repository (`SqliteProviderRepository`, `sqlite/catalog/`): the
+public class, `providerColumns`, `readProvider` and `bindProvider` moved without
+edits (140 lines out of the aggregate, checked against the previous revision as in
+2A). The new `AIOrchestrator_SqliteCatalog_tests` pins four provider contracts
+(round trip, ordering and reopen; duplicate/update/missing errors; schema CHECK
+failures that leave rows and the connection intact; concurrent writers). They
+passed on the old code first and again after the move; with the five existing
+suites: 6/6 in Debug. Models were extracted next and execution profiles after
+them (the paragraphs above).
+
+Phase 2B result (separate commit):
+`ensureSchema(sqlite3*)` in `sqlite/SqliteSchema.cpp` now holds the version check,
+the newer-schema refusal and every historical step, together with
+`supportedSchemaVersion` and the follow-up SQL helpers; `SqliteDatabase::open()`
+calls it after the PRAGMAs and keeps the handle (and its cleanup) in `Impl`. The
+only edits inside the 3,560 moved body lines are `impl->handle` -> `handle` (207
+places) and the outer `Result<shared_ptr<SqliteDatabase>>::failure(` ->
+`Result<void>::failure(`; this was verified line by line against the 2A revision,
+and the constants, helpers and the remaining lifecycle code are byte-identical.
+The existing v65 refusal test was extended: after the blocking value is repaired
+the same database upgrades, the seeded model survives and the version reaches 70.
+Debug build and the five suites: 5/5 passed. The extended test was run only
+against the post-move code (it needed no rerun on the old code because the
+refusal half is unchanged). Hosted CI for 2A and 2B: see above.
+
+Paths below are relative to `First_AI_Agents/First_AI_Agents/` unless stated
+otherwise. The [implementation guide](../../First_AI_Agents/First_AI_Agents/sourceFiles/infrastructure/sqlite/README.md)
+describes the current ownership rules.
+
+## Current state and review
+
+Phase 1 moved statement/parameter/column primitives and Comparison persistence
+out of `sourceFiles/infrastructure/SqliteRepositories.cpp`. The file decreased
+from 15,728 to 15,327 lines. It still contains database opening, historical
+migrations, feature mappings and most repository implementations. Moving 401
+lines out is a first verified boundary, not resolution of the entire gap.
+
+| Boundary | Current owner | Review result |
+| --- | --- | --- |
+| Native handle and shared mutex | `sqlite/SqliteConnection.hpp`, private `SqliteDatabase::Impl` | Same ownership and cleanup; repositories retain the shared database |
+| Statements, bindings and primitive conversions | `sqlite/SqlitePrimitives.hpp/.cpp` | Moved bodies preserve finalization, numeric range checks and errors |
+| Comparison SQL, row mapping and selection JSON | `sqlite/comparison/SqliteComparisonSessionRepository.cpp` | Same queries, column/binding order, locking and revision checks |
+| Opening, PRAGMAs and lifecycle | `sqlite/SqliteDatabase.cpp` (since 2A) | Same open order and cleanup; calls `ensureSchema` after the PRAGMAs |
+| Schema upgrades | `sqlite/SqliteSchema.hpp/.cpp` (since 2B) | One private `ensureSchema(sqlite3*)`; historical steps unchanged; schema remains 70 |
+| Repository declarations | `includes/ai/infrastructure/SqliteRepositories.hpp` | Unchanged compatibility surface |
+
+No blocking issue was found in the phase-1 move. This conclusion covers the
+extraction, not every pre-existing storage behaviour or the unfinished Comparison
+product features. Private headers are not exported as an include directory and
+are not included by application services or the Qt adapter. Feature JSON stays
+with the feature instead of entering the shared primitives header.
+
+Verification already performed:
+
+- The Comparison contracts passed against the original aggregate implementation
+  before extraction. They cover reopen, optional values, filtering/order,
+  shared ownership, conflicting revisions, failed bindings/writes, foreign-key
+  failure recovery, corrupt selection JSON and concurrent revision winners.
+- After extraction, Persistence, Comparison and BackendRuntime passed together
+  in a Backend-only Debug build: 3/3. The final Comparison rerun also passed.
+- The moved implementation bodies were compared with the originals. Database
+  opening/migrations and all 59 raw SQL blocks retained their text and order.
+- Hosted Windows CI run `39969521669` passed Debug and Release on public commit
+  `3e61d07fc281492ca698e91fc646de15c52599b2`.
+
+The same nine phase-1 files were synchronized into the primary local checkout
+and committed there as `135ce5a`. Their normalized Git blobs match the tested
+public change. That copy was not independently rebuilt after synchronization.
+No GUI performance measurement, live profile database test, paid Run or new
+release package is claimed by this review. New tests are contract tests, not
+mutation-tested or benchmark evidence.
+
+## Dependency direction and constraints
+
+```text
+Qt adapter / composition root
+  -> application repository ports and existing public SQLite declarations
+    -> feature-owned SQLite implementations
+      -> private connection, statements and primitive conversions
+
+SqliteDatabase::open
+  -> private schema upgrade boundary
+    -> SQLite primitives and historical schema validation
+```
+
+Continue with the existing `AIOrchestrator_Persistence` target and public
+declarations. Do not introduce another database instance, mutex, connection pool,
+Qt SQL dependency, service locator or generic repository framework. Repository
+methods must retain their current lock scope, especially around transactions
+and `sqlite3_changes()`. Do not change public method signatures or error codes.
+
+Schema 70, applied migrations, foreign-key actions, indexes, triggers, stored
+JSON, timestamp units and revision rules stay unchanged. Schema validation
+currently uses pricing-domain validation; preserve that dependency in the schema
+implementation instead of copying or weakening the rules.
+
+This is not a UI latency fix. Profile UI/read-model refresh and locking costs
+separately before changing their behaviour.
+
+## Phase 2A: extract database lifecycle without rewriting it
+
+Deliver one reviewable structural change before splitting the migration body.
+
+1. Add `sourceFiles/infrastructure/sqlite/SqliteDatabase.cpp` to the Persistence
+   target explicitly. Move the constructor, destructor, `open()` and `path()`
+   there. At this intermediate checkpoint, `open()` still contains the entire
+   existing migration body.
+2. Move `supportedSchemaVersion`, `followUpPlanRequestsObjectsSql()` and
+   `followUpConfirmNeedsGroupTriggerSql()` with it into its anonymous namespace.
+   Both SQL helpers belong to schema ownership; the second is not optional.
+   Preserve their SQL and call positions in steps 66 and 67.
+3. Move the existing `pathToUtf8` / `pathFromUtf8` pair unchanged into
+   `SqlitePrimitives.hpp/.cpp`, adding `<filesystem>` there. Both lifecycle and
+   remaining repositories use the same conversion. Remove the aggregate's local
+   definitions and import the private functions explicitly. Do not introduce
+   ANSI `.string()` conversions or duplicate these implementations.
+4. Keep `SqliteConnection.hpp` as the single definition of `Impl`; the constructor
+   and destructor stay out of the public header. Retain the old aggregate for
+   repositories only. Do not make new implementation files include a `.cpp`.
+5. Preserve the existing open sequence: path validation, directory creation,
+   UTF-8 path, READWRITE/CREATE/FULLMUTEX, extended result codes, 5-second busy
+   timeout, foreign keys, WAL, synchronous NORMAL, version inspection and
+   migrations, then publication of the shared database. This order also affects
+   failure precedence and side effects; do not rearrange it during extraction.
+6. Preserve failed-open handle cleanup and all early-return cleanup. An error
+   must not expose a partially opened `SqliteDatabase` to callers.
+
+Use explicit includes. Migration code also uses `ProviderCatalogTypes.hpp`
+(`LongContextPricing`, its checks and diagnostics), containers and local schema
+inspection lambdas. Inventory these dependencies before removal; do not move
+unrelated feature row readers merely to satisfy compilation.
+
+## Phase 2B: isolate schema upgrades behind one private function
+
+Only after 2A passes, add:
+
+```text
+sourceFiles/infrastructure/sqlite/
+  SqliteDatabase.cpp       # filesystem, native open, PRAGMAs and lifecycle
+  SqliteSchema.hpp         # private upgrade declaration
+  SqliteSchema.cpp         # version check, historical steps and schema helpers
+```
+
+The private declaration is:
+
+```cpp
+namespace ai::infrastructure::sqlite_detail {
+common::Result<void> ensureSchema(sqlite3* handle);
+}
+```
+
+Contract: the handle is non-null, configured and not yet published to
+repositories. The caller retains sole ownership. `ensureSchema` neither opens
+nor closes it, acquires no repository lock and returns the original error.
+This function is not for invoking migrations on a database already in use.
+
+Move version inspection, newer-schema rejection, schema-only helpers and all
+existing migration branches into `SqliteSchema.cpp`. Keep the version statement
+scope: it must finalize before a migration transaction begins. Keep
+`supportedSchemaVersion = 70` private to the schema owner.
+
+Mechanical edits allowed inside the moved body:
+
+- `impl->handle` becomes the handle parameter.
+- Outer `Result<shared_ptr<SqliteDatabase>>::failure(...)` returns become
+  `Result<void>::failure(...)`; keep the error object/message unchanged.
+- Successful completion returns `Result<void>::ok()`. The lifecycle code checks
+  that result before constructing the shared database.
+
+Do not rewrite nested lambdas' different Result types, version guards, SQL,
+branches or recovery logic. Do not wrap all upgrades in a new transaction, add
+an automatic retry or replace historical branches with a numbered loop. The
+existing checks include column/shape inspection, pricing validation, rollback,
+foreign-key checks and refusal to discard paid follow-up evidence. Preserve the
+special v66/v67 table/trigger repair ordering and non-empty legacy-table refusal.
+
+Keep the migration code together for this step. Splitting SQL by historical
+version is a later decision; it must not produce dozens of files before a stable
+schema boundary exists. Do not change schema, package version or release assets.
+
+## Acceptance and tests for phase 2
+
+Reuse the existing suites and add only missing behavioural coverage. First run
+any new lifecycle/error contracts against phase 1, before moving implementation.
+Tests must use public entry points and synthetic temporary databases, not private
+headers, the user's profile database or native handle access added to product API.
+
+| Case | Required observation |
+| --- | --- |
+| Fresh database and reopen | Schema 70, same schema objects/defaults; persisted values survive reopen |
+| Already-current database | Reopen preserves rows, revisions and readiness; does not reset data |
+| Existing upgrade fixtures | Existing old-schema, v66/v67 and v67-v70 tests still pass with the same refusal/recovery rules |
+| Newer schema | `migration.unsupported_version`; future-version marker and sentinel rows are preserved |
+| Empty path / invalid parent | Same `persistence.empty_path` / `persistence.directory_failed`; no crash |
+| Unicode database location | A UTF-8 round-trip works in a Cyrillic/CJK directory and after reopen |
+| Failed migration | Original failure is returned, failed step does not advance its version; after removing a synthetic blocker, reopen succeeds |
+| Shared lifetime and writes | Comparison and another repository continue sharing one connection; revision conflict and transaction tests remain valid |
+
+Do not claim coverage of every historical version because a few selected
+upgrade fixtures pass. Where failure injection is needed, construct an explicit
+fixture that makes one existing migration fail. Assert that step's atomicity;
+earlier successfully committed upgrades may remain applied. Do not require the
+whole multi-version upgrade to roll back as one transaction.
+
+For structural verification compare the moved SQL literals, concatenated SQL
+fragments, helper bodies, version guards, diagnostic codes and meaningful
+statement scopes against the pre-move revision. Comparing only raw-string
+blocks misses migrations assembled from ordinary strings and C++ data checks.
+
+Build the affected targets incrementally from the primary checkout. Run:
+
+```powershell
+cmake --build out/build/x64-debug --target AIOrchestrator_Persistence_tests AIOrchestrator_SqliteComparison_tests AIOrchestrator_BackendRuntime_tests ProjectReadiness_tests VerificationScratch_tests
+ctest --test-dir out/build/x64-debug -R '^(AIOrchestrator_Persistence_tests|AIOrchestrator_SqliteComparison_tests|AIOrchestrator_BackendRuntime_tests|ProjectReadiness_tests|VerificationScratch_tests)$' --output-on-failure
+```
+
+Use the configured MSVC developer environment. Check `CMAKE_HOME_DIRECTORY` in
+the selected build directory; it must identify the intended source checkout.
+Use an existing equivalent build directory if named differently; never silently
+test another source tree. Record the exact revision, targets, commands and
+results. The existing Persistence runner contains multiple sequential groups;
+report a failing early group rather than treating later groups as executed.
+
+After both structural changes, rely on one normal PR CI matrix for broader
+Debug/Release coverage. Do not rebuild or repack the stable release for a source
+reorganization, or repeat full builds solely for documentation changes. A failing
+test, changed behaviour or new unresolved concern can justify additional checks.
+
+## Subsequent feature extraction order
+
+| Batch | Responsibility / examples | Boundary to preserve |
+| --- | --- | --- |
+| 3 | `catalog/`: providers, models and execution profiles | Pricing checks, profile/roster mapping and foreign keys |
+| 4 | `projects/`, `settings/`: projects/tasks, workspace state, settings, scratch and readiness | Path encoding, readiness proof and revision rules |
+| 5 | `conversations/`, `memory/`: chat and project memory | Message ordering, JSON and compaction transactions |
+| 6 | `planning/`: drafts, Outcome Brief and follow-up requests | Cross-table atomic draft confirmation and immutable paid evidence |
+| 7 | `execution/`, `verification/`: Runs, Manifest, work ledger, scope, continuation, bootstrap and handoff | Roster snapshots, state transitions, transaction/lock boundaries |
+| 8 | `proposals/`, `agents/`: changes, approvals, review, tool sessions/audit; remaining model executions | Apply audit, batched reads, execution history and recovery |
+
+These are responsibility groups, not a command to move a batch in one commit.
+Extract one coherent repository or transactional aggregate plus its own row/JSON
+helpers. Shared roster mapping used by profiles, Runs and drafts needs a small
+private feature helper, not promotion into `SqlitePrimitives`. Never split a
+transaction across separately locking repository calls. Keep helpers private
+until multiple consumers actually need them. Inventory callers before choosing
+whether a helper is shared or belongs to a single feature.
+
+After implementation ownership is clear, split the aggregate declaration header
+into feature entry headers and retain the old header as a compatibility facade.
+Do that separately from moving implementation. The broader application layer can
+then be grouped around workflows, verification, proposals, providers, planning,
+conversations and memory with explicit CMake ownership. Audit include/target
+dependencies first; a folder move alone does not establish an architectural
+boundary or make other toolchains supported.
+
+## Handoff and delivery procedure
+
+The next agent's task is phase 2A, followed by 2B only after 2A's checks pass.
+Do not start the later feature batches, UI changes or toolchain expansion as part
+of that task. Read this design, the SQLite guide, current CMake sources and the
+actual implementation before editing; line numbers are only navigation aids.
+
+Work in the primary local checkout first. Preserve unrelated dirty files and
+stage explicit paths. Commit 2A and 2B separately, with their verification results;
+update the status above to describe what actually passed. Report any failing
+behaviour discovered during extraction separately instead of silently fixing it
+inside a structural move. No concurrent agent should edit the same storage files.
+
+The private archive and clean public repository have different Git histories.
+Transfer only reviewed patches/files to the public branch; never point the old
+checkout at the public remote or push its branch ancestry there. Verify the
+public base and compare the synchronized content before pushing. Follow the
+owner's authorization for push, PR and merge; a refactor task does not authorize
+merging, retagging, publishing a release or touching the live database.

@@ -18,6 +18,17 @@ and durable workflow execution.
 See the [project README](../../README.md) for the architecture overview, supported workflows,
 known limitations and release packaging.
 
+## Persistence implementation
+
+SQLite implementations are being decomposed behind unchanged repository
+interfaces. See the [SQLite implementation boundaries](sourceFiles/infrastructure/sqlite/README.md)
+for ownership of the shared connection, low-level SQL primitives, feature
+repositories and the checks required for structural moves.
+
+The [decomposition review and next-step design](../../docs/architecture/sqlite-decomposition.md)
+records the completed first extraction, its verification limits, the database
+lifecycle/schema split and the subsequent feature boundaries.
+
 ## Build and test
 
 Prefer the unified repository preset from the repository root:
