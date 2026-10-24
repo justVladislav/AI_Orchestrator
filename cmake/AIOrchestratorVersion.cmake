@@ -8,10 +8,10 @@
 #   AIO_VERSION_RC       1,0,0,0      the numeric quadruple of the Windows FILEVERSION/PRODUCTVERSION
 #   AIO_RC_FILEFLAGS     VS_FF_PRERELEASE, or 0 for a final release
 #
-# To release 1.0.0: empty AIO_VERSION_PRERELEASE. To start the next release: change the three numbers.
+# For a stable release, keep AIO_VERSION_PRERELEASE empty. To start the next release, change the three numbers.
 set(AIO_VERSION_MAJOR 1)
 set(AIO_VERSION_MINOR 0)
-set(AIO_VERSION_PATCH 0)
+set(AIO_VERSION_PATCH 1)
 set(AIO_VERSION_PRERELEASE "")
 
 set(AIO_VERSION_CORE "${AIO_VERSION_MAJOR}.${AIO_VERSION_MINOR}.${AIO_VERSION_PATCH}")

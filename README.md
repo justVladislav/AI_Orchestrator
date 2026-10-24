@@ -6,6 +6,8 @@ Version 1.0 is primarily validated for **C++ and Qt/QML projects on Windows usin
 
 Your workspace stays under your control. A model response is a proposal, not permission to modify files.
 
+Version **1.0.1** improves window resizing and page loading, virtualizes the project-memory list, and reorganizes SQLite persistence into focused modules. See the [changelog](CHANGELOG.md) for details.
+
 ## Features
 
 - **Multi-model workflows:** OpenAI and Anthropic adapters, execution profiles, task planning and bounded worker scheduling. A deterministic Mock path supports development and tests.
@@ -96,7 +98,7 @@ To update:
 3. Extract the new version into a **new folder**, not over the old version.
 4. Start it and keep the backup until you have checked your projects and history.
 
-Database migrations run on startup. A database upgraded by a newer application is not automatically compatible with an older executable. Version 1.0.0 uses schema **70**.
+Database migrations run on startup. A database upgraded by a newer application is not automatically compatible with an older executable. Versions 1.0.0 and 1.0.1 both use schema **70**; this update adds no database migration.
 
 ## Architecture
 
