@@ -45,8 +45,8 @@ Rectangle {
                 // so only the qrc path works — a relative file path does not
                 // exist inside the compiled resource system.
                 source: "qrc:/assets/navigation/main_icon.png"
-                sourceSize.width: navigationMenu.hostWindow.dp(68)
-                sourceSize.height: navigationMenu.hostWindow.dp(68)
+                // Decode once; changing sourceSize during resize reloads the PNG.
+                sourceSize: Qt.size(256, 256)
                 fillMode: Image.PreserveAspectFit
                 smooth: true
                 mipmap: true
