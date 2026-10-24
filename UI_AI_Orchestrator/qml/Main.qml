@@ -23,10 +23,8 @@ ApplicationWindow {
     readonly property real targetScaleFactor: Math.max(minimumScaleFactor,
                                                        Math.min(maximumScaleFactor,
                                                                 rawScaleFactor))
-    // Applied scale: follows targetScaleFactor in steps (scaleThrottle), so a
-    // live window resize does not re-evaluate every dp() binding on each frame.
-    // Deliberately not bound to targetScaleFactor; the initial value is
-    // assigned once in Component.onCompleted.
+    // Layout geometry follows the window at once; fonts and dp() dimensions follow the window scale
+    // coalesced to one update per rendered frame (see the FrameAnimation below).
     property real scaleFactor: 1.0
 
     readonly property string themeMode: backend.settings.themeMode
@@ -36,6 +34,14 @@ ApplicationWindow {
     function dp(value) {
         return Math.round(value * scaleFactor * 100) / 100
     }
+
+    function applyPendingScale() {
+        scaleFactor = targetScaleFactor
+    }
+
+    // An explicit Settings change is applied right away. Defer once so the target
+    // binding has picked up the new multiplier.
+    onInterfaceScaleMultiplierChanged: Qt.callLater(root.applyPendingScale)
 
     function setTheme(mode) {
         const normalizedMode = String(mode).toLowerCase()
@@ -85,15 +91,13 @@ ApplicationWindow {
         linkVisited: appTheme.linkVisited
     }
 
-    Component.onCompleted: scaleFactor = targetScaleFactor
+    Component.onCompleted: applyPendingScale()
 
-    Timer {
-        id: scaleThrottle
-
-        interval: 100
-        repeat: true
+    // While the target scale differs from the applied one, apply it once per rendered frame: any number
+    // of size changes between two frames cost a single re-evaluation of the scaled bindings.
+    FrameAnimation {
         running: root.scaleFactor !== root.targetScaleFactor
-        onTriggered: root.scaleFactor = root.targetScaleFactor
+        onTriggered: root.applyPendingScale()
     }
 
     AppTheme {

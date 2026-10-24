@@ -36,8 +36,8 @@ AbstractButton {
                 width: control.hostWindow.dp(25)
                 height: control.hostWindow.dp(25)
                 source: control.iconSource
-                sourceSize.width: control.hostWindow.dp(50)
-                sourceSize.height: control.hostWindow.dp(50)
+                // Scale the cached texture rather than reload it on every resize.
+                sourceSize: Qt.size(256, 256)
                 fillMode: Image.PreserveAspectFit
                 smooth: true
                 mipmap: true

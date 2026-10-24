@@ -30,6 +30,9 @@ ColumnLayout {
     property var providerChoicesSnapshot: []
     property int selectedChoiceIndex: -1
     property string errorText: ""
+    // The Flickable that scrolls this panel (ProjectDetailsPanel's). With it the segment list creates delegates
+    // only for the part that is on screen plus a margin; without it every delegate is created, as a Repeater would.
+    property Item scroller: null
 
     readonly property bool compactingThisProject:
         panel.backend.projectMemory.compacting
@@ -147,58 +150,117 @@ ColumnLayout {
         font.pixelSize: panel.hostWindow.dp(10)
     }
 
-    Repeater {
-        model: panel.segmentsSnapshot
-        delegate: Rectangle {
-            id: segmentRow
-            required property var modelData
-            Layout.fillWidth: true
-            Layout.preferredHeight: segmentContent.implicitHeight + panel.hostWindow.dp(16)
-            radius: panel.colors.cornerRadiusSmall
-            color: panel.colors.inputBackground
-            border.width: 1
-            border.color: panel.colors.border
+    // Memory segments: a virtualized list. It sits inside the panel's scrolling parent (ProjectDetailsPanel's
+    // Flickable), so a ListView of its own would create every delegate. Instead the host reserves the full height of
+    // the list in the parent's content, and a ListView only as tall as the parent's viewport slides along inside it,
+    // showing the matching part of the list (non-interactive; the parent does the scrolling).
+    Item {
+        id: segmentsHost
+        Layout.fillWidth: true
+        Layout.preferredHeight: segmentsList.contentHeight
+        visible: panel.segmentsSnapshot.length > 0
 
-            ColumnLayout {
-                id: segmentContent
-                anchors.fill: parent
-                anchors.margins: panel.hostWindow.dp(9)
-                spacing: panel.hostWindow.dp(3)
+        function syncWindow() {
+            const flick = panel.scroller
+            if (!flick || !flick.contentItem) {
+                segmentsList.height = segmentsList.contentHeight
+                segmentsList.y = 0
+                return
+            }
+            const sliceHeight = Math.min(segmentsList.contentHeight, flick.height)
+            const hostTop = segmentsHost.mapToItem(flick.contentItem, 0, 0).y
+            const offset = Math.max(0, Math.min(flick.contentY - hostTop,
+                                                segmentsList.contentHeight - sliceHeight))
+            segmentsList.height = sliceHeight
+            segmentsList.y = offset
+            segmentsList.contentY = segmentsList.originY + offset
+        }
 
-                RowLayout {
-                    Layout.fillWidth: true
+        onYChanged: syncWindow()
+        onHeightChanged: syncWindow()
+        onVisibleChanged: if (visible) syncWindow()
+        Component.onCompleted: Qt.callLater(syncWindow)
+
+        Connections {
+            target: panel.scroller
+            function onContentYChanged() { segmentsHost.syncWindow() }
+            function onHeightChanged() { segmentsHost.syncWindow() }
+        }
+        Connections {
+            target: panel
+            function onYChanged() { segmentsHost.syncWindow() }
+            function onScrollerChanged() { segmentsHost.syncWindow() }
+        }
+        Connections {
+            target: panel.parent
+            function onYChanged() { segmentsHost.syncWindow() }
+        }
+
+        ListView {
+            id: segmentsList
+            objectName: "projectMemorySegmentsList"
+            width: segmentsHost.width
+            interactive: false
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            spacing: panel.spacing
+            cacheBuffer: panel.hostWindow.dp(300)
+            model: panel.segmentsSnapshot
+            onContentHeightChanged: segmentsHost.syncWindow()
+            onHeightChanged: segmentsHost.syncWindow()
+
+            delegate: Rectangle {
+                id: segmentRow
+                objectName: "projectMemorySegmentRow"
+                required property var modelData
+                width: ListView.view ? ListView.view.width : 0
+                height: segmentContent.implicitHeight + panel.hostWindow.dp(16)
+                radius: panel.colors.cornerRadiusSmall
+                color: panel.colors.inputBackground
+                border.width: 1
+                border.color: panel.colors.border
+
+                ColumnLayout {
+                    id: segmentContent
+                    anchors.fill: parent
+                    anchors.margins: panel.hostWindow.dp(9)
+                    spacing: panel.hostWindow.dp(3)
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {
+                            Layout.fillWidth: true
+                            text: segmentRow.modelData.sourceRunId.length > 0
+                                  ? qsTr("From run %1").arg(segmentRow.modelData.sourceRunId.substring(0, 8))
+                                  : qsTr("Consolidated segment")
+                            color: panel.colors.textPrimary
+                            elide: Text.ElideRight
+                            font.pixelSize: panel.hostWindow.dp(10.5)
+                            font.weight: Font.Medium
+                        }
+                        Text {
+                            text: segmentRow.modelData.createdAt
+                            color: panel.colors.textMuted
+                            font.pixelSize: panel.hostWindow.dp(9)
+                        }
+                    }
                     Text {
                         Layout.fillWidth: true
-                        text: segmentRow.modelData.sourceRunId.length > 0
-                              ? qsTr("From run %1").arg(segmentRow.modelData.sourceRunId.substring(0, 8))
-                              : qsTr("Consolidated segment")
-                        color: panel.colors.textPrimary
+                        text: segmentRow.modelData.summary
+                        color: panel.colors.textSecondary
+                        wrapMode: Text.WordWrap
+                        maximumLineCount: 4
                         elide: Text.ElideRight
-                        font.pixelSize: panel.hostWindow.dp(10.5)
-                        font.weight: Font.Medium
+                        font.pixelSize: panel.hostWindow.dp(9.5)
                     }
                     Text {
-                        text: segmentRow.modelData.createdAt
+                        Layout.fillWidth: true
+                        text: qsTr("Source ~%1 tok · summary ~%2 tok")
+                            .arg(segmentRow.modelData.sourceTokenCount)
+                            .arg(segmentRow.modelData.summaryTokenCount)
                         color: panel.colors.textMuted
-                        font.pixelSize: panel.hostWindow.dp(9)
+                        font.pixelSize: panel.hostWindow.dp(8.5)
                     }
-                }
-                Text {
-                    Layout.fillWidth: true
-                    text: segmentRow.modelData.summary
-                    color: panel.colors.textSecondary
-                    wrapMode: Text.WordWrap
-                    maximumLineCount: 4
-                    elide: Text.ElideRight
-                    font.pixelSize: panel.hostWindow.dp(9.5)
-                }
-                Text {
-                    Layout.fillWidth: true
-                    text: qsTr("Source ~%1 tok · summary ~%2 tok")
-                        .arg(segmentRow.modelData.sourceTokenCount)
-                        .arg(segmentRow.modelData.summaryTokenCount)
-                    color: panel.colors.textMuted
-                    font.pixelSize: panel.hostWindow.dp(8.5)
                 }
             }
         }

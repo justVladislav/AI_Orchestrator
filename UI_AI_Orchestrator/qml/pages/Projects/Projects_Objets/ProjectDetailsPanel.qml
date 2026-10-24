@@ -44,6 +44,7 @@ Rectangle {
     border.color: colors.border
 
     Flickable {
+        id: detailsFlickable
         anchors.fill: parent
         anchors.margins: panel.hostWindow.dp(18)
         contentWidth: width
@@ -263,6 +264,7 @@ Rectangle {
             }
 
             ProjectMemoryPanel {
+                scroller: detailsFlickable
                 hostWindow: panel.hostWindow
                 colors: panel.colors
                 backend: panel.backend

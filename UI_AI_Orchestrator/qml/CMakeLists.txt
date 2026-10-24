@@ -19,6 +19,7 @@ qt_add_qml_module(UI_AI_Orchestrator_Content
         Common_Objects/WindowTitleBar.qml
         Navigation/NavigationItem.qml
         Navigation/NavigationMenu.qml
+        pages/CachedPage.qml
         pages/PageHost.qml
         pages/Overview/OverviewPage.qml
         pages/Overview/Overview_Objects/OverviewMetricCard.qml
