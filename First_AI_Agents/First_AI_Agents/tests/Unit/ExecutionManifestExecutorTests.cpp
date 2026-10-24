@@ -1728,8 +1728,8 @@ void testDependencyEvidenceOverLimitFailsBeforeProviderSession()
 // ChangeProposalService::listChanges(), never via ProposedChangeSet::changes
 // returned by findChangeSet(). The real SqliteChangeProposalRepository::
 // findChangeSet() only reads the proposed_change_sets header row (see
-// readChangeSet() in SqliteRepositories.cpp); the file-level operations live
-// in a separate proposed_file_changes table populated only by a dedicated
+// readChangeSet() in sqlite/proposals/SqliteChangeProposalRepository.cpp); the
+// file-level operations live in a separate proposed_file_changes table populated only by a dedicated
 // listChanges() query. Uses the real SQLite-backed repository - not the
 // in-memory Fake above, whose findChangeSet() happens to return the complete
 // struct including changes and would silently hide exactly this gap.

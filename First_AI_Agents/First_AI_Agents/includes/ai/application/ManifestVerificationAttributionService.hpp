@@ -17,9 +17,9 @@ namespace ai::application {
 // as a cross-check/fallback alongside the frozen Manifest's own
 // ownedPaths/plannedCreatePaths - never a replacement for it. This closes a
 // real gap: a Manifest whose AG-15 path-role fields were silently dropped by
-// a since-fixed persistence bug (see SqliteRepositories.cpp's
-// executionManifestToJson/FromJson) still has its correct ownership recorded
-// in the separately-persisted, immutable run_workspace_scopes row, since that
+// a since-fixed persistence bug (see executionManifestToJson/FromJson in
+// sqlite/execution/SqliteExecutionManifestRepository.cpp) still has its
+// correct ownership recorded in the separately-persisted, immutable run_workspace_scopes row, since that
 // row is derived directly from the in-memory Manifest at freeze time, before
 // any persistence round-trip could lose it. When that row exists, the service
 // validates the complete immutable scope (identity, bounds, every entry,
