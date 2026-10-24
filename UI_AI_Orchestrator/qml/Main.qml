@@ -23,9 +23,8 @@ ApplicationWindow {
     readonly property real targetScaleFactor: Math.max(minimumScaleFactor,
                                                        Math.min(maximumScaleFactor,
                                                                 rawScaleFactor))
-    // Keep layout geometry live, but rescale fonts and dp() dimensions only
-    // after a pause in resizing. A repeating throttle stalls the GUI on every
-    // tick while the window is still moving.
+    // Layout geometry follows the window at once; fonts and dp() dimensions follow the window scale
+    // coalesced to one update per rendered frame (see the FrameAnimation below).
     property real scaleFactor: 1.0
 
     readonly property string themeMode: backend.settings.themeMode
@@ -37,13 +36,11 @@ ApplicationWindow {
     }
 
     function applyPendingScale() {
-        scaleSettle.stop()
         scaleFactor = targetScaleFactor
     }
 
-    onTargetScaleFactorChanged: scaleSettle.restart()
-    // An explicit Settings change should not wait for the resize pause.
-    // Defer once so the target binding has picked up the new multiplier.
+    // An explicit Settings change is applied right away. Defer once so the target
+    // binding has picked up the new multiplier.
     onInterfaceScaleMultiplierChanged: Qt.callLater(root.applyPendingScale)
 
     function setTheme(mode) {
@@ -96,11 +93,10 @@ ApplicationWindow {
 
     Component.onCompleted: applyPendingScale()
 
-    Timer {
-        id: scaleSettle
-
-        interval: 100
-        repeat: false
+    // While the target scale differs from the applied one, apply it once per rendered frame: any number
+    // of size changes between two frames cost a single re-evaluation of the scaled bindings.
+    FrameAnimation {
+        running: root.scaleFactor !== root.targetScaleFactor
         onTriggered: root.applyPendingScale()
     }
 
