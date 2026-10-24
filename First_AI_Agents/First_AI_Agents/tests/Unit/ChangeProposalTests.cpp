@@ -2569,7 +2569,8 @@ void testBatchedReadsChunkLargeIdListAcrossParameterLimit()
 
     // A handful of real change sets placed near the start, middle and end of
     // a requested-id list well over one batching chunk (500 ids - see
-    // kBatchedInQueryChunkSize in SqliteRepositories.cpp) - if chunking
+    // kBatchedInQueryChunkSize in
+    // sqlite/proposals/SqliteChangeProposalRepository.cpp) - if chunking
     // dropped or misrouted a chunk, one of these would come back missing.
     const std::vector<std::size_t> realPositions = {0, 300, 650, 1199};
     for (std::size_t position : realPositions) {

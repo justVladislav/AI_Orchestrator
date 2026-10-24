@@ -63,7 +63,8 @@ ExecutionManifest manifestFor(const RunId& runId)
     // AG-15: a real Run (bb56e001-eac0-4b59-8d0b-d037c6bc1031) froze a
     // RunWorkspaceScope with real planned_create entries, proving the
     // in-memory manifest had these six fields populated at freeze time -
-    // yet the reloaded manifest showed none, because SqliteRepositories.cpp
+    // yet the reloaded manifest showed none, because the manifest
+    // serialization (now sqlite/execution/SqliteExecutionManifestRepository.cpp)
     // only ever wrote ownedPaths. Exercise every field so a partial
     // round-trip cannot pass silently again.
     second.plannedCreatePaths = {fs::path("source") / "created"};

@@ -119,7 +119,6 @@ UI_AI_Orchestrator/           Qt adapter, QML desktop, assets and UI tests
 cmake/                       Shared version and test/build helpers
 packaging/                   Portable ZIP, dependency notices and source bundles
 .github/workflows/           Windows Debug/Release CI
-Claude_CoWork/                Archived pre-integration snapshots, not production sources
 out/                         Local generated builds/artifacts (ignored by Git)
 ```
 

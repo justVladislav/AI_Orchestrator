@@ -591,9 +591,9 @@ if(AI_ORCHESTRATOR_BUILD_PERSISTENCE)
 # Native SQLite only. This backend must build and link without the Qt SDK; an
 # earlier revision of this target linked Qt6::Sql to work around a UI build
 # problem, which made First_AI_Agents depend on Qt to compile at all. That was
-# reverted: Persistence talks to sqlite3 directly (see SqliteRepositories.cpp),
-# and only the desktop UI project (a separate, Qt-based CMake project) is
-# responsible for deploying a native sqlite3 runtime beside itself if needed.
+# reverted: Persistence talks to sqlite3 directly (see
+# sourceFiles/infrastructure/sqlite/), and only the desktop UI project (a
+# separate, Qt-based CMake project) is responsible for deploying a native sqlite3 runtime beside itself if needed.
 # This lookup is owned by the Backend subproject. It is required both when the
 # Backend is configured alone and when it is embedded into the Qt desktop.
 #
