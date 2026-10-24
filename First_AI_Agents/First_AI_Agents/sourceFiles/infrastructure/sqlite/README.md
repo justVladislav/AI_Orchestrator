@@ -66,8 +66,14 @@ these implementation headers or access native SQLite handles.
   `proposals/` (batch 8) holds the change proposal, approval and proposal review repositories.
   Each file is the class with the helpers only it uses, copied from the former aggregate.
 - `SqliteRepositories.cpp` no longer exists: every repository implementation lives in its
-  feature directory. The public declarations stay in
-  `includes/ai/infrastructure/SqliteRepositories.hpp`.
+  feature directory. The public declarations are split into per-module headers under
+  `includes/ai/infrastructure/sqlite/` (`SqliteDatabase.hpp` plus `catalog/`, `comparison/`,
+  `projects/`, `settings/`, `conversations/`, `planning/`, `execution/`, `verification/`,
+  `agents/` and `proposals/`, grouped like the implementations here). The old
+  `includes/ai/infrastructure/SqliteRepositories.hpp` is now a compatibility facade that
+  includes all of them, so the earlier statements that a class "stays declared" there still
+  hold through that include. Consumers are not migrated yet, and the private
+  `SqliteConnection.hpp` still includes the facade.
 
 The CMake target lists these translation units explicitly. The internal directory
 is not an exported include path. Do not turn the primitives header into another
@@ -101,12 +107,13 @@ These are provider-free tests using temporary databases, not the user's profile.
 
 The [review and implementation design](../../../../../docs/architecture/sqlite-decomposition.md)
 defines the next agent's scope, private interfaces, migration invariants and
-acceptance checks. The implementation split (phases 1, 2A and 2B and batches 3-8) is complete.
-What is left is the public declaration header:
+acceptance checks. The implementation split (phases 1, 2A and 2B and batches 3-8) and the
+split of the public declaration header into module headers behind a compatibility facade
+are complete. What is left is optional include migration:
 
-1. Gradually replace the aggregate public declaration header with feature entry
-   headers and a compatibility facade; do not combine that API/include migration
-   with an unverified storage behaviour change.
+1. Move consumers and `SqliteConnection.hpp` from the facade to the module headers, and
+   drop the leftover monolith `using` declarations in the implementations; do not combine
+   that include migration with an unverified storage behaviour change.
 
 Folder layout is only part of modularity: keep dependencies and tests owned by
 the feature instead of only moving filenames.
