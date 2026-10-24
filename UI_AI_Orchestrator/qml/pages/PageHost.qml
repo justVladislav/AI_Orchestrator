@@ -33,6 +33,17 @@ Rectangle {
                                          ? 0
                                          : sectionIndexes[currentSection]
 
+    // Opens the Runs page (creating it on the first request) and then performs
+    // `action` on it exactly once - but only if Runs is still the selected page
+    // when the request is served, so a late action never lands on another page.
+    function openRunsAnd(action) {
+        pageHost.sectionRequested("runs")
+        Qt.callLater(function() {
+            if (pageHost.currentSection === "runs" && runsSlot.item)
+                action(runsSlot.item)
+        })
+    }
+
     radius: colors.cornerRadiusLarge
     color: colors.surfaceRaised
     border.width: 1
@@ -40,105 +51,173 @@ Rectangle {
     clip: true
 
 
+    // Every page is created on its first selection and kept afterwards (see CachedPage).
     StackLayout {
         anchors.fill: parent
         currentIndex: pageHost.selectedIndex
 
-        OverviewPage {
-            objectName: "overviewPage"
+        CachedPage {
+            id: overviewSlot
+            selected: pageHost.selectedIndex === 0
             hostWindow: pageHost.hostWindow
             colors: pageHost.colors
-            backend: pageHost.backend
-        }
-
-        ProjectsPage {
-            // Stable objectName so headless tests can find this page instance
-            // through QObject::findChild without depending on QML type registration.
-            objectName: "projectsPage"
-            hostWindow: pageHost.hostWindow
-            colors: pageHost.colors
-            backend: pageHost.backend
-            onProjectOpenRequested: projectId => {
-                // WorkspaceContextController has already persisted projectId
-                // before ProjectsPage emits this success-only signal.
-                pageHost.sectionRequested("runs")
-            }
-            onOrchestrationRequested: projectId => {
-                // ProjectsPage has already persisted projectId as the active
-                // workspace context. Open the canonical New Run dialog on the
-                // Runs page instead of starting an invisible Mock workflow.
-                pageHost.sectionRequested("runs")
-                Qt.callLater(runsPage.openNewRunDialog)
+            sourceComponent: Component {
+                OverviewPage {
+                    objectName: "overviewPage"
+                    width: overviewSlot.pageWindow.pageWidth
+                    height: overviewSlot.pageWindow.pageHeight
+                    hostWindow: overviewSlot.pageWindow
+                    colors: overviewSlot.pageColors
+                    backend: pageHost.backend
+                }
             }
         }
 
-        ChatsPage {
-            objectName: "chatsPage"
+        CachedPage {
+            id: projectsSlot
+            selected: pageHost.selectedIndex === 1
             hostWindow: pageHost.hostWindow
             colors: pageHost.colors
-            backend: pageHost.backend
-            onRunDraftsRequested: {
-                // The drafts a plan produced live in the Drafts list of the Runs page.
-                pageHost.sectionRequested("runs")
-                Qt.callLater(runsPage.openDrafts)
+            sourceComponent: Component {
+                ProjectsPage {
+                    // Stable objectName so headless tests can find this page instance
+                    // through QObject::findChild without depending on QML type registration.
+                    objectName: "projectsPage"
+                    width: projectsSlot.pageWindow.pageWidth
+                    height: projectsSlot.pageWindow.pageHeight
+                    hostWindow: projectsSlot.pageWindow
+                    colors: projectsSlot.pageColors
+                    backend: pageHost.backend
+                    onProjectOpenRequested: projectId => {
+                        // WorkspaceContextController has already persisted projectId
+                        // before ProjectsPage emits this success-only signal.
+                        pageHost.sectionRequested("runs")
+                    }
+                    onOrchestrationRequested: projectId => {
+                        // ProjectsPage has already persisted projectId as the active
+                        // workspace context. Open the canonical New Run dialog on the
+                        // Runs page instead of starting an invisible Mock workflow.
+                        pageHost.openRunsAnd(runs => runs.openNewRunDialog())
+                    }
+                }
             }
         }
 
-        RunsPage {
-            id: runsPage
-            objectName: "runsPage"
+        CachedPage {
+            id: chatsSlot
+            selected: pageHost.selectedIndex === 2
             hostWindow: pageHost.hostWindow
             colors: pageHost.colors
-            backend: pageHost.backend
+            sourceComponent: Component {
+                ChatsPage {
+                    objectName: "chatsPage"
+                    width: chatsSlot.pageWindow.pageWidth
+                    height: chatsSlot.pageWindow.pageHeight
+                    hostWindow: chatsSlot.pageWindow
+                    colors: chatsSlot.pageColors
+                    backend: pageHost.backend
+                    onRunDraftsRequested: {
+                        // The drafts a plan produced live in the Drafts list of the Runs page.
+                        pageHost.openRunsAnd(runs => runs.openDrafts())
+                    }
+                }
+            }
         }
 
-        ComparisonPage {
-            objectName: "comparisonPage"
+        CachedPage {
+            id: runsSlot
+            selected: pageHost.selectedIndex === 3
             hostWindow: pageHost.hostWindow
             colors: pageHost.colors
-            projectsModel: pageHost.backend.projects.model
-            sessionsModel: pageHost.backend.comparisons.sessionsModel
-            resultsModel: pageHost.backend.comparisons.resultsModel
-            summaryData: pageHost.backend.comparisons.summaryData
-            modelChoices: pageHost.backend.comparisons.modelChoices
-            selectedProjectId: pageHost.backend.comparisons.selectedProjectId
-            selectedSessionId: pageHost.backend.comparisons.selectedSessionId
-            currentSessionStatus: pageHost.backend.comparisons.currentSessionStatus
-            lastUpdatedText: pageHost.backend.comparisons.lastUpdatedText
-            busy: pageHost.backend.comparisons.busy
-            errorText: pageHost.backend.comparisons.errorText
-            canCreateComparison: pageHost.backend.comparisons.canCreateComparison
-            canRefresh: pageHost.backend.comparisons.canRefresh
-            canCancel: pageHost.backend.comparisons.canCancel
-
-            onProjectSelectionRequested: projectId =>
-                pageHost.backend.comparisons.selectProject(projectId)
-            onSessionSelectionRequested: sessionId =>
-                pageHost.backend.comparisons.selectSession(sessionId)
-            onCreateComparisonRequested: request =>
-                pageHost.backend.comparisons.createComparison(request)
-            onRefreshRequested: sessionId =>
-                pageHost.backend.comparisons.refresh()
-            onCancelRequested: sessionId =>
-                pageHost.backend.comparisons.cancelComparison()
-            onPreferredResultRequested: resultId =>
-                pageHost.backend.comparisons.setPreferredResult(resultId)
-            onResultSelectionChanged: (resultId, selected) =>
-                pageHost.backend.comparisons.setResultSelected(resultId, selected)
+            sourceComponent: Component {
+                RunsPage {
+                    objectName: "runsPage"
+                    width: runsSlot.pageWindow.pageWidth
+                    height: runsSlot.pageWindow.pageHeight
+                    hostWindow: runsSlot.pageWindow
+                    colors: runsSlot.pageColors
+                    backend: pageHost.backend
+                }
+            }
         }
 
-        ProvidersPage {
-            objectName: "providersPage"
+        CachedPage {
+            id: comparisonSlot
+            selected: pageHost.selectedIndex === 4
             hostWindow: pageHost.hostWindow
             colors: pageHost.colors
-            backend: pageHost.backend
+            sourceComponent: Component {
+                ComparisonPage {
+                    objectName: "comparisonPage"
+                    width: comparisonSlot.pageWindow.pageWidth
+                    height: comparisonSlot.pageWindow.pageHeight
+                    hostWindow: comparisonSlot.pageWindow
+                    colors: comparisonSlot.pageColors
+                    projectsModel: pageHost.backend.projects.model
+                    sessionsModel: pageHost.backend.comparisons.sessionsModel
+                    resultsModel: pageHost.backend.comparisons.resultsModel
+                    summaryData: pageHost.backend.comparisons.summaryData
+                    modelChoices: pageHost.backend.comparisons.modelChoices
+                    selectedProjectId: pageHost.backend.comparisons.selectedProjectId
+                    selectedSessionId: pageHost.backend.comparisons.selectedSessionId
+                    currentSessionStatus: pageHost.backend.comparisons.currentSessionStatus
+                    lastUpdatedText: pageHost.backend.comparisons.lastUpdatedText
+                    busy: pageHost.backend.comparisons.busy
+                    errorText: pageHost.backend.comparisons.errorText
+                    canCreateComparison: pageHost.backend.comparisons.canCreateComparison
+                    canRefresh: pageHost.backend.comparisons.canRefresh
+                    canCancel: pageHost.backend.comparisons.canCancel
+
+                    onProjectSelectionRequested: projectId =>
+                        pageHost.backend.comparisons.selectProject(projectId)
+                    onSessionSelectionRequested: sessionId =>
+                        pageHost.backend.comparisons.selectSession(sessionId)
+                    onCreateComparisonRequested: request =>
+                        pageHost.backend.comparisons.createComparison(request)
+                    onRefreshRequested: sessionId =>
+                        pageHost.backend.comparisons.refresh()
+                    onCancelRequested: sessionId =>
+                        pageHost.backend.comparisons.cancelComparison()
+                    onPreferredResultRequested: resultId =>
+                        pageHost.backend.comparisons.setPreferredResult(resultId)
+                    onResultSelectionChanged: (resultId, selected) =>
+                        pageHost.backend.comparisons.setResultSelected(resultId, selected)
+                }
+            }
         }
 
-        SettingsPage {
-            objectName: "settingsPage"
+        CachedPage {
+            id: providersSlot
+            selected: pageHost.selectedIndex === 5
             hostWindow: pageHost.hostWindow
             colors: pageHost.colors
-            backend: pageHost.backend
+            sourceComponent: Component {
+                ProvidersPage {
+                    objectName: "providersPage"
+                    width: providersSlot.pageWindow.pageWidth
+                    height: providersSlot.pageWindow.pageHeight
+                    hostWindow: providersSlot.pageWindow
+                    colors: providersSlot.pageColors
+                    backend: pageHost.backend
+                }
+            }
+        }
+
+        CachedPage {
+            id: settingsSlot
+            selected: pageHost.selectedIndex === 6
+            hostWindow: pageHost.hostWindow
+            colors: pageHost.colors
+            sourceComponent: Component {
+                SettingsPage {
+                    objectName: "settingsPage"
+                    width: settingsSlot.pageWindow.pageWidth
+                    height: settingsSlot.pageWindow.pageHeight
+                    hostWindow: settingsSlot.pageWindow
+                    colors: settingsSlot.pageColors
+                    backend: pageHost.backend
+                }
+            }
         }
     }
 }
