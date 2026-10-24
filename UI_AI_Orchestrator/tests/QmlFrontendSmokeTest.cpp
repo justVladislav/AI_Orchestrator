@@ -327,6 +327,28 @@ int main(int argc, char* argv[])
     assert(engineLoaded && "Main.qml failed to load");
     window = engine.rootObjects().constFirst();
 
+    // PageHost creates a page on its first selection and keeps the instance: at the start only Overview exists.
+    // Visit every other page once (this is also how the user reaches them), check that the instances are kept
+    // on a revisit, and return to Overview, where the rest of this test starts.
+    assert(waitForChild(window, "overviewPage") && "Overview is created at start");
+    for (const char* lazyPage : {"projectsPage", "chatsPage", "runsPage", "comparisonPage", "providersPage", "settingsPage"})
+        assert(window->findChild<QObject*>(QString::fromLatin1(lazyPage)) == nullptr
+            && "a page other than Overview must not exist before its first visit");
+    for (const char* section : {"projects", "chats", "runs", "comparison", "providers", "settings"}) {
+        assert(window->setProperty("currentSection", QString::fromLatin1(section)));
+        const std::string pageName = std::string(section) + "Page";
+        assert(waitForChild(window, pageName.c_str()) && "the page is created on its first visit");
+    }
+    {
+        QObject* runsOnce = window->findChild<QObject*>(QStringLiteral("runsPage"));
+        assert(window->setProperty("currentSection", QStringLiteral("projects")));
+        assert(window->setProperty("currentSection", QStringLiteral("runs")));
+        assert(window->findChild<QObject*>(QStringLiteral("runsPage")) == runsOnce
+            && "a page keeps its instance when it is left and visited again");
+    }
+    assert(window->setProperty("currentSection", QStringLiteral("overview")));
+    checkpoint("all pages visited once; instances kept");
+
     QObject* projectsPage = waitForChild(window, "projectsPage");
     checkpoint(projectsPage ? "found projectsPage" : "MISSING projectsPage");
     assert(projectsPage && "ProjectsPage was not found in the loaded QML tree");

@@ -5971,7 +5971,7 @@ void testPromptWorkshopQmlOnlyRendersAndRelaysTheBackendsPreview()
         && chatsPage.contains(QStringLiteral("canImportPlan: page.selectedProjectId.length > 0")));
     // Navigation to the drafts goes through the host, like every other cross-page request.
     assert(chatsPage.contains(QStringLiteral("signal runDraftsRequested()"))
-        && pageHost.contains(QStringLiteral("runsPage.openDrafts")));
+        && pageHost.contains(QStringLiteral("runs.openDrafts()")));
 
     // The Drafts list draws the Backend's projection of a plan draft.
     for (const char* badge : {"draftGroupBadge", "draftOriginBadge", "draftDependencyBadge", "draftSourceRunsBadge", "draftEditedBadge"}) {
