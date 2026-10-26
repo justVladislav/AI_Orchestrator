@@ -5926,6 +5926,8 @@ void testPromptWorkshopQmlOnlyRendersAndRelaysTheBackendsPreview()
     const QString header = readQmlSource("pages/Chats/Chat_Objects/ChatHeader.qml");
     const QString drafts = readQmlSource("pages/Runs/Runs_Objects/DraftsDialog.qml");
     const QString newRun = readQmlSource("pages/Runs/Runs_Objects/NewRunDialog.qml").replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
+    const QString rosterSetup = readQmlSource("pages/Runs/Runs_Objects/RosterSetupSection.qml");
+    const QString rosterMember = readQmlSource("pages/Runs/Runs_Objects/RosterMemberRow.qml");
     const QString runsPage = readQmlSource("pages/Runs/RunsPage.qml");
     const QString pageHost = readQmlSource("pages/PageHost.qml");
 
@@ -5937,7 +5939,8 @@ void testPromptWorkshopQmlOnlyRendersAndRelaysTheBackendsPreview()
         && !delegate.contains(QStringLiteral("content.includes")) && !delegate.contains(QStringLiteral("content.search"))
         && "QML must not look for a plan in a message");
     // No QML file parses a plan or asks for a direct write.
-    for (const QString* source : {&delegate, &dialog, &chatsPage, &header, &drafts, &newRun, &runsPage, &pageHost}) {
+    for (const QString* source : {&delegate, &dialog, &chatsPage, &header, &drafts, &newRun,
+                                  &rosterSetup, &rosterMember, &runsPage, &pageHost}) {
         assert(!source->contains(QStringLiteral("createFromMessage"))
             && "There is no write that does not go through a preview token");
         assert(!source->contains(QStringLiteral("JSON.parse")) && "QML does not parse a plan");
@@ -5999,13 +6002,13 @@ void testPromptWorkshopQmlOnlyRendersAndRelaysTheBackendsPreview()
     const QString emptyBranchText = newRun.mid(emptyBranch, emptyBranchEnd - emptyBranch);
     assert(!emptyBranchText.contains(QStringLiteral("productionCheck.checked = false"))
         && !emptyBranchText.contains(QStringLiteral("customRosterCheck.checked = false"))
-        && !emptyBranchText.contains(QStringLiteral("manifestRosterCheck.checked = false"))
+        && !emptyBranchText.contains(QStringLiteral("rosterSection.manifestChecked = false"))
         && "An empty-roster draft must not be switched to Mock");
     assert(emptyBranchText.contains(QStringLiteral("productionCheck.checked = true"))
         && emptyBranchText.contains(QStringLiteral("customRosterCheck.checked = true"))
         && emptyBranchText.contains(QStringLiteral("\"modelChoiceIndex\", -1"))
         && emptyBranchText.contains(QStringLiteral("rosterNeedsModels = true")));
-    assert(newRun.contains(QStringLiteral("objectName: \"newRunRosterSetupHint\""))
+    assert(rosterSetup.contains(QStringLiteral("objectName: \"newRunRosterSetupHint\""))
         && newRun.contains(QStringLiteral("Choose a model for the lead and for every worker before starting this Run.")));
     // A draft is written back in place from the same fields as a new one; the page owns the Backend call.
     assert(newRun.contains(QStringLiteral("signal updateDraftRequested("))
