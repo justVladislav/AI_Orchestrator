@@ -57,6 +57,8 @@ qt_add_qml_module(UI_AI_Orchestrator_Content
         pages/Chats/Chat_Objects/ChatSidebar.qml
         pages/Chats/Chat_Objects/NextRunPlanDialog.qml
         pages/Runs/RunsPage.qml
+        pages/Runs/Runs_Objects/RosterMemberRow.qml
+        pages/Runs/Runs_Objects/RosterSetupSection.qml
         pages/Runs/Runs_Objects/RunActionButton.qml
         pages/Runs/Runs_Objects/RunComboBox.qml
         pages/Runs/Runs_Objects/RunCalendarView.qml
