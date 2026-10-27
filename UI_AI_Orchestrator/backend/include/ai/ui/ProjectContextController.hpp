@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ai/application/ProjectContextSnapshotService.hpp>
+#include <ai/application/context/ProjectContextSnapshotService.hpp>
 
 #include <QFutureWatcher>
 #include <QObject>

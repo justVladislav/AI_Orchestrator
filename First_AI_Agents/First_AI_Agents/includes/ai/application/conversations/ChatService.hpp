@@ -7,7 +7,7 @@
 #include "ai/application/IProviderClient.hpp"
 #include "ai/application/catalog/IProviderRepository.hpp"
 #include "ai/application/IWorkspaceStateRepository.hpp"
-#include "ai/application/ProjectContextSnapshot.hpp"
+#include "ai/application/context/ProjectContextSnapshot.hpp"
 
 #include <chrono>
 #include <functional>

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/conversations/ChatTypes.hpp"
-#include "ai/application/ProjectContextSnapshot.hpp"
+#include "ai/application/context/ProjectContextSnapshot.hpp"
 #include "ai/common/Result.hpp"
 
 #include <string>

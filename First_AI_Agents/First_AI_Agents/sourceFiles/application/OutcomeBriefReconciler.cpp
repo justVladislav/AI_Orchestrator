@@ -2,7 +2,7 @@
 
 #include "ai/application/IWorkflowRunner.hpp"
 #include "ai/application/ManifestVerificationContinuationPreparationService.hpp"
-#include "ai/application/ProjectContextSnapshot.hpp"
+#include "ai/application/context/ProjectContextSnapshot.hpp"
 
 #include <algorithm>
 #include <set>

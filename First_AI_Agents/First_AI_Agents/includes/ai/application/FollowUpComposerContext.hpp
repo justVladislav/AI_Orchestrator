@@ -2,7 +2,7 @@
 
 #include "ai/application/FollowUpPlan.hpp"
 #include "ai/application/OutcomeBrief.hpp"
-#include "ai/application/ProjectContextSnapshot.hpp"
+#include "ai/application/context/ProjectContextSnapshot.hpp"
 #include "ai/common/Result.hpp"
 
 #include <cstdint>

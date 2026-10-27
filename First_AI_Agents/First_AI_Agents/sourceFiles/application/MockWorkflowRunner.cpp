@@ -1,7 +1,7 @@
 #include "ai/application/MockWorkflowRunner.hpp"
 
 #include "ai/application/artifacts/ArtifactService.hpp"
-#include "ai/application/ContextSnapshot.hpp"
+#include "ai/application/context/ContextSnapshot.hpp"
 
 #include <algorithm>
 #include <sstream>

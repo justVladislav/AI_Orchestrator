@@ -1,4 +1,4 @@
-#include "ai/application/ProjectContextSnapshotService.hpp"
+#include "ai/application/context/ProjectContextSnapshotService.hpp"
 
 #include "ai/application/Sha256.hpp"
 #include "ai/application/WorkspaceBaselineProvenance.hpp"

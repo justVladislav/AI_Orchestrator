@@ -1,6 +1,6 @@
 #include <ai/ui/ProjectMemoryController.hpp>
 
-#include <ai/application/RunContextAssembler.hpp>
+#include <ai/application/context/RunContextAssembler.hpp>
 
 #include <QDateTime>
 #include <QMetaObject>

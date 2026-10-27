@@ -1,4 +1,4 @@
-#include "ai/application/ContextSnapshot.hpp"
+#include "ai/application/context/ContextSnapshot.hpp"
 
 #include <chrono>
 #include <ctime>

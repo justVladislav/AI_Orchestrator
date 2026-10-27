@@ -2,7 +2,7 @@
 
 #include "ai/application/IWorkflowRunner.hpp"
 #include "ai/application/FollowUpPlanAdvisories.hpp"
-#include "ai/application/ProjectContextSnapshot.hpp"
+#include "ai/application/context/ProjectContextSnapshot.hpp"
 
 #include <nlohmann/json.hpp>
 

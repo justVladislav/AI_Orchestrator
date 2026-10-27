@@ -6,7 +6,7 @@
 #include "ai/application/IOutcomeBriefRepository.hpp"
 #include "ai/application/projects/IProjectRepository.hpp"
 #include "ai/application/IRunRepository.hpp"
-#include "ai/application/ProjectContextSnapshotService.hpp"
+#include "ai/application/context/ProjectContextSnapshotService.hpp"
 
 #include <string>
 #include <vector>

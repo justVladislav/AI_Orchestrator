@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/NextRunPlan.hpp"
-#include "ai/application/ProjectContextSnapshot.hpp"
+#include "ai/application/context/ProjectContextSnapshot.hpp"
 #include "ai/common/Result.hpp"
 
 #include <cstddef>

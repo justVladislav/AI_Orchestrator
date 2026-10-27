@@ -1,4 +1,4 @@
-#include "ai/application/ProjectContextSnapshot.hpp"
+#include "ai/application/context/ProjectContextSnapshot.hpp"
 
 #include "ai/application/conversations/ChatContextAssembler.hpp"
 #include "ai/application/Sha256.hpp"

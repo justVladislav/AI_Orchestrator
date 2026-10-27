@@ -1,5 +1,5 @@
 #include "ai/application/conversations/ChatContextAssembler.hpp"
-#include "ai/application/RunContextAssembler.hpp"
+#include "ai/application/context/RunContextAssembler.hpp"
 
 #include <chrono>
 #include <stdexcept>

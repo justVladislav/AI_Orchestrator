@@ -1,6 +1,6 @@
 #include "ai/application/RunInterfaceContract.hpp"
 
-#include "ai/application/ProjectContextSnapshot.hpp"
+#include "ai/application/context/ProjectContextSnapshot.hpp"
 #include "ai/application/Sha256.hpp"
 
 #include <nlohmann/json.hpp>

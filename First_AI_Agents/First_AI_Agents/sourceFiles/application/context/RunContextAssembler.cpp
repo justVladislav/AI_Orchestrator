@@ -1,4 +1,4 @@
-#include "ai/application/RunContextAssembler.hpp"
+#include "ai/application/context/RunContextAssembler.hpp"
 
 #include "ai/application/conversations/ChatContextAssembler.hpp"
 

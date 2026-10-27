@@ -3,7 +3,7 @@
 #include "ai/application/ApplicationTypes.hpp"
 #include "ai/application/FollowUpComposerContext.hpp"
 #include "ai/application/OutcomeBrief.hpp"
-#include "ai/application/ProjectContextSnapshot.hpp"
+#include "ai/application/context/ProjectContextSnapshot.hpp"
 #include "ai/common/Result.hpp"
 
 #include <optional>

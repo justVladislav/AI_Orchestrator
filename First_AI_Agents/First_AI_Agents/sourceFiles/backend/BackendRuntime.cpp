@@ -43,7 +43,7 @@
 #include "ai/application/ManifestVerificationManualHandoffService.hpp"
 #include "ai/application/ManifestVerificationManualHandoffReadModelService.hpp"
 #include "ai/application/OutcomeBriefReconciler.hpp"
-#include "ai/application/ProjectContextSnapshotService.hpp"
+#include "ai/application/context/ProjectContextSnapshotService.hpp"
 #include "ai/application/IChangeProposalStore.hpp"
 #include "ai/infrastructure/DatabaseOwnerLock.hpp"
 #include "ai/infrastructure/FileArtifactStore.hpp"

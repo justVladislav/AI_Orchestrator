@@ -2,7 +2,7 @@
 
 #include "ai/application/ChangeProposalValidator.hpp"
 #include "ai/application/FilesystemPathUtils.hpp"
-#include "ai/application/ProjectContextSnapshot.hpp"
+#include "ai/application/context/ProjectContextSnapshot.hpp"
 #include "ai/application/Sha256.hpp"
 #include "ai/application/WorkspacePathGuard.hpp"
 #include "ai/application/WorkspaceReadPolicy.hpp"

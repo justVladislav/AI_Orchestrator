@@ -4,7 +4,7 @@
 #include "ai/application/conversations/ChatProjectContext.hpp"
 #include "ai/application/CostCalculation.hpp"
 #include "ai/application/ExecutionAnalyticsService.hpp"
-#include "ai/application/ProjectContextSnapshot.hpp"
+#include "ai/application/context/ProjectContextSnapshot.hpp"
 #include "ai/application/IProviderClient.hpp"
 #include "ai/application/ModelExecutionService.hpp"
 #include "ai/infrastructure/SqliteRepositories.hpp"

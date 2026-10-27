@@ -108,7 +108,7 @@ set(APPLICATION_SOURCES
     sourceFiles/application/InMemoryRunWorkspaceScopeRepository.cpp
     sourceFiles/application/InMemoryVerificationEnvironmentRepository.cpp
     sourceFiles/application/ExecutionManifestReadModelService.cpp
-    sourceFiles/application/ContextSnapshot.cpp
+    sourceFiles/application/context/ContextSnapshot.cpp
     sourceFiles/application/Sha256.cpp
     sourceFiles/application/IdGenerator.cpp
     sourceFiles/application/InMemoryRepositories.cpp
@@ -141,11 +141,11 @@ set(APPLICATION_SOURCES
     sourceFiles/application/conversations/ChatTypes.cpp
     sourceFiles/application/conversations/ChatContextAssembler.cpp
     sourceFiles/application/conversations/ChatProjectContext.cpp
-    sourceFiles/application/RunContextAssembler.cpp
+    sourceFiles/application/context/RunContextAssembler.cpp
     sourceFiles/application/conversations/ProjectMemoryService.cpp
     sourceFiles/application/conversations/ProjectMemoryCompactionService.cpp
-    sourceFiles/application/ProjectContextSnapshot.cpp
-    sourceFiles/application/ProjectContextSnapshotService.cpp
+    sourceFiles/application/context/ProjectContextSnapshot.cpp
+    sourceFiles/application/context/ProjectContextSnapshotService.cpp
     sourceFiles/application/RunInterfaceContract.cpp
     sourceFiles/application/NextRunPlan.cpp
     sourceFiles/application/FollowUpPlan.cpp

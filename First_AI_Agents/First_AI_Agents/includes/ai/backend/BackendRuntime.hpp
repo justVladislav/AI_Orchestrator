@@ -40,7 +40,7 @@
 #include "ai/application/conversations/ProjectMemoryCompactionService.hpp"
 #include "ai/application/OutcomeBriefReadModelService.hpp"
 #include "ai/application/OutcomeBriefReconciler.hpp"
-#include "ai/application/ProjectContextSnapshotService.hpp"
+#include "ai/application/context/ProjectContextSnapshotService.hpp"
 #include "ai/application/projects/ProjectService.hpp"
 #include "ai/application/projects/TaskService.hpp"
 #include "ai/application/catalog/ProviderCatalogService.hpp"

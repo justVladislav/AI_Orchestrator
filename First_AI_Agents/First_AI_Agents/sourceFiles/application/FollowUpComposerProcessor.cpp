@@ -3,7 +3,7 @@
 #include "ai/application/CacheDurationAccounting.hpp"
 #include "ai/application/CostCalculation.hpp"
 #include "ai/application/FollowUpPlanAdvisories.hpp"
-#include "ai/application/ProjectContextSnapshot.hpp"
+#include "ai/application/context/ProjectContextSnapshot.hpp"
 #include "ai/application/Sha256.hpp"
 
 #include <algorithm>

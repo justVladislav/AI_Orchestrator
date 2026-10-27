@@ -1,7 +1,7 @@
 #include "ai/application/ExecutionProfileWorkflowRunner.hpp"
 
 #include "ai/application/artifacts/ArtifactService.hpp"
-#include "ai/application/ContextSnapshot.hpp"
+#include "ai/application/context/ContextSnapshot.hpp"
 #include "ai/application/CostCalculation.hpp"
 #include "ai/application/ExecutionManifestParser.hpp"
 #include "ai/application/ExecutionManifestService.hpp"
@@ -9,7 +9,7 @@
 #include "ai/application/conversations/IProjectMemoryRepository.hpp"
 #include "ai/application/ModelExecutionService.hpp"
 #include "ai/application/ProjectWritePolicy.hpp"
-#include "ai/application/RunContextAssembler.hpp"
+#include "ai/application/context/RunContextAssembler.hpp"
 #include "ai/application/Sha256.hpp"
 
 #include <algorithm>
