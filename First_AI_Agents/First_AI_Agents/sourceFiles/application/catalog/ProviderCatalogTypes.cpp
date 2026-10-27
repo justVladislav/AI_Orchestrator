@@ -1,4 +1,4 @@
-#include "ai/application/ProviderCatalogTypes.hpp"
+#include "ai/application/catalog/ProviderCatalogTypes.hpp"
 
 namespace ai::application {
 

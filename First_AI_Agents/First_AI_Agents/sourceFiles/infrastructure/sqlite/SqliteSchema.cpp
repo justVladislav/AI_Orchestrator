@@ -1,7 +1,7 @@
 #include "SqliteSchema.hpp"
 #include "SqlitePrimitives.hpp"
 
-#include "ai/application/ProviderCatalogTypes.hpp"
+#include "ai/application/catalog/ProviderCatalogTypes.hpp"
 
 #include <sqlite3.h>
 

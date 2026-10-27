@@ -5,11 +5,11 @@
 // same business rules again against the real persistence adapters and
 // through BackendRuntime's storage.unavailable controlled-failure path.
 #include "ai/application/ExecutionAssignmentValidation.hpp"
-#include "ai/application/ExecutionProfileService.hpp"
+#include "ai/application/catalog/ExecutionProfileService.hpp"
 #include "ai/application/InMemoryRepositories.hpp"
 #include "ai/application/IWorkflowRunner.hpp"
 #include "ai/application/ProjectService.hpp"
-#include "ai/application/ProviderCatalogService.hpp"
+#include "ai/application/catalog/ProviderCatalogService.hpp"
 #include "ai/application/WorkspaceContextService.hpp"
 
 #include <cassert>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ai/application/ProviderCatalogService.hpp>
+#include <ai/application/catalog/ProviderCatalogService.hpp>
 #include <ai/ui/ModelListModel.hpp>
 #include <ai/ui/ProviderListModel.hpp>
 

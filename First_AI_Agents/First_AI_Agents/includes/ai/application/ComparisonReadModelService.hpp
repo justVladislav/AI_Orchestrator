@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/ComparisonService.hpp"
-#include "ai/application/ProviderCatalogService.hpp"
+#include "ai/application/catalog/ProviderCatalogService.hpp"
 
 #include <optional>
 #include <string>

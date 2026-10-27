@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/CostCalculation.hpp"
-#include "ai/application/ProviderCatalogTypes.hpp"
+#include "ai/application/catalog/ProviderCatalogTypes.hpp"
 #include "ai/common/Result.hpp"
 #include "ai/models/PromptCachePolicy.hpp"
 

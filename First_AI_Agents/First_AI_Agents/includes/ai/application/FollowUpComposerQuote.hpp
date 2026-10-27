@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/FollowUpComposerContext.hpp"
-#include "ai/application/ProviderCatalogTypes.hpp"
+#include "ai/application/catalog/ProviderCatalogTypes.hpp"
 #include "ai/application/ProviderRequestQuote.hpp"
 #include "ai/common/Result.hpp"
 #include "ai/models/PromptCachePolicy.hpp"

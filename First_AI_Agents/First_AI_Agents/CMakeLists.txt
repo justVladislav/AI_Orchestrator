@@ -119,14 +119,14 @@ set(APPLICATION_SOURCES
     sourceFiles/application/RunManager.cpp
     sourceFiles/application/OrchestrationService.cpp
     sourceFiles/application/WorkspaceContextService.cpp
-    sourceFiles/application/ProviderCatalogTypes.cpp
-    sourceFiles/application/ProviderCatalogService.cpp
+    sourceFiles/application/catalog/ProviderCatalogTypes.cpp
+    sourceFiles/application/catalog/ProviderCatalogService.cpp
     sourceFiles/application/ProviderExecutionBudget.cpp
     sourceFiles/application/CostCalculation.cpp
     sourceFiles/application/CacheDurationAccounting.cpp
     sourceFiles/application/ProviderRequestQuote.cpp
-    sourceFiles/application/ExecutionProfileTypes.cpp
-    sourceFiles/application/ExecutionProfileService.cpp
+    sourceFiles/application/catalog/ExecutionProfileTypes.cpp
+    sourceFiles/application/catalog/ExecutionProfileService.cpp
     sourceFiles/application/RunDraftService.cpp
     sourceFiles/application/ExecutionAssignmentValidation.cpp
     sourceFiles/application/WorkflowRouter.cpp

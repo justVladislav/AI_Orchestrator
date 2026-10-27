@@ -1,4 +1,4 @@
-#include "ai/application/ProviderCatalogService.hpp"
+#include "ai/application/catalog/ProviderCatalogService.hpp"
 
 #include "ai/application/IdGenerator.hpp"
 

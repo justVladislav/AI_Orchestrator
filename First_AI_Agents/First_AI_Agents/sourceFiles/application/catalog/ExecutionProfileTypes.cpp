@@ -1,4 +1,4 @@
-#include "ai/application/ExecutionProfileTypes.hpp"
+#include "ai/application/catalog/ExecutionProfileTypes.hpp"
 
 namespace ai::application {
 

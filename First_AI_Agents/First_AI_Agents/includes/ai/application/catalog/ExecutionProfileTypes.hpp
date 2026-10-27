@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/ProviderCatalogTypes.hpp"
+#include "ai/application/catalog/ProviderCatalogTypes.hpp"
 #include "ai/application/ProviderExecutionBudget.hpp"
 
 #include <chrono>

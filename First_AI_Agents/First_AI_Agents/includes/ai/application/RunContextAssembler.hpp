@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/ApplicationTypes.hpp"
-#include "ai/application/ExecutionProfileTypes.hpp"
+#include "ai/application/catalog/ExecutionProfileTypes.hpp"
 #include "ai/common/Result.hpp"
 
 #include <algorithm>

@@ -2,7 +2,7 @@
 
 #include "ai/application/ApplicationTypes.hpp"
 #include "ai/application/ModelExecutionTypes.hpp"
-#include "ai/application/ProviderCatalogTypes.hpp"
+#include "ai/application/catalog/ProviderCatalogTypes.hpp"
 
 #include <chrono>
 #include <filesystem>

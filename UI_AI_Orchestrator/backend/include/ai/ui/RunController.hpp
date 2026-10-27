@@ -2,7 +2,7 @@
 
 #include <ai/application/ArtifactService.hpp>
 #include <ai/application/OrchestrationService.hpp>
-#include <ai/application/ProviderCatalogService.hpp>
+#include <ai/application/catalog/ProviderCatalogService.hpp>
 #include <ai/application/ManifestVerificationManualHandoffReadModelService.hpp>
 #include <ai/ui/ArtifactListModel.hpp>
 #include <ai/ui/RunWarningListModel.hpp>

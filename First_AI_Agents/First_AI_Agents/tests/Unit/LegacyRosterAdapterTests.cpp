@@ -9,7 +9,7 @@
 #include "ai/application/InMemoryRepositories.hpp"
 #include "ai/application/LegacyRosterAdapter.hpp"
 #include "ai/application/ManifestRouting.hpp"
-#include "ai/application/ProviderCatalogService.hpp"
+#include "ai/application/catalog/ProviderCatalogService.hpp"
 #include "ai/application/WorkflowRouter.hpp"
 
 #include <algorithm>

@@ -6,7 +6,7 @@
 // explicitly out of scope for this file (and for ordinary ctest in
 // general - see CODEX_CONTEXT.md).
 #include "ai/application/CredentialManagementService.hpp"
-#include "ai/application/ExecutionProfileService.hpp"
+#include "ai/application/catalog/ExecutionProfileService.hpp"
 #include "ai/application/ExecutionProfileWorkflowRunner.hpp"
 #include "ai/application/ICredentialStore.hpp"
 #include "ai/application/IProjectMemoryRepository.hpp"
@@ -15,7 +15,7 @@
 #include "ai/application/MockWorkflowRunner.hpp"
 #include "ai/application/OrchestrationService.hpp"
 #include "ai/application/ProjectService.hpp"
-#include "ai/application/ProviderCatalogService.hpp"
+#include "ai/application/catalog/ProviderCatalogService.hpp"
 #include "ai/application/WorkflowRouter.hpp"
 
 #include <algorithm>

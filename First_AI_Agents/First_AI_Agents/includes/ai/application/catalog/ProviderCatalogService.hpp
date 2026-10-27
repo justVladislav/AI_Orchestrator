@@ -1,7 +1,7 @@
 #pragma once
 
-#include "ai/application/IModelRepository.hpp"
-#include "ai/application/IProviderRepository.hpp"
+#include "ai/application/catalog/IModelRepository.hpp"
+#include "ai/application/catalog/IProviderRepository.hpp"
 
 namespace ai::application {
 

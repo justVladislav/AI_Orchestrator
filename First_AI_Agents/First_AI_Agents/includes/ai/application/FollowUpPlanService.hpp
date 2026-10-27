@@ -5,8 +5,8 @@
 #include "ai/application/FollowUpPlanRequest.hpp"
 #include "ai/application/IFollowUpPlanRequestRepository.hpp"
 #include "ai/application/IFollowUpSourceReader.hpp"
-#include "ai/application/IModelRepository.hpp"
-#include "ai/application/IProviderRepository.hpp"
+#include "ai/application/catalog/IModelRepository.hpp"
+#include "ai/application/catalog/IProviderRepository.hpp"
 #include "ai/application/IRunDraftRepository.hpp"
 
 #include <chrono>

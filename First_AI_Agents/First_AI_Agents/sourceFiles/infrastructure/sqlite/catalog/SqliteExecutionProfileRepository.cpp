@@ -2,7 +2,7 @@
 #include "../SqlitePrimitives.hpp"
 #include "SqliteProfileMapping.hpp"
 
-#include "ai/application/ExecutionProfileTypes.hpp"
+#include "ai/application/catalog/ExecutionProfileTypes.hpp"
 
 #include <sqlite3.h>
 

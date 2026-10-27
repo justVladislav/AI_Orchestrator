@@ -2,7 +2,7 @@
 
 #include "ai/application/ICredentialStore.hpp"
 #include "ai/application/IProviderClient.hpp"
-#include "ai/application/IProviderRepository.hpp"
+#include "ai/application/catalog/IProviderRepository.hpp"
 
 #include <memory>
 

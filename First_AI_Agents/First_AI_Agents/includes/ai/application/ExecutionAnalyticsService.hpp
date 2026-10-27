@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/ExecutionAnalyticsTypes.hpp"
-#include "ai/application/IModelRepository.hpp"
+#include "ai/application/catalog/IModelRepository.hpp"
 #include "ai/application/IModelExecutionRepository.hpp"
 
 #include <chrono>

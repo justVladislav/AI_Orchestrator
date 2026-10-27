@@ -1,8 +1,8 @@
 #pragma once
 
-#include "ai/application/IExecutionProfileRepository.hpp"
-#include "ai/application/IModelRepository.hpp"
-#include "ai/application/IProviderRepository.hpp"
+#include "ai/application/catalog/IExecutionProfileRepository.hpp"
+#include "ai/application/catalog/IModelRepository.hpp"
+#include "ai/application/catalog/IProviderRepository.hpp"
 #include "ai/application/IWorkflowResolver.hpp"
 
 #include <unordered_map>

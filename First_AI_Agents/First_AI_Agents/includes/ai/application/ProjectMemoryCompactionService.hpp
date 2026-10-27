@@ -4,8 +4,8 @@
 #include "ai/application/IProjectMemoryRepository.hpp"
 #include "ai/application/IProjectRepository.hpp"
 #include "ai/application/IProviderClient.hpp"
-#include "ai/application/IProviderRepository.hpp"
-#include "ai/application/IModelRepository.hpp"
+#include "ai/application/catalog/IProviderRepository.hpp"
+#include "ai/application/catalog/IModelRepository.hpp"
 
 #include <cstddef>
 #include <stop_token>

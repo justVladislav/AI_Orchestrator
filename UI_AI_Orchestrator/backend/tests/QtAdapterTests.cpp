@@ -3,7 +3,7 @@
 #include <ai/application/ExecutionAcceptanceContract.hpp>
 #include <ai/application/ExecutionAnalyticsService.hpp>
 #include <ai/application/ExecutionManifestReadModelService.hpp>
-#include <ai/application/ProviderCatalogService.hpp>
+#include <ai/application/catalog/ProviderCatalogService.hpp>
 #include <ai/application/IManifestWorkLedgerRepository.hpp>
 #include <ai/application/InMemoryExecutionManifestRepository.hpp>
 #include <ai/application/InMemoryManifestTaskExecutionRepository.hpp>

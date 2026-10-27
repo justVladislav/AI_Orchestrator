@@ -21,7 +21,7 @@
 // catalog identifiers, and TokenUsage.
 
 #include "ai/application/AgentToolTypes.hpp"
-#include "ai/application/ProviderCatalogTypes.hpp"
+#include "ai/application/catalog/ProviderCatalogTypes.hpp"
 #include "ai/models/TokenUsage.hpp"
 
 #include <chrono>

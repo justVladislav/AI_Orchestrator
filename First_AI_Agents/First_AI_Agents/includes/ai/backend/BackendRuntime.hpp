@@ -16,7 +16,7 @@
 #include "ai/application/ComparisonExecutionManager.hpp"
 #include "ai/application/ExecutionManifestReadModelService.hpp"
 #include "ai/application/ExecutionManifestService.hpp"
-#include "ai/application/ExecutionProfileService.hpp"
+#include "ai/application/catalog/ExecutionProfileService.hpp"
 #include "ai/application/FollowUpPlanReadModel.hpp"
 #include "ai/application/FollowUpPlanService.hpp"
 #include "ai/application/RunDraftPlanService.hpp"
@@ -43,7 +43,7 @@
 #include "ai/application/ProjectContextSnapshotService.hpp"
 #include "ai/application/ProjectService.hpp"
 #include "ai/application/TaskService.hpp"
-#include "ai/application/ProviderCatalogService.hpp"
+#include "ai/application/catalog/ProviderCatalogService.hpp"
 #include "ai/application/WorkspaceContextService.hpp"
 #include "ai/common/Error.hpp"
 

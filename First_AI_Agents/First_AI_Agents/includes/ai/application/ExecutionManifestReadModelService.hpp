@@ -8,8 +8,8 @@
 #include "ai/application/IRunWorkspaceScopeRepository.hpp"
 #include "ai/application/IVerificationBootstrapRepository.hpp"
 #include "ai/application/IModelExecutionRepository.hpp"
-#include "ai/application/IModelRepository.hpp"
-#include "ai/application/IProviderRepository.hpp"
+#include "ai/application/catalog/IModelRepository.hpp"
+#include "ai/application/catalog/IProviderRepository.hpp"
 #include "ai/application/IVerificationEnvironmentRepository.hpp"
 #include "ai/application/ManifestMemberUsage.hpp"
 

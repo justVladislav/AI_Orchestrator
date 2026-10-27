@@ -4,7 +4,7 @@
 #include "ai/application/IComparisonSessionRepository.hpp"
 #include "ai/application/IProjectRepository.hpp"
 #include "ai/application/ModelExecutionService.hpp"
-#include "ai/application/ProviderCatalogService.hpp"
+#include "ai/application/catalog/ProviderCatalogService.hpp"
 
 namespace ai::application {
 

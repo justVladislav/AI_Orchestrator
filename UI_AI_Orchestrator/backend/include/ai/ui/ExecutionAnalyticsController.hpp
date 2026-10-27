@@ -3,7 +3,7 @@
 #include "ai/ui/ProviderExecutionAnalyticsModel.hpp"
 
 #include <ai/application/ExecutionAnalyticsService.hpp>
-#include <ai/application/ProviderCatalogService.hpp>
+#include <ai/application/catalog/ProviderCatalogService.hpp>
 
 #include <QDateTime>
 #include <QObject>

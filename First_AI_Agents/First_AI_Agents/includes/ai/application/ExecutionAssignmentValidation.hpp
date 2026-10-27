@@ -1,8 +1,8 @@
 #pragma once
 
-#include "ai/application/ExecutionProfileTypes.hpp"
-#include "ai/application/IModelRepository.hpp"
-#include "ai/application/IProviderRepository.hpp"
+#include "ai/application/catalog/ExecutionProfileTypes.hpp"
+#include "ai/application/catalog/IModelRepository.hpp"
+#include "ai/application/catalog/IProviderRepository.hpp"
 #include "ai/common/Result.hpp"
 
 #include <string_view>
