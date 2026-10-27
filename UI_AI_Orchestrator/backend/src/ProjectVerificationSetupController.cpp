@@ -1,8 +1,8 @@
 #include <ai/ui/ProjectVerificationSetupController.hpp>
 
-#include <ai/application/ProjectReadinessService.hpp>
-#include <ai/application/ProjectSetupReadiness.hpp>
-#include <ai/application/VerificationEnvironmentPresetSetupService.hpp>
+#include <ai/application/verification/ProjectReadinessService.hpp>
+#include <ai/application/verification/ProjectSetupReadiness.hpp>
+#include <ai/application/verification/VerificationEnvironmentPresetSetupService.hpp>
 
 #include <QtConcurrent/QtConcurrentRun>
 

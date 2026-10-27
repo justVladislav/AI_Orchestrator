@@ -1,6 +1,6 @@
 #include <ai/ui/SettingsController.hpp>
 
-#include <ai/application/VerificationScratchPolicy.hpp>
+#include <ai/application/verification/VerificationScratchPolicy.hpp>
 
 #include <QHash>
 #include <QVariantMap>

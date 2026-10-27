@@ -1,6 +1,6 @@
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
-#include "ai/application/VerificationScratchPolicy.hpp"
-#include "ai/application/VerificationScratchService.hpp"
+#include "ai/application/verification/VerificationScratchPolicy.hpp"
+#include "ai/application/verification/VerificationScratchService.hpp"
 #include "ai/infrastructure/SqliteRepositories.hpp"
 
 #include <sqlite3.h>

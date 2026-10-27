@@ -10,7 +10,7 @@
 #include "ai/application/agents/IModelExecutionRepository.hpp"
 #include "ai/application/catalog/IModelRepository.hpp"
 #include "ai/application/catalog/IProviderRepository.hpp"
-#include "ai/application/IVerificationEnvironmentRepository.hpp"
+#include "ai/application/verification/IVerificationEnvironmentRepository.hpp"
 #include "ai/application/ManifestMemberUsage.hpp"
 
 #include <optional>

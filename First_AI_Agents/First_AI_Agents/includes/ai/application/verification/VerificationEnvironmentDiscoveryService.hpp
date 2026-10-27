@@ -1,8 +1,8 @@
 #pragma once
 
-#include "ai/application/IVerificationEnvironmentRepository.hpp"
+#include "ai/application/verification/IVerificationEnvironmentRepository.hpp"
 #include "ai/application/ManifestProposalSetVerifier.hpp"
-#include "ai/application/VerificationEnvironmentSnapshotTypes.hpp"
+#include "ai/application/verification/VerificationEnvironmentSnapshotTypes.hpp"
 #include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 #include "ai/common/Result.hpp"
 

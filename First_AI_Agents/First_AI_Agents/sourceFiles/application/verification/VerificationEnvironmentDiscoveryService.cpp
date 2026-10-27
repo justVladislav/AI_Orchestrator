@@ -1,5 +1,5 @@
-#include "ai/application/VerificationEnvironmentDiscoveryService.hpp"
-#include "ai/application/VerificationEnvironmentProbes.hpp"
+#include "ai/application/verification/VerificationEnvironmentDiscoveryService.hpp"
+#include "ai/application/verification/VerificationEnvironmentProbes.hpp"
 #include "ai/application/workspace/WorkspacePathGuard.hpp"
 
 #include <nlohmann/json.hpp>

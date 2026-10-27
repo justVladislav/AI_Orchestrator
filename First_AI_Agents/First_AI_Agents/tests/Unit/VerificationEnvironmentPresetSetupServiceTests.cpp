@@ -10,8 +10,8 @@
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/InMemoryVerificationEnvironmentRepository.hpp"
 #include "ai/application/ManifestProposalSetVerifier.hpp"
-#include "ai/application/VerificationEnvironmentDiscoveryService.hpp"
-#include "ai/application/VerificationEnvironmentPresetSetupService.hpp"
+#include "ai/application/verification/VerificationEnvironmentDiscoveryService.hpp"
+#include "ai/application/verification/VerificationEnvironmentPresetSetupService.hpp"
 
 #include <nlohmann/json.hpp>
 

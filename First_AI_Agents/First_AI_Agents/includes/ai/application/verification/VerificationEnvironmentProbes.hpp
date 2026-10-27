@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/ManifestProposalSetVerifier.hpp"
-#include "ai/application/VerificationEnvironmentSnapshotTypes.hpp"
+#include "ai/application/verification/VerificationEnvironmentSnapshotTypes.hpp"
 
 #include <filesystem>
 #include <stop_token>

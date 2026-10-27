@@ -24,7 +24,7 @@
 #include "ai/application/catalog/ProviderCatalogService.hpp"
 #include "ai/application/RunManager.hpp"
 #include "ai/application/workspace/ToolRegistry.hpp"
-#include "ai/application/VerificationEnvironmentDiscoveryService.hpp"
+#include "ai/application/verification/VerificationEnvironmentDiscoveryService.hpp"
 #include "ai/application/WorkflowRouter.hpp"
 #include "ai/backend/StartupRecovery.hpp"
 #include "ai/infrastructure/FileArtifactStore.hpp"

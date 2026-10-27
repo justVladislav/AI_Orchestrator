@@ -13,7 +13,7 @@
 #include "ai/application/catalog/IProviderRepository.hpp"
 #include "ai/application/IWorkflowRunner.hpp"
 #include "ai/application/IVerificationBootstrapRepository.hpp"
-#include "ai/application/IVerificationScratchRootProvider.hpp"
+#include "ai/application/verification/IVerificationScratchRootProvider.hpp"
 #include "ai/application/ManifestWorkLedgerService.hpp"
 
 namespace ai::application {

@@ -18,7 +18,7 @@
 #include "ai/application/proposals/IProposalReviewRepository.hpp"
 #include "ai/application/proposals/ProposalReviewService.hpp"
 #include "ai/application/RunWorkspaceScopeService.hpp"
-#include "ai/application/VerificationEnvironmentDiscoveryService.hpp"
+#include "ai/application/verification/VerificationEnvironmentDiscoveryService.hpp"
 #include "ai/providers/IProviderAgentSession.hpp"
 #include "ai/application/settings/IApplicationSettingsRepository.hpp"
 #include "ai/application/artifacts/IArtifactRepository.hpp"

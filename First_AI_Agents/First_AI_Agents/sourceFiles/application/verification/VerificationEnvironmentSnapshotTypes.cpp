@@ -1,4 +1,4 @@
-#include "ai/application/VerificationEnvironmentSnapshotTypes.hpp"
+#include "ai/application/verification/VerificationEnvironmentSnapshotTypes.hpp"
 
 namespace ai::application {
 

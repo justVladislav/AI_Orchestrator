@@ -57,11 +57,11 @@ set(APPLICATION_SOURCES
     sourceFiles/application/artifacts/ArtifactPathPolicy.cpp
     sourceFiles/application/artifacts/ArtifactService.cpp
     sourceFiles/application/RunWarning.cpp
-    sourceFiles/application/VerificationScratchPolicy.cpp
-    sourceFiles/application/VerificationScratchService.cpp
-    sourceFiles/application/VerificationToolchain.cpp
-    sourceFiles/application/ProjectSetupReadiness.cpp
-    sourceFiles/application/ProjectReadinessService.cpp
+    sourceFiles/application/verification/VerificationScratchPolicy.cpp
+    sourceFiles/application/verification/VerificationScratchService.cpp
+    sourceFiles/application/verification/VerificationToolchain.cpp
+    sourceFiles/application/verification/ProjectSetupReadiness.cpp
+    sourceFiles/application/verification/ProjectReadinessService.cpp
     sourceFiles/application/ExecutionAcceptanceContract.cpp
     sourceFiles/application/ManifestJsonParsingSupport.cpp
     sourceFiles/application/ExecutionManifestTypes.cpp
@@ -98,9 +98,9 @@ set(APPLICATION_SOURCES
     sourceFiles/application/ManifestVerificationContinuationRepairService.cpp
     sourceFiles/application/RunWorkspaceScopeTypes.cpp
     sourceFiles/application/RunWorkspaceScopeService.cpp
-    sourceFiles/application/VerificationEnvironmentSnapshotTypes.cpp
-    sourceFiles/application/VerificationEnvironmentDiscoveryService.cpp
-    sourceFiles/application/VerificationEnvironmentPresetSetupService.cpp
+    sourceFiles/application/verification/VerificationEnvironmentSnapshotTypes.cpp
+    sourceFiles/application/verification/VerificationEnvironmentDiscoveryService.cpp
+    sourceFiles/application/verification/VerificationEnvironmentPresetSetupService.cpp
     sourceFiles/application/workspace/WorkspaceBaselineProvenance.cpp
     sourceFiles/application/InMemoryExecutionManifestRepository.cpp
     sourceFiles/application/InMemoryManifestTaskExecutionRepository.cpp

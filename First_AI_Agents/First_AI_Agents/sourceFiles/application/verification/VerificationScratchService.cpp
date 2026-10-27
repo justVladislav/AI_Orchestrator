@@ -1,6 +1,6 @@
-#include "ai/application/VerificationScratchService.hpp"
+#include "ai/application/verification/VerificationScratchService.hpp"
 
-#include "ai/application/VerificationScratchPolicy.hpp"
+#include "ai/application/verification/VerificationScratchPolicy.hpp"
 
 #include <system_error>
 #include <utility>

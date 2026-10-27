@@ -7,7 +7,7 @@
 #include "ai/application/ManifestVerificationRepairability.hpp"
 #include "ai/application/agents/ModelExecutionService.hpp"
 #include "ai/application/Sha256.hpp"
-#include "ai/application/VerificationEnvironmentDiscoveryService.hpp"
+#include "ai/application/verification/VerificationEnvironmentDiscoveryService.hpp"
 
 #include <algorithm>
 #include <chrono>

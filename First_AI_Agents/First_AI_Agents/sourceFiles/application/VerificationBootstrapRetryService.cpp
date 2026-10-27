@@ -1,7 +1,7 @@
 #include "ai/application/VerificationBootstrapRetryService.hpp"
 
 #include "ai/application/IdGenerator.hpp"
-#include "ai/application/VerificationEnvironmentDiscoveryService.hpp"
+#include "ai/application/verification/VerificationEnvironmentDiscoveryService.hpp"
 
 #include <chrono>
 

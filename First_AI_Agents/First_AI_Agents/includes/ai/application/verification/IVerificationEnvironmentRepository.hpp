@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/VerificationEnvironmentSnapshotTypes.hpp"
+#include "ai/application/verification/VerificationEnvironmentSnapshotTypes.hpp"
 #include "ai/common/Result.hpp"
 
 #include <optional>

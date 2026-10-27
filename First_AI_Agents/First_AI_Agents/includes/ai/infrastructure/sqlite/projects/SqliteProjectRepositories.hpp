@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/IProjectReadinessRepository.hpp"
+#include "ai/application/verification/IProjectReadinessRepository.hpp"
 #include "ai/application/projects/IProjectRepository.hpp"
 #include "ai/application/projects/ITaskRepository.hpp"
 #include "ai/application/IWorkspaceStateRepository.hpp"

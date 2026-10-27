@@ -1,4 +1,4 @@
-#include "ai/application/VerificationScratchPolicy.hpp"
+#include "ai/application/verification/VerificationScratchPolicy.hpp"
 
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/IdGenerator.hpp"

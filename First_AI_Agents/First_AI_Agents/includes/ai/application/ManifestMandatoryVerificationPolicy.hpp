@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/ExecutionManifestTypes.hpp"
-#include "ai/application/VerificationEnvironmentSnapshotTypes.hpp"
+#include "ai/application/verification/VerificationEnvironmentSnapshotTypes.hpp"
 #include "ai/common/Result.hpp"
 
 #include <optional>

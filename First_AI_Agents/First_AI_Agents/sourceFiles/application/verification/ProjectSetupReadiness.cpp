@@ -1,7 +1,7 @@
-#include "ai/application/ProjectSetupReadiness.hpp"
+#include "ai/application/verification/ProjectSetupReadiness.hpp"
 
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
-#include "ai/application/VerificationEnvironmentProbes.hpp"
+#include "ai/application/verification/VerificationEnvironmentProbes.hpp"
 
 #include <nlohmann/json.hpp>
 

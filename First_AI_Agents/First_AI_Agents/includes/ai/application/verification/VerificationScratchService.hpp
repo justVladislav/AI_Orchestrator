@@ -1,7 +1,7 @@
 #pragma once
 
-#include "ai/application/IVerificationScratchRootProvider.hpp"
-#include "ai/application/IVerificationScratchSettingRepository.hpp"
+#include "ai/application/verification/IVerificationScratchRootProvider.hpp"
+#include "ai/application/verification/IVerificationScratchSettingRepository.hpp"
 
 #include <filesystem>
 #include <optional>

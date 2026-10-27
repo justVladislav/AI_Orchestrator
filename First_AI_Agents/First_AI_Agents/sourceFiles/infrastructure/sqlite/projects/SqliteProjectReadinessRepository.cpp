@@ -1,7 +1,7 @@
 #include "../SqliteConnection.hpp"
 #include "../SqlitePrimitives.hpp"
 
-#include "ai/application/IProjectReadinessRepository.hpp"
+#include "ai/application/verification/IProjectReadinessRepository.hpp"
 
 #include <sqlite3.h>
 #include <nlohmann/json.hpp>

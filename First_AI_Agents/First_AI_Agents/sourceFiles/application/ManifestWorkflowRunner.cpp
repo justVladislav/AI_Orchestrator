@@ -12,10 +12,10 @@
 #include "ai/application/ManifestVerificationProfileBinder.hpp"
 #include "ai/application/TaskRouteResolver.hpp"
 #include "ai/application/QmlLintDiagnosticPolicy.hpp"
-#include "ai/application/ProjectReadinessService.hpp"
+#include "ai/application/verification/ProjectReadinessService.hpp"
 #include "ai/application/RunWorkspaceScopeService.hpp"
 #include "ai/application/Sha256.hpp"
-#include "ai/application/VerificationEnvironmentDiscoveryService.hpp"
+#include "ai/application/verification/VerificationEnvironmentDiscoveryService.hpp"
 #include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 
 #include <algorithm>

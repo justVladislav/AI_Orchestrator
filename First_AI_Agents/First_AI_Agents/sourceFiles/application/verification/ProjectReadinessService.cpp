@@ -1,4 +1,4 @@
-#include "ai/application/ProjectReadinessService.hpp"
+#include "ai/application/verification/ProjectReadinessService.hpp"
 
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/Sha256.hpp"
