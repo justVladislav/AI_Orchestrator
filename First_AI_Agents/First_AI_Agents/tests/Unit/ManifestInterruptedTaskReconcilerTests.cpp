@@ -12,7 +12,7 @@
 #include "ai/application/InMemoryRepositories.hpp"
 #include "ai/application/ManifestInterruptedTaskReconciler.hpp"
 #include "ai/application/ManifestRouting.hpp"
-#include "ai/application/ManifestVerificationContinuationPreparationService.hpp"
+#include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"
 
 #include <algorithm>
 #include <iostream>

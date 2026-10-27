@@ -15,8 +15,8 @@
 #include <ai/application/IWorkflowRunner.hpp>
 #include <ai/application/MockWorkflowRunner.hpp>
 #include <ai/application/verification/ManifestProposalContentHash.hpp>
-#include <ai/application/ManifestVerificationContinuationPreparationService.hpp>
-#include <ai/application/ManifestVerificationContinuationTypes.hpp>
+#include <ai/application/verification/ManifestVerificationContinuationPreparationService.hpp>
+#include <ai/application/verification/ManifestVerificationContinuationTypes.hpp>
 #include <ai/application/ManifestWorkLedgerTypes.hpp>
 #include <ai/application/Sha256.hpp>
 #include <ai/application/workspace/WorkspaceBaselineProvenance.hpp>

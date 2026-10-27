@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/IManifestVerificationContinuationRepository.hpp"
+#include "ai/application/verification/IManifestVerificationContinuationRepository.hpp"
 
 #include <map>
 #include <mutex>

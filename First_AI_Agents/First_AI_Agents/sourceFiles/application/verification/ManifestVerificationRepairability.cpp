@@ -1,4 +1,4 @@
-#include "ai/application/ManifestVerificationRepairability.hpp"
+#include "ai/application/verification/ManifestVerificationRepairability.hpp"
 
 #include "ai/application/proposals/ChangeProposalService.hpp"
 #include "ai/application/verification/QmlLintDiagnosticPolicy.hpp"

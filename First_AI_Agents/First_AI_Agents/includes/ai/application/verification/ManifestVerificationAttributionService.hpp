@@ -1,11 +1,11 @@
 #pragma once
 
 #include "ai/application/IExecutionManifestRepository.hpp"
-#include "ai/application/IManifestVerificationBaselineNormalizationRepository.hpp"
-#include "ai/application/IManifestVerificationContinuationRepository.hpp"
+#include "ai/application/verification/IManifestVerificationBaselineNormalizationRepository.hpp"
+#include "ai/application/verification/IManifestVerificationContinuationRepository.hpp"
 #include "ai/application/IManifestWorkLedgerRepository.hpp"
 #include "ai/application/IRunWorkspaceScopeRepository.hpp"
-#include "ai/application/ManifestVerificationContinuationTypes.hpp"
+#include "ai/application/verification/ManifestVerificationContinuationTypes.hpp"
 
 namespace ai::application {
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/ManifestVerificationContinuationTypes.hpp"
+#include "ai/application/verification/ManifestVerificationContinuationTypes.hpp"
 #include "ai/common/Result.hpp"
 
 #include <optional>

@@ -1,4 +1,4 @@
-#include "ai/application/ManifestVerificationContinuationTypes.hpp"
+#include "ai/application/verification/ManifestVerificationContinuationTypes.hpp"
 #include "ai/application/Sha256.hpp"
 
 #include <algorithm>

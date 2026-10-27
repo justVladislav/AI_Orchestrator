@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/IManifestVerificationBaselineNormalizationRepository.hpp"
+#include "ai/application/verification/IManifestVerificationBaselineNormalizationRepository.hpp"
 
 #include <map>
 #include <mutex>

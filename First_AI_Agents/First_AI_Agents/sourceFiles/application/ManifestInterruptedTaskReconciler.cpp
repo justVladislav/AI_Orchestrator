@@ -2,7 +2,7 @@
 
 #include "ai/application/IWorkflowRunner.hpp"
 #include "ai/application/ManifestRouting.hpp"
-#include "ai/application/ManifestVerificationContinuationPreparationService.hpp"
+#include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"
 #include "ai/application/agents/ModelExecutionTypes.hpp"
 #include "ai/application/TaskRouteResolver.hpp"
 

@@ -2,16 +2,16 @@
 
 #include "ai/application/proposals/ChangeProposalService.hpp"
 #include "ai/application/IExecutionManifestRepository.hpp"
-#include "ai/application/IManifestVerificationContinuationRepository.hpp"
+#include "ai/application/verification/IManifestVerificationContinuationRepository.hpp"
 #include "ai/application/IManifestVerificationManualHandoffRepository.hpp"
 #include "ai/application/IManifestWorkLedgerRepository.hpp"
 #include "ai/application/projects/IProjectRepository.hpp"
 #include "ai/application/verification/IVerificationScratchRootProvider.hpp"
 #include "ai/application/IRunRepository.hpp"
 #include "ai/application/verification/ManifestProposalSetVerifier.hpp"
-#include "ai/application/ManifestVerificationAttributionService.hpp"
-#include "ai/application/ManifestVerificationContinuationService.hpp"
-#include "ai/application/ManifestVerificationLegacyBaselineNormalizationService.hpp"
+#include "ai/application/verification/ManifestVerificationAttributionService.hpp"
+#include "ai/application/verification/ManifestVerificationContinuationService.hpp"
+#include "ai/application/verification/ManifestVerificationLegacyBaselineNormalizationService.hpp"
 
 #include <filesystem>
 #include <mutex>

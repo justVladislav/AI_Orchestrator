@@ -1,4 +1,4 @@
-#include "ai/application/ManifestVerificationLegacyBaselineNormalizationService.hpp"
+#include "ai/application/verification/ManifestVerificationLegacyBaselineNormalizationService.hpp"
 
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
 

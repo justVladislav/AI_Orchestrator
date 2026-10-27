@@ -1,7 +1,7 @@
 #include "OutcomeBriefRepositoryContract.hpp"
 #include "RunPagingContract.hpp"
 
-#include "ai/application/ManifestVerificationContinuationPreparationService.hpp"
+#include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"
 #include "ai/infrastructure/SqliteRepositories.hpp"
 
 #include <sqlite3.h>

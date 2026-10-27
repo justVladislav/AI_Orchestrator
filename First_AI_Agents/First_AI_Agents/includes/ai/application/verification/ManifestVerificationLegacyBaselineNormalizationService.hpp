@@ -2,8 +2,8 @@
 
 #include "ai/application/artifacts/ArtifactService.hpp"
 #include "ai/application/proposals/ChangeProposalService.hpp"
-#include "ai/application/IManifestVerificationBaselineNormalizationRepository.hpp"
-#include "ai/application/ManifestVerificationContinuationTypes.hpp"
+#include "ai/application/verification/IManifestVerificationBaselineNormalizationRepository.hpp"
+#include "ai/application/verification/ManifestVerificationContinuationTypes.hpp"
 #include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 
 #include <string_view>

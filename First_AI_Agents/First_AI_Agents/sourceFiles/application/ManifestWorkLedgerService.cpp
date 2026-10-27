@@ -3,7 +3,7 @@
 #include "ai/application/artifacts/ArtifactService.hpp"
 #include "ai/application/ExecutionManifestPlanner.hpp"
 #include "ai/application/IWorkflowRunner.hpp"
-#include "ai/application/ManifestVerificationContinuationPreparationService.hpp"
+#include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"
 #include "ai/application/ManifestVerificationManualHandoffTypes.hpp"
 #include "ai/application/ManifestWorkerNoChanges.hpp"
 #include "ai/application/verification/QmlLintDiagnosticPolicy.hpp"

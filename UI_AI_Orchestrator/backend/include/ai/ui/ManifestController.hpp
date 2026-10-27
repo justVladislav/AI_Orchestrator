@@ -1,9 +1,9 @@
 #pragma once
 
 #include <ai/application/ExecutionManifestReadModelService.hpp>
-#include <ai/application/ManifestVerificationContinuationPreparationService.hpp>
-#include <ai/application/ManifestVerificationContinuationReadModelService.hpp>
-#include <ai/application/ManifestVerificationContinuationRepairService.hpp>
+#include <ai/application/verification/ManifestVerificationContinuationPreparationService.hpp>
+#include <ai/application/verification/ManifestVerificationContinuationReadModelService.hpp>
+#include <ai/application/verification/ManifestVerificationContinuationRepairService.hpp>
 #include <ai/application/VerificationBootstrapRetryService.hpp>
 
 #include <QFutureWatcher>

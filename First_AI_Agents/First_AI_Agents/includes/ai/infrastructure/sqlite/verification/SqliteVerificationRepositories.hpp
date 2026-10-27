@@ -1,7 +1,7 @@
 #pragma once
 
-#include "ai/application/IManifestVerificationBaselineNormalizationRepository.hpp"
-#include "ai/application/IManifestVerificationContinuationRepository.hpp"
+#include "ai/application/verification/IManifestVerificationBaselineNormalizationRepository.hpp"
+#include "ai/application/verification/IManifestVerificationContinuationRepository.hpp"
 #include "ai/application/IManifestVerificationManualHandoffRepository.hpp"
 #include "ai/application/IVerificationBootstrapRepository.hpp"
 #include "ai/application/verification/IVerificationEnvironmentRepository.hpp"

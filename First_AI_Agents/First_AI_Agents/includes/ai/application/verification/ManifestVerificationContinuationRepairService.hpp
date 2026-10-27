@@ -5,7 +5,7 @@
 #include "ai/application/ExecutionManifestExecutor.hpp"
 #include "ai/application/ExecutionManifestService.hpp"
 #include "ai/application/IManifestTaskExecutionRepository.hpp"
-#include "ai/application/IManifestVerificationContinuationRepository.hpp"
+#include "ai/application/verification/IManifestVerificationContinuationRepository.hpp"
 #include "ai/application/IManifestWorkLedgerRepository.hpp"
 #include "ai/application/catalog/IModelRepository.hpp"
 #include "ai/application/projects/IProjectRepository.hpp"
@@ -13,7 +13,7 @@
 #include "ai/application/catalog/IProviderRepository.hpp"
 #include "ai/application/IRunRepository.hpp"
 #include "ai/application/verification/ManifestProposalSetVerifier.hpp"
-#include "ai/application/ManifestVerificationContinuationPreparationService.hpp"
+#include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"
 #include "ai/application/ManifestWorkLedgerService.hpp"
 #include "ai/providers/IProviderAgentSession.hpp"
 

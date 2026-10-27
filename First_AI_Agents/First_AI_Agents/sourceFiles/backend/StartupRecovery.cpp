@@ -5,7 +5,7 @@
 #include "ai/application/agents/IAgentToolAuditRepository.hpp"
 #include "ai/application/agents/IAgentToolSessionRepository.hpp"
 #include "ai/application/ManifestInterruptedTaskReconciler.hpp"
-#include "ai/application/ManifestVerificationContinuationPreparationService.hpp"
+#include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"
 #include "ai/application/ManifestVerificationManualHandoffService.hpp"
 #include "ai/application/ManifestWorkLedgerService.hpp"
 #include "ai/application/agents/ModelExecutionService.hpp"

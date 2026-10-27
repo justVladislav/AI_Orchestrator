@@ -1,8 +1,8 @@
-#include "ai/application/ManifestVerificationContinuationReadModelService.hpp"
+#include "ai/application/verification/ManifestVerificationContinuationReadModelService.hpp"
 
 #include "ai/application/ExecutionAcceptanceContract.hpp"
 #include "ai/application/IWorkflowRunner.hpp"
-#include "ai/application/ManifestVerificationContinuationPreparationService.hpp"
+#include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"
 
 #include <algorithm>
 #include <unordered_map>

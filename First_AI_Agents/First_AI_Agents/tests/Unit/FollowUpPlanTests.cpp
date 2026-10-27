@@ -1,7 +1,7 @@
 #include "ai/application/planning/FollowUpPlan.hpp"
 
 #include "ai/application/IWorkflowRunner.hpp"
-#include "ai/application/ManifestVerificationContinuationPreparationService.hpp"
+#include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"
 #include "ai/application/ManifestVerificationManualHandoffTypes.hpp"
 #include "ai/application/planning/OutcomeBriefReconciler.hpp"
 

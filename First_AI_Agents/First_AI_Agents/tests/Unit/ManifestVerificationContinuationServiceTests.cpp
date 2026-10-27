@@ -2,13 +2,13 @@
 // pure fail-closed eligibility/admission logic, entirely in-memory - no
 // SQLite, no provider sessions. Repository round-trip coverage lives in
 // ManifestVerificationContinuationRepositoryTests.cpp.
-#include "ai/application/ManifestVerificationContinuationService.hpp"
-#include "ai/application/ManifestVerificationAttributionService.hpp"
-#include "ai/application/ManifestVerificationContinuationPreparationService.hpp"
-#include "ai/application/ManifestVerificationLegacyBaselineNormalizationService.hpp"
+#include "ai/application/verification/ManifestVerificationContinuationService.hpp"
+#include "ai/application/verification/ManifestVerificationAttributionService.hpp"
+#include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"
+#include "ai/application/verification/ManifestVerificationLegacyBaselineNormalizationService.hpp"
 #include "ai/application/InMemoryManifestVerificationBaselineNormalizationRepository.hpp"
-#include "ai/application/ManifestVerificationContinuationReadModelService.hpp"
-#include "ai/application/ManifestVerificationContinuationRepairService.hpp"
+#include "ai/application/verification/ManifestVerificationContinuationReadModelService.hpp"
+#include "ai/application/verification/ManifestVerificationContinuationRepairService.hpp"
 #include "ai/application/verification/ManifestMandatoryVerificationPolicy.hpp"
 #include "ai/application/ManifestRouting.hpp"
 #include "ai/application/ManifestVerificationManualHandoffService.hpp"

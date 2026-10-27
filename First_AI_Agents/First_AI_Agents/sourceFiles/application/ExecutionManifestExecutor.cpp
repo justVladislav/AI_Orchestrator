@@ -4,7 +4,7 @@
 #include "ai/application/ExecutionManifestExecutionCapacity.hpp"
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/verification/ManifestVerificationProfileBinder.hpp"
-#include "ai/application/ManifestVerificationRepairability.hpp"
+#include "ai/application/verification/ManifestVerificationRepairability.hpp"
 #include "ai/application/agents/ModelExecutionService.hpp"
 #include "ai/application/Sha256.hpp"
 #include "ai/application/verification/VerificationEnvironmentDiscoveryService.hpp"

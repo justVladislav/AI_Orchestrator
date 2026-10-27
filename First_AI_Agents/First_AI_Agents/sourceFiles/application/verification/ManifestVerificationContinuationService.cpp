@@ -1,7 +1,7 @@
-#include "ai/application/ManifestVerificationContinuationService.hpp"
+#include "ai/application/verification/ManifestVerificationContinuationService.hpp"
 
 #include "ai/application/IWorkflowRunner.hpp"
-#include "ai/application/ManifestVerificationRepairability.hpp"
+#include "ai/application/verification/ManifestVerificationRepairability.hpp"
 
 namespace ai::application {
 

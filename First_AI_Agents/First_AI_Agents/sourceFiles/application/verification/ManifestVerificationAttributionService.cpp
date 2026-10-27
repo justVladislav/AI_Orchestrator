@@ -1,7 +1,7 @@
-#include "ai/application/ManifestVerificationAttributionService.hpp"
+#include "ai/application/verification/ManifestVerificationAttributionService.hpp"
 
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
-#include "ai/application/ManifestVerificationRepairability.hpp"
+#include "ai/application/verification/ManifestVerificationRepairability.hpp"
 
 #include <algorithm>
 #include <cctype>

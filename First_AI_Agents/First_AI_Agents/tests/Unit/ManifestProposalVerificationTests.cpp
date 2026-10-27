@@ -2,7 +2,7 @@
 #include "ai/application/verification/ManifestProposalOverlay.hpp"
 #include "ai/application/verification/ManifestProposalSetVerifier.hpp"
 #include "ai/application/verification/ManifestVerificationEnvironmentPreflight.hpp"
-#include "ai/application/ManifestVerificationRepairability.hpp"
+#include "ai/application/verification/ManifestVerificationRepairability.hpp"
 #include "ai/application/verification/QmlLintDiagnosticPolicy.hpp"
 #include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 

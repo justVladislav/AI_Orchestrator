@@ -78,24 +78,24 @@ set(APPLICATION_SOURCES
     sourceFiles/application/ExecutionManifestExecutionCapacity.cpp
     sourceFiles/application/ExecutionManifestScheduler.cpp
     sourceFiles/application/ExecutionManifestExecutor.cpp
-    sourceFiles/application/ManifestVerificationRepairability.cpp
+    sourceFiles/application/verification/ManifestVerificationRepairability.cpp
     sourceFiles/application/ManifestWorkflowRunner.cpp
     sourceFiles/application/ManifestWorkLedgerTypes.cpp
     sourceFiles/application/ManifestWorkLedgerService.cpp
     sourceFiles/application/ManifestInterruptedTaskReconciler.cpp
-    sourceFiles/application/ManifestVerificationContinuationTypes.cpp
+    sourceFiles/application/verification/ManifestVerificationContinuationTypes.cpp
     sourceFiles/application/InMemoryManifestVerificationContinuationRepository.cpp
-    sourceFiles/application/ManifestVerificationContinuationService.cpp
-    sourceFiles/application/ManifestVerificationContinuationPreparationService.cpp
-    sourceFiles/application/ManifestVerificationContinuationReadModelService.cpp
-    sourceFiles/application/ManifestVerificationAttributionService.cpp
-    sourceFiles/application/ManifestVerificationLegacyBaselineNormalizationService.cpp
+    sourceFiles/application/verification/ManifestVerificationContinuationService.cpp
+    sourceFiles/application/verification/ManifestVerificationContinuationPreparationService.cpp
+    sourceFiles/application/verification/ManifestVerificationContinuationReadModelService.cpp
+    sourceFiles/application/verification/ManifestVerificationAttributionService.cpp
+    sourceFiles/application/verification/ManifestVerificationLegacyBaselineNormalizationService.cpp
     sourceFiles/application/InMemoryManifestVerificationBaselineNormalizationRepository.cpp
     sourceFiles/application/ManifestVerificationManualHandoffTypes.cpp
     sourceFiles/application/InMemoryManifestVerificationManualHandoffRepository.cpp
     sourceFiles/application/ManifestVerificationManualHandoffService.cpp
     sourceFiles/application/ManifestVerificationManualHandoffReadModelService.cpp
-    sourceFiles/application/ManifestVerificationContinuationRepairService.cpp
+    sourceFiles/application/verification/ManifestVerificationContinuationRepairService.cpp
     sourceFiles/application/RunWorkspaceScopeTypes.cpp
     sourceFiles/application/RunWorkspaceScopeService.cpp
     sourceFiles/application/verification/VerificationEnvironmentSnapshotTypes.cpp

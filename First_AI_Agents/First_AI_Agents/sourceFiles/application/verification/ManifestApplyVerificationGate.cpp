@@ -3,7 +3,7 @@
 #include "ai/application/proposals/ChangeProposalService.hpp"
 #include "ai/application/ExecutionAcceptanceContract.hpp"
 #include "ai/application/IExecutionManifestRepository.hpp"
-#include "ai/application/IManifestVerificationContinuationRepository.hpp"
+#include "ai/application/verification/IManifestVerificationContinuationRepository.hpp"
 #include "ai/application/IManifestVerificationManualHandoffRepository.hpp"
 #include "ai/application/ManifestVerificationManualHandoffApplyAuthority.hpp"
 #include "ai/application/IManifestWorkLedgerRepository.hpp"
@@ -11,7 +11,7 @@
 #include "ai/application/IWorkflowRunner.hpp"
 #include "ai/application/verification/ManifestProposalContentHash.hpp"
 #include "ai/application/IVerificationBootstrapRepository.hpp"
-#include "ai/application/ManifestVerificationContinuationPreparationService.hpp"
+#include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"
 #include "ai/application/ManifestWorkLedgerTypes.hpp"
 #include "ai/application/Sha256.hpp"
 

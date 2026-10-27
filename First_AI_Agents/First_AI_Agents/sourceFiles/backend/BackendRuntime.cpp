@@ -38,7 +38,7 @@
 #include "ai/application/WorkflowRouter.hpp"
 #include "ai/application/proposals/ChangeSetApplyService.hpp"
 #include "ai/application/verification/ManifestApplyVerificationGate.hpp"
-#include "ai/application/ManifestVerificationContinuationPreparationService.hpp"
+#include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"
 #include "ai/application/ManifestInterruptedTaskReconciler.hpp"
 #include "ai/application/ManifestVerificationManualHandoffService.hpp"
 #include "ai/application/ManifestVerificationManualHandoffReadModelService.hpp"

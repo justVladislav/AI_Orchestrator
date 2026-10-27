@@ -2,14 +2,14 @@
 
 #include "ai/application/proposals/IChangeApprovalRepository.hpp"
 #include "ai/application/proposals/IChangeProposalRepository.hpp"
-#include "ai/application/IManifestVerificationContinuationRepository.hpp"
+#include "ai/application/verification/IManifestVerificationContinuationRepository.hpp"
 #include "ai/application/IManifestVerificationManualHandoffRepository.hpp"
 #include "ai/application/IManifestWorkLedgerRepository.hpp"
 #include "ai/application/projects/IProjectRepository.hpp"
 #include "ai/application/proposals/IProposalReviewRepository.hpp"
 #include "ai/application/IRunRepository.hpp"
 #include "ai/application/IWorkflowRunner.hpp"
-#include "ai/application/ManifestVerificationContinuationPreparationService.hpp"
+#include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"
 
 #include <algorithm>
 #include <limits>

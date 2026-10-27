@@ -1,4 +1,4 @@
-#include "ai/application/ManifestVerificationContinuationPreparationService.hpp"
+#include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"
 
 #include "ai/application/planning/IOutcomeBriefTrigger.hpp"
 
