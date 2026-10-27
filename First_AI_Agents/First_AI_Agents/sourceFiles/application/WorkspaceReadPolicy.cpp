@@ -106,6 +106,7 @@ WorkspaceReadPolicy WorkspaceReadPolicy::secureDefaults(fs::path trustedWorkspac
     policy.workspaceRoot = std::move(trustedWorkspaceRoot);
     policy.deniedDirectoryNames = {
         ".git", ".ssh", ".aws", ".azure", ".gnupg",
+        ".vs", // Visual Studio caches, indexes and local session state.
         "build", "out", "install", ".cache",
         // Real-Run incident (Run bb56e001-eac0-4b59-8d0b-d037c6bc1031,
         // 2026-09-15/17): a manual diff of the durable workspace-baseline
@@ -119,6 +120,8 @@ WorkspaceReadPolicy WorkspaceReadPolicy::secureDefaults(fs::path trustedWorkspac
         // any Qt Creator user, even with the workspace genuinely
         // untouched - excluded the same way build/out/install already are.
         ".qtcreator"};
+    policy.deniedDirectorySequences = {
+        "x64/Debug", "x64/Release", "Win32/Debug", "Win32/Release"};
     policy.deniedFileNames = {
         ".env", ".env.local", "credentials", "credentials.json",
         "secrets.json", "id_rsa", "id_ed25519"};
@@ -157,7 +160,35 @@ common::Result<void> WorkspaceReadPolicyValidator::validateTrustedPolicy(
                 "Denied paths must be safe relative paths"));
         }
     }
+    for (const auto& sequence : policy.deniedDirectorySequences) {
+        if (sequence.empty() || sequence.is_absolute() || sequence.has_root_name()
+            || std::any_of(sequence.begin(), sequence.end(), [](const fs::path& component) {
+                   return component.empty() || component == "." || component == "..";
+               })) {
+            return common::Result<void>::failure(policyError(
+                "workspace_policy.invalid_denied_path",
+                "Denied directory sequences must contain safe relative components"));
+        }
+    }
     return common::Result<void>::ok();
+}
+
+bool WorkspaceReadPolicyValidator::matchesDeniedDirectorySequence(
+    const fs::path& relativePath, const WorkspaceReadPolicy& policy)
+{
+    const auto normalized = relativePath.lexically_normal();
+    for (auto start = normalized.begin(); start != normalized.end(); ++start) {
+        for (const auto& sequence : policy.deniedDirectorySequences) {
+            if (sequence.empty()) continue;
+            auto candidate = start;
+            auto part = sequence.begin();
+            for (; part != sequence.end() && candidate != normalized.end(); ++part, ++candidate) {
+                if (!componentEquals(*candidate, *part)) break;
+            }
+            if (part == sequence.end()) return true;
+        }
+    }
+    return false;
 }
 
 common::Result<fs::path> WorkspaceReadPolicyValidator::validateRelativePath(
@@ -194,7 +225,8 @@ common::Result<fs::path> WorkspaceReadPolicyValidator::validateRelativePath(
     }
 
     const std::string filename = normalizedComponent(normalized.filename());
-    if (stringListContains(policy.deniedFileNames, filename)
+    if (matchesDeniedDirectorySequence(normalized, policy)
+        || stringListContains(policy.deniedFileNames, filename)
         || stringListContains(
             policy.deniedExtensions,
             normalizedComponent(normalized.extension()))) {
