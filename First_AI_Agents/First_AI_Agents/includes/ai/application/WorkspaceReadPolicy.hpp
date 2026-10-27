@@ -21,6 +21,10 @@ struct WorkspaceReadPolicy {
     bool allowedRootsAreExactPaths {false};
     std::vector<std::filesystem::path> deniedPaths;
     std::vector<std::string> deniedDirectoryNames;
+    // Whole, consecutive directory components matched at any workspace depth.
+    // For example, x64/Debug excludes conventional MSVC output without
+    // excluding every directory named Debug or every architecture directory.
+    std::vector<std::filesystem::path> deniedDirectorySequences;
     std::vector<std::string> deniedFileNames;
     std::vector<std::string> deniedExtensions;
 
@@ -38,6 +42,10 @@ struct WorkspaceReadPolicy {
 // operation.
 class WorkspaceReadPolicyValidator {
 public:
+    [[nodiscard]] static bool matchesDeniedDirectorySequence(
+        const std::filesystem::path& relativePath,
+        const WorkspaceReadPolicy& policy);
+
     [[nodiscard]] static common::Result<void> validateTrustedPolicy(
         const WorkspaceReadPolicy& policy);
 
