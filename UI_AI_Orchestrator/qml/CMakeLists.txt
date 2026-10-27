@@ -75,6 +75,9 @@ qt_add_qml_module(UI_AI_Orchestrator_Content
         pages/Runs/Runs_Objects/AgentSessionPanel.qml
         pages/Runs/Runs_Objects/ManifestPanel.qml
         pages/Runs/Runs_Objects/ManualHandoffPanel.qml
+        pages/Runs/Runs_Objects/ManualHandoffCandidateChanges.qml
+        pages/Runs/Runs_Objects/ManualHandoffAttemptHistory.qml
+        pages/Runs/Runs_Objects/ManualHandoffReviewSection.qml
         pages/Runs/Runs_Objects/ManualHandoffFindingsDialog.qml
         pages/Runs/Runs_Objects/RecordedFindingsBlock.qml
         pages/Runs/Runs_Objects/OutcomeBriefPanel.qml

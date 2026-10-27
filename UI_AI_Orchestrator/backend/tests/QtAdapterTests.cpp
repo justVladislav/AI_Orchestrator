@@ -3099,7 +3099,26 @@ void testManualHandoffPanelUsesBackendProjectionOnly()
     assert(panelStream.is_open());
     std::ostringstream panelBuffer;
     panelBuffer << panelStream.rdbuf();
-    const std::string panel = panelBuffer.str();
+    const std::string panelRoot = panelBuffer.str();
+    std::string panel = panelRoot;
+    for (const char* component : {"ManualHandoffCandidateChanges", "ManualHandoffAttemptHistory",
+                                  "ManualHandoffReviewSection"}) {
+        assert(panelRoot.find(std::string(component) + " {") != std::string::npos
+            && "The handoff panel must instantiate each extracted section");
+        const auto componentPath = panelPath.parent_path() / (std::string(component) + ".qml");
+        std::ifstream componentStream(componentPath, std::ios::binary);
+        assert(componentStream.is_open());
+        std::ostringstream componentBuffer;
+        componentBuffer << componentStream.rdbuf();
+        const std::string source = componentBuffer.str();
+        assert(source.find("required property var controller") != std::string::npos);
+        panel += "\n" + source;
+    }
+    assert(panelRoot.find("onResetRequested:") != std::string::npos
+        && panelRoot.find("onMemberSelectionRequested:") != std::string::npos
+        && panelRoot.find("onDiffToggleRequested:") != std::string::npos
+        && panelRoot.find("onFindingsRequested:") != std::string::npos
+        && "Section actions must be relayed to the panel's existing handlers");
 
     assert(panel.find("panel.controller.isApplicable") != std::string::npos
         && panel.find("panel.controller.canCreate") != std::string::npos
@@ -3241,6 +3260,12 @@ void testManualHandoffPanelUsesBackendProjectionOnly()
     assert(cmakeBuffer.str().find(
         "pages/Runs/Runs_Objects/ManualHandoffPanel.qml") != std::string::npos
         && "The deployed QML module must compile/register ManualHandoffPanel.qml");
+    for (const char* component : {"ManualHandoffCandidateChanges", "ManualHandoffAttemptHistory",
+                                  "ManualHandoffReviewSection"}) {
+        assert(cmakeBuffer.str().find(std::string("pages/Runs/Runs_Objects/") + component + ".qml")
+                != std::string::npos
+            && "Each extracted handoff section must be registered in the deployed QML module");
+    }
 
     // REMAIN_TO_DO 6a (b)+(c): the recorded findings stand in ONE shared block above BOTH repair panels, are
     // registered in the module, are not rendered a second time inside the handoff panel, and the block gates
