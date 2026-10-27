@@ -101,7 +101,7 @@ set(APPLICATION_SOURCES
     sourceFiles/application/VerificationEnvironmentSnapshotTypes.cpp
     sourceFiles/application/VerificationEnvironmentDiscoveryService.cpp
     sourceFiles/application/VerificationEnvironmentPresetSetupService.cpp
-    sourceFiles/application/WorkspaceBaselineProvenance.cpp
+    sourceFiles/application/workspace/WorkspaceBaselineProvenance.cpp
     sourceFiles/application/InMemoryExecutionManifestRepository.cpp
     sourceFiles/application/InMemoryManifestTaskExecutionRepository.cpp
     sourceFiles/application/InMemoryManifestWorkLedgerRepository.cpp
@@ -189,10 +189,10 @@ set(APPLICATION_SOURCES
     sourceFiles/application/proposals/ChangeProposalValidator.cpp
     sourceFiles/application/RunPathClaimRegistry.cpp
     sourceFiles/application/proposals/ChangeProposalService.cpp
-    sourceFiles/application/WorkspaceReadPolicy.cpp
-    sourceFiles/application/WorkspacePathGuard.cpp
-    sourceFiles/application/ToolRegistry.cpp
-    sourceFiles/application/FilesystemWorkspaceToolExecutor.cpp
+    sourceFiles/application/workspace/WorkspaceReadPolicy.cpp
+    sourceFiles/application/workspace/WorkspacePathGuard.cpp
+    sourceFiles/application/workspace/ToolRegistry.cpp
+    sourceFiles/application/workspace/FilesystemWorkspaceToolExecutor.cpp
     sourceFiles/application/agents/AgentToolExecutionService.cpp
     sourceFiles/application/agents/AgentToolReadModelService.cpp
     sourceFiles/application/conversations/ChatService.cpp

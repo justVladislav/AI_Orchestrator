@@ -2,7 +2,7 @@
 
 #include "ai/application/CostCalculation.hpp"
 #include "ai/application/ExecutionManifestExecutionCapacity.hpp"
-#include "ai/application/FilesystemPathUtils.hpp"
+#include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/ManifestVerificationProfileBinder.hpp"
 #include "ai/application/ManifestVerificationRepairability.hpp"
 #include "ai/application/agents/ModelExecutionService.hpp"

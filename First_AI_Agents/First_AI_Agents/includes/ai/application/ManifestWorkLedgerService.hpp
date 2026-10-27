@@ -10,7 +10,7 @@
 #include "ai/application/IRunRepository.hpp"
 #include "ai/application/IRunWorkspaceScopeRepository.hpp"
 #include "ai/application/ManifestWorkLedgerTypes.hpp"
-#include "ai/application/WorkspaceBaselineProvenance.hpp"
+#include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 #include "ai/common/Result.hpp"
 
 #include <chrono>

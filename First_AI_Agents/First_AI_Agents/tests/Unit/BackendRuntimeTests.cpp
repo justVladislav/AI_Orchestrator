@@ -2,7 +2,7 @@
 #include "ai/application/proposals/ChangeProposalService.hpp"
 #include "ai/application/Sha256.hpp"
 #include "ai/infrastructure/DatabaseOwnerLock.hpp"
-#include "ai/application/FilesystemPathUtils.hpp"
+#include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/infrastructure/FileChangeProposalStore.hpp"
 #include "ai/infrastructure/SqliteRepositories.hpp"
 #include "FollowUpRequestTestSupport.hpp"

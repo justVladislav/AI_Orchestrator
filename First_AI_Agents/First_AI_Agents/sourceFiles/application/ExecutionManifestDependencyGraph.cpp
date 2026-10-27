@@ -1,5 +1,5 @@
 #include "ai/application/ExecutionManifestDependencyGraph.hpp"
-#include "ai/application/FilesystemPathUtils.hpp"
+#include "ai/application/workspace/FilesystemPathUtils.hpp"
 
 #include <cctype>
 #include <filesystem>

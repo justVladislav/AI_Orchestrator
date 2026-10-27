@@ -19,8 +19,8 @@
 #include <ai/application/ManifestVerificationContinuationTypes.hpp>
 #include <ai/application/ManifestWorkLedgerTypes.hpp>
 #include <ai/application/Sha256.hpp>
-#include <ai/application/WorkspaceBaselineProvenance.hpp>
-#include <ai/application/WorkspaceReadPolicy.hpp>
+#include <ai/application/workspace/WorkspaceBaselineProvenance.hpp>
+#include <ai/application/workspace/WorkspaceReadPolicy.hpp>
 #include <ai/backend/BackendRuntime.hpp>
 #include <ai/infrastructure/SqliteRepositories.hpp>
 #include <ai/ui/BackendBridge.hpp>

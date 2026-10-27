@@ -1,11 +1,11 @@
 #include "ai/application/FilesystemFollowUpFileLoader.hpp"
 
 #include "ai/application/proposals/ChangeProposalValidator.hpp"
-#include "ai/application/FilesystemPathUtils.hpp"
+#include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/context/ProjectContextSnapshot.hpp"
 #include "ai/application/Sha256.hpp"
-#include "ai/application/WorkspacePathGuard.hpp"
-#include "ai/application/WorkspaceReadPolicy.hpp"
+#include "ai/application/workspace/WorkspacePathGuard.hpp"
+#include "ai/application/workspace/WorkspaceReadPolicy.hpp"
 
 #include <algorithm>
 #include <cctype>

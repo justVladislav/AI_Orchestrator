@@ -23,7 +23,7 @@
 #include "ai/application/projects/ProjectService.hpp"
 #include "ai/application/catalog/ProviderCatalogService.hpp"
 #include "ai/application/RunManager.hpp"
-#include "ai/application/ToolRegistry.hpp"
+#include "ai/application/workspace/ToolRegistry.hpp"
 #include "ai/application/VerificationEnvironmentDiscoveryService.hpp"
 #include "ai/application/WorkflowRouter.hpp"
 #include "ai/backend/StartupRecovery.hpp"

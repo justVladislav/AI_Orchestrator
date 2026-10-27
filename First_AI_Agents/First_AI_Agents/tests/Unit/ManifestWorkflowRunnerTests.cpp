@@ -15,7 +15,7 @@
 #include "ai/application/ExecutionManifestPlannerTurnBudget.hpp"
 #include "ai/application/ExecutionManifestReadModelService.hpp"
 #include "ai/application/catalog/ExecutionProfileService.hpp"
-#include "ai/application/FilesystemWorkspaceToolExecutor.hpp"
+#include "ai/application/workspace/FilesystemWorkspaceToolExecutor.hpp"
 #include "ai/application/InMemoryExecutionManifestRepository.hpp"
 #include "ai/application/InMemoryManifestTaskExecutionRepository.hpp"
 #include "ai/application/InMemoryManifestWorkLedgerRepository.hpp"

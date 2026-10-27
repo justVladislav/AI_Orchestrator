@@ -9,7 +9,7 @@
 #include "ai/application/ManifestProposalSetVerifier.hpp"
 #include "ai/application/TaskRouteResolver.hpp"
 #include "ai/application/VerificationBootstrapTypes.hpp"
-#include "ai/application/WorkspaceBaselineProvenance.hpp"
+#include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 #include "ai/models/TokenUsage.hpp"
 #include "ai/providers/IProviderAgentSession.hpp"
 

@@ -16,7 +16,7 @@
 #include "ai/application/RunWorkspaceScopeService.hpp"
 #include "ai/application/Sha256.hpp"
 #include "ai/application/VerificationEnvironmentDiscoveryService.hpp"
-#include "ai/application/WorkspaceBaselineProvenance.hpp"
+#include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 
 #include <algorithm>
 #include <chrono>

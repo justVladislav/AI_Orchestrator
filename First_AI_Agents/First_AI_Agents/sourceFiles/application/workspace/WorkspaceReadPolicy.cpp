@@ -1,5 +1,5 @@
-#include "ai/application/WorkspaceReadPolicy.hpp"
-#include "ai/application/FilesystemPathUtils.hpp"
+#include "ai/application/workspace/WorkspaceReadPolicy.hpp"
+#include "ai/application/workspace/FilesystemPathUtils.hpp"
 
 #include <algorithm>
 #include <cctype>

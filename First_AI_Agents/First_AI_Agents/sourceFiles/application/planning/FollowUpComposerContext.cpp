@@ -3,12 +3,12 @@
 #include "ai/application/proposals/ChangeProposalValidator.hpp"
 #include "ai/application/conversations/ChatContextAssembler.hpp"
 #include "ai/application/conversations/ChatProjectContext.hpp"
-#include "ai/application/FilesystemPathUtils.hpp"
+#include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/planning/FollowUpPlanAdvisories.hpp"
 #include "ai/application/planning/NextRunPlan.hpp"
 #include "ai/application/RunInterfaceContract.hpp"
 #include "ai/application/Sha256.hpp"
-#include "ai/application/WorkspaceReadPolicy.hpp"
+#include "ai/application/workspace/WorkspaceReadPolicy.hpp"
 
 #include <algorithm>
 #include <set>

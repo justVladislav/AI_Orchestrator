@@ -9,8 +9,8 @@
 #include "ai/application/ManifestProposalOverlay.hpp"
 #include "ai/application/ManifestVerificationRepairability.hpp"
 #include "ai/application/TaskRouteResolver.hpp"
-#include "ai/application/WorkspaceBaselineProvenance.hpp"
-#include "ai/application/WorkspaceReadPolicy.hpp"
+#include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
+#include "ai/application/workspace/WorkspaceReadPolicy.hpp"
 
 #include <algorithm>
 #include <unordered_map>

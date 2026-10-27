@@ -1,7 +1,7 @@
 #include "ai/application/agents/AgentToolTurnLoopRunner.hpp"
 #include "ai/application/CostCalculation.hpp"
 
-#include "ai/application/FilesystemPathUtils.hpp"
+#include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/IdGenerator.hpp"
 #include "ai/application/proposals/ProposedChangeSetParser.hpp"
 #include "ai/application/RunWorkspaceScopeService.hpp"

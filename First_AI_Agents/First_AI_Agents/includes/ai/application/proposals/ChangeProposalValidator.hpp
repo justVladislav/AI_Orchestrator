@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/proposals/ChangeProposalTypes.hpp"
-#include "ai/application/ProjectWritePolicy.hpp"
+#include "ai/application/workspace/ProjectWritePolicy.hpp"
 
 #include <filesystem>
 #include <string>

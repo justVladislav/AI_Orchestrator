@@ -1,8 +1,8 @@
-#include "ai/application/FilesystemWorkspaceToolExecutor.hpp"
-#include "ai/application/FilesystemPathUtils.hpp"
+#include "ai/application/workspace/FilesystemWorkspaceToolExecutor.hpp"
+#include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/Sha256.hpp"
-#include "ai/application/WorkspacePathGuard.hpp"
-#include "ai/application/WorkspaceReadPolicy.hpp"
+#include "ai/application/workspace/WorkspacePathGuard.hpp"
+#include "ai/application/workspace/WorkspaceReadPolicy.hpp"
 
 #include <nlohmann/json.hpp>
 

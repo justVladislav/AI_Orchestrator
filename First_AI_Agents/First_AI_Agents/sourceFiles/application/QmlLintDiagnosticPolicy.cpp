@@ -1,6 +1,6 @@
 #include "ai/application/QmlLintDiagnosticPolicy.hpp"
 
-#include "ai/application/FilesystemPathUtils.hpp"
+#include "ai/application/workspace/FilesystemPathUtils.hpp"
 
 #include <algorithm>
 #include <map>

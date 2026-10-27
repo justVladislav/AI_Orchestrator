@@ -3,8 +3,8 @@
 #include "ai/application/ExecutionManifestTypes.hpp"
 #include "ai/application/IRunWorkspaceScopeRepository.hpp"
 #include "ai/application/RunWorkspaceScopeTypes.hpp"
-#include "ai/application/WorkspaceBaselineProvenance.hpp"
-#include "ai/application/WorkspaceReadPolicy.hpp"
+#include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
+#include "ai/application/workspace/WorkspaceReadPolicy.hpp"
 #include "ai/common/Result.hpp"
 
 #include <cstddef>

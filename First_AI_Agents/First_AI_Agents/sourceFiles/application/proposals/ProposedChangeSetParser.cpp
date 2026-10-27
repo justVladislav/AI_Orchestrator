@@ -1,6 +1,6 @@
 #include "ai/application/proposals/ProposedChangeSetParser.hpp"
 
-#include "ai/application/FilesystemPathUtils.hpp"
+#include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/IdGenerator.hpp"
 #include <nlohmann/json.hpp>
 

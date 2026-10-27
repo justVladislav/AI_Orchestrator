@@ -3,9 +3,9 @@
 #include "ai/application/agents/AgentToolTypes.hpp"
 #include "ai/application/agents/IAgentToolAuditRepository.hpp"
 #include "ai/application/agents/IAgentToolSessionRepository.hpp"
-#include "ai/application/IWorkspaceToolExecutor.hpp"
-#include "ai/application/ToolRegistry.hpp"
-#include "ai/application/WorkspaceReadPolicy.hpp"
+#include "ai/application/workspace/IWorkspaceToolExecutor.hpp"
+#include "ai/application/workspace/ToolRegistry.hpp"
+#include "ai/application/workspace/WorkspaceReadPolicy.hpp"
 #include "ai/common/Result.hpp"
 
 #include <filesystem>

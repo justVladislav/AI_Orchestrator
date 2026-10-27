@@ -1,7 +1,7 @@
 #include "ai/application/ManifestVerificationManualHandoffReadModelService.hpp"
 
 #include "ai/application/IWorkflowRunner.hpp"
-#include "ai/application/FilesystemPathUtils.hpp"
+#include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/ManifestVerificationContinuationPreparationService.hpp"
 #include "ai/application/ManifestVerificationManualHandoffApplyAuthority.hpp"
 #include "ai/application/ManifestVerificationRepairability.hpp"

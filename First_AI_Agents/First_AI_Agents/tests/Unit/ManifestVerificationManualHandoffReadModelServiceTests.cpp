@@ -11,7 +11,7 @@
 #include "ai/application/ManifestVerificationManualHandoffReadModelService.hpp"
 
 #include "ai/application/proposals/ChangeProposalService.hpp"
-#include "ai/application/FilesystemPathUtils.hpp"
+#include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/InMemoryExecutionManifestRepository.hpp"
 #include "ai/application/InMemoryManifestVerificationBaselineNormalizationRepository.hpp"
 #include "ai/application/InMemoryManifestVerificationContinuationRepository.hpp"
@@ -31,8 +31,8 @@
 #include "ai/application/proposals/ProposalReviewService.hpp"
 #include "ai/application/QmlLintDiagnosticPolicy.hpp"
 #include "ai/application/Sha256.hpp"
-#include "ai/application/WorkspaceBaselineProvenance.hpp"
-#include "ai/application/WorkspaceReadPolicy.hpp"
+#include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
+#include "ai/application/workspace/WorkspaceReadPolicy.hpp"
 #include "ai/infrastructure/FileChangeProposalStore.hpp"
 
 #include <chrono>

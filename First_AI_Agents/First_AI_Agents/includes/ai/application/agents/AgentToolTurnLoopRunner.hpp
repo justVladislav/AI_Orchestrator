@@ -8,7 +8,7 @@
 #include "ai/application/ManifestWorkerNoChanges.hpp"
 #include "ai/application/RunEvent.hpp"
 #include "ai/application/RunWorkspaceScopeTypes.hpp"
-#include "ai/application/WorkspaceBaselineProvenance.hpp"
+#include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 #include "ai/models/TokenUsage.hpp"
 #include "ai/providers/IProviderAgentSession.hpp"
 

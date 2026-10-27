@@ -3,7 +3,7 @@
 #include "ai/application/planning/IOutcomeBriefTrigger.hpp"
 
 #include "ai/application/artifacts/ArtifactService.hpp"
-#include "ai/application/FilesystemPathUtils.hpp"
+#include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/proposals/IChangeApprovalRepository.hpp"
 #include "ai/application/proposals/IChangeProposalRepository.hpp"
 #include "ai/application/proposals/IChangeProposalStore.hpp"
@@ -12,8 +12,8 @@
 #include "ai/application/ManifestApplyVerificationGate.hpp"
 #include "ai/application/ManifestWorkLedgerService.hpp"
 #include "ai/application/Sha256.hpp"
-#include "ai/application/WorkspaceBaselineProvenance.hpp"
-#include "ai/application/WorkspaceReadPolicy.hpp"
+#include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
+#include "ai/application/workspace/WorkspaceReadPolicy.hpp"
 #include "ai/common/Result.hpp"
 
 #include <algorithm>

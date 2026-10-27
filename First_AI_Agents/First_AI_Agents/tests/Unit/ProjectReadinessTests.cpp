@@ -1,4 +1,4 @@
-#include "ai/application/FilesystemPathUtils.hpp"
+#include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/ProjectReadinessService.hpp"
 #include "ai/infrastructure/SqliteRepositories.hpp"
 

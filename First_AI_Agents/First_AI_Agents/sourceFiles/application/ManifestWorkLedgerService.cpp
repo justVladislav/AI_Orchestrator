@@ -8,7 +8,7 @@
 #include "ai/application/ManifestWorkerNoChanges.hpp"
 #include "ai/application/QmlLintDiagnosticPolicy.hpp"
 #include "ai/application/Sha256.hpp"
-#include "ai/application/WorkspaceBaselineProvenance.hpp"
+#include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 
 #include <algorithm>
 #include <cctype>

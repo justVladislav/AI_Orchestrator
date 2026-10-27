@@ -4,7 +4,7 @@
 #include "ai/application/InMemoryRepositories.hpp"
 #include "ai/application/MockWorkflowRunner.hpp"
 #include "ai/application/OrchestrationService.hpp"
-#include "ai/application/FilesystemPathUtils.hpp"
+#include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/projects/ProjectService.hpp"
 #include "ai/application/Sha256.hpp"
 #include "ai/infrastructure/FileArtifactStore.hpp"

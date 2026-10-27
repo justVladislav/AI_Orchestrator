@@ -3,7 +3,7 @@
 #include "ai/application/proposals/ChangeProposalTypes.hpp"
 #include "ai/application/proposals/IChangeProposalRepository.hpp"
 #include "ai/application/proposals/IChangeProposalStore.hpp"
-#include "ai/application/ProjectWritePolicy.hpp"
+#include "ai/application/workspace/ProjectWritePolicy.hpp"
 #include "ai/application/RunPathClaimRegistry.hpp"
 #include "ai/common/Result.hpp"
 

@@ -1,4 +1,4 @@
-#include "ai/application/ToolRegistry.hpp"
+#include "ai/application/workspace/ToolRegistry.hpp"
 
 #include <algorithm>
 #include <cctype>

@@ -8,7 +8,7 @@
 // command runner, no real cmake invocation.
 #include "ai/application/InMemoryVerificationEnvironmentRepository.hpp"
 #include "ai/application/VerificationEnvironmentDiscoveryService.hpp"
-#include "ai/application/WorkspaceReadPolicy.hpp"
+#include "ai/application/workspace/WorkspaceReadPolicy.hpp"
 
 #include <cassert>
 #include <chrono>

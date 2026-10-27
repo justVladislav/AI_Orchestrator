@@ -23,7 +23,7 @@
 //   8. No exceptions — all std::exception descendants caught; internal errors
 //      are surfaced as a failed AgentToolResult with code workspace.internal_error
 
-#include "ai/application/IWorkspaceToolExecutor.hpp"
+#include "ai/application/workspace/IWorkspaceToolExecutor.hpp"
 
 namespace ai::application {
 

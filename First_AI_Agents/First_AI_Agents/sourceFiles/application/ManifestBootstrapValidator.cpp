@@ -1,5 +1,5 @@
 #include "ai/application/ManifestBootstrapValidator.hpp"
-#include "ai/application/FilesystemPathUtils.hpp"
+#include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/VerificationBootstrapTypes.hpp"
 
 #include <algorithm>

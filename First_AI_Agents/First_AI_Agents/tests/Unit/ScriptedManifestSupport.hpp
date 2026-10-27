@@ -8,7 +8,7 @@
 // them without that large file.
 #include "ai/application/agents/AgentToolExecutionService.hpp"
 #include "ai/application/ExecutionManifestDraftParser.hpp"
-#include "ai/application/FilesystemWorkspaceToolExecutor.hpp"
+#include "ai/application/workspace/FilesystemWorkspaceToolExecutor.hpp"
 #include "ai/application/ManifestWorkflowRunner.hpp"
 
 #include <nlohmann/json.hpp>

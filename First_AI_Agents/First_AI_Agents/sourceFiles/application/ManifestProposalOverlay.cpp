@@ -1,6 +1,6 @@
 #include "ai/application/ManifestProposalOverlay.hpp"
 
-#include "ai/application/FilesystemPathUtils.hpp"
+#include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/IdGenerator.hpp"
 #include "ai/application/ManifestProposalContentHash.hpp"
 #include "ai/application/Sha256.hpp"

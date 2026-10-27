@@ -2,7 +2,7 @@
 
 #include "ai/application/ApplicationTypes.hpp"
 #include "ai/application/proposals/ChangeProposalTypes.hpp"
-#include "ai/application/WorkspaceBaselineProvenance.hpp"
+#include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 #include "ai/common/Result.hpp"
 
 #include <chrono>

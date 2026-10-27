@@ -9,7 +9,7 @@
 #include "ai/application/ExecutionManifestExecutionCapacity.hpp"
 #include "ai/application/ExecutionManifestExecutor.hpp"
 #include "ai/application/ExecutionManifestScheduler.hpp"
-#include "ai/application/FilesystemWorkspaceToolExecutor.hpp"
+#include "ai/application/workspace/FilesystemWorkspaceToolExecutor.hpp"
 #include "ai/application/InMemoryRepositories.hpp"
 #include "ai/application/InMemoryRunWorkspaceScopeRepository.hpp"
 #include "ai/application/agents/ModelExecutionService.hpp"

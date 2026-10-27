@@ -5,7 +5,7 @@
 #include "ai/application/ManifestRouting.hpp"
 #include "ai/application/ProviderExecutionBudget.hpp"
 #include "ai/application/VerificationEnvironmentSnapshotTypes.hpp"
-#include "ai/application/WorkspaceBaselineProvenance.hpp"
+#include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 #include "ai/common/Result.hpp"
 #include "ai/models/TokenUsage.hpp"
 #include "ai/providers/IProviderAgentSession.hpp"

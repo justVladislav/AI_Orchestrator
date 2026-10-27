@@ -9,7 +9,7 @@
 #include "ai/application/ManifestMandatoryVerificationPolicy.hpp"
 #include "ai/application/ManifestRouting.hpp"
 #include "ai/application/RunWorkspaceScopeService.hpp"
-#include "ai/application/WorkspaceReadPolicy.hpp"
+#include "ai/application/workspace/WorkspaceReadPolicy.hpp"
 
 #include <nlohmann/json.hpp>
 

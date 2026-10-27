@@ -10,7 +10,7 @@
 #include "ai/application/CacheDurationAccounting.hpp"
 #include "ai/application/conversations/ChatProjectContext.hpp"
 #include "ai/application/planning/RunDraftGroup.hpp"
-#include "ai/application/WorkspaceBaselineProvenance.hpp"
+#include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 
 // Native SQLite C API only. This backend must build and link without the Qt
 // SDK (no Qt6::Sql/QSqlDatabase); see CODEX_CONTEXT.md for why an earlier

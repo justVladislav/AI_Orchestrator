@@ -1,6 +1,6 @@
 #include "ai/application/ManifestVerificationAttributionService.hpp"
 
-#include "ai/application/FilesystemPathUtils.hpp"
+#include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/ManifestVerificationRepairability.hpp"
 
 #include <algorithm>

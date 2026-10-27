@@ -1,12 +1,12 @@
 #include "ai/application/ExecutionManifestValidator.hpp"
 
 #include "ai/application/ExecutionManifestDependencyGraph.hpp"
-#include "ai/application/FilesystemPathUtils.hpp"
+#include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/ManifestBootstrapValidator.hpp"
 #include "ai/application/ManifestMandatoryVerificationPolicy.hpp"
 #include "ai/application/ManifestRouting.hpp"
 #include "ai/application/RunWorkspaceScopeTypes.hpp"
-#include "ai/application/WorkspaceReadPolicy.hpp"
+#include "ai/application/workspace/WorkspaceReadPolicy.hpp"
 
 #include <algorithm>
 #include <cctype>

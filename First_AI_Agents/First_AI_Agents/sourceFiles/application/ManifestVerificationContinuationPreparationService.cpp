@@ -5,8 +5,8 @@
 #include "ai/application/IdGenerator.hpp"
 #include "ai/application/ManifestProposalOverlay.hpp"
 #include "ai/application/QmlLintDiagnosticPolicy.hpp"
-#include "ai/application/WorkspaceBaselineProvenance.hpp"
-#include "ai/application/WorkspaceReadPolicy.hpp"
+#include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
+#include "ai/application/workspace/WorkspaceReadPolicy.hpp"
 
 #include <sstream>
 

@@ -2,7 +2,7 @@
 
 #include "ai/application/ExecutionManifestDraftTypes.hpp"
 #include "ai/application/ExecutionManifestTypes.hpp"
-#include "ai/application/WorkspaceBaselineProvenance.hpp"
+#include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 
 #include <vector>
 

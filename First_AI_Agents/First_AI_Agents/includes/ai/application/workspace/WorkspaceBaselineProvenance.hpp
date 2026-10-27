@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/WorkspaceReadPolicy.hpp"
+#include "ai/application/workspace/WorkspaceReadPolicy.hpp"
 #include "ai/common/Result.hpp"
 
 #include <cstddef>

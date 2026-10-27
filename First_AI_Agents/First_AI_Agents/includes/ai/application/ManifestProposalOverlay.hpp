@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/proposals/ChangeProposalService.hpp"
-#include "ai/application/WorkspaceBaselineProvenance.hpp"
+#include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 #include "ai/common/Result.hpp"
 
 #include <cstddef>

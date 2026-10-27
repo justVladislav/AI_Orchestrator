@@ -4,7 +4,7 @@
 #include "ai/application/proposals/ChangeProposalService.hpp"
 #include "ai/application/IManifestVerificationBaselineNormalizationRepository.hpp"
 #include "ai/application/ManifestVerificationContinuationTypes.hpp"
-#include "ai/application/WorkspaceBaselineProvenance.hpp"
+#include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 
 #include <string_view>
 #include <vector>

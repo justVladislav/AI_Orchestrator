@@ -1,4 +1,4 @@
-#include "ai/application/WorkspaceBaselineProvenance.hpp"
+#include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 
 #include <algorithm>
 #include <atomic>

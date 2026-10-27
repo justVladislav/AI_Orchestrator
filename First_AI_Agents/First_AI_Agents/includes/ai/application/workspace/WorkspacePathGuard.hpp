@@ -26,7 +26,7 @@
 //   - Error messages MUST NOT contain absolute paths, the workspace root,
 //     or any model-supplied input strings.
 
-#include "ai/application/WorkspaceReadPolicy.hpp"
+#include "ai/application/workspace/WorkspaceReadPolicy.hpp"
 #include "ai/common/Result.hpp"
 
 #include <filesystem>
