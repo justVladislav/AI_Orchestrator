@@ -1,8 +1,8 @@
 #include "../SqliteConnection.hpp"
 #include "../SqlitePrimitives.hpp"
 
-#include "ai/application/ChatProjectContext.hpp"
-#include "ai/application/ChatTypes.hpp"
+#include "ai/application/conversations/ChatProjectContext.hpp"
+#include "ai/application/conversations/ChatTypes.hpp"
 
 #include <sqlite3.h>
 

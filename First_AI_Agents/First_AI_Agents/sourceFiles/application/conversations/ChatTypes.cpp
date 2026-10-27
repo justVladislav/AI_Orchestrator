@@ -1,4 +1,4 @@
-#include "ai/application/ChatTypes.hpp"
+#include "ai/application/conversations/ChatTypes.hpp"
 
 namespace ai::application {
 

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "ai/application/ChatTypes.hpp"
-#include "ai/application/IChatRepository.hpp"
+#include "ai/application/conversations/ChatTypes.hpp"
+#include "ai/application/conversations/IChatRepository.hpp"
 #include "ai/application/projects/IProjectRepository.hpp"
 #include "ai/application/IRunDraftRepository.hpp"
 #include "ai/application/IRunSourceLookup.hpp"

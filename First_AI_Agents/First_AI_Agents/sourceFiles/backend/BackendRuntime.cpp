@@ -22,7 +22,7 @@
 #include "ai/providers/IProviderAgentSession.hpp"
 #include "ai/application/settings/IApplicationSettingsRepository.hpp"
 #include "ai/application/artifacts/IArtifactRepository.hpp"
-#include "ai/application/IChatRepository.hpp"
+#include "ai/application/conversations/IChatRepository.hpp"
 #include "ai/application/comparison/IComparisonSessionRepository.hpp"
 #include "ai/application/IModelExecutionRepository.hpp"
 #include "ai/application/artifacts/IArtifactStore.hpp"

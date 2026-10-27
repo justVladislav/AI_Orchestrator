@@ -138,9 +138,9 @@ set(APPLICATION_SOURCES
     sourceFiles/application/QmlLintDiagnosticPolicy.cpp
     sourceFiles/application/ManifestVerificationEnvironmentPreflight.cpp
     sourceFiles/application/CredentialManagementService.cpp
-    sourceFiles/application/ChatTypes.cpp
-    sourceFiles/application/ChatContextAssembler.cpp
-    sourceFiles/application/ChatProjectContext.cpp
+    sourceFiles/application/conversations/ChatTypes.cpp
+    sourceFiles/application/conversations/ChatContextAssembler.cpp
+    sourceFiles/application/conversations/ChatProjectContext.cpp
     sourceFiles/application/RunContextAssembler.cpp
     sourceFiles/application/ProjectMemoryService.cpp
     sourceFiles/application/ProjectMemoryCompactionService.cpp
@@ -195,7 +195,7 @@ set(APPLICATION_SOURCES
     sourceFiles/application/FilesystemWorkspaceToolExecutor.cpp
     sourceFiles/application/AgentToolExecutionService.cpp
     sourceFiles/application/AgentToolReadModelService.cpp
-    sourceFiles/application/ChatService.cpp
+    sourceFiles/application/conversations/ChatService.cpp
     sourceFiles/application/ModelExecutionTypes.cpp
     sourceFiles/application/InMemoryModelExecutionRepository.cpp
     sourceFiles/application/ModelExecutionService.cpp

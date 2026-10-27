@@ -1,4 +1,4 @@
-#include "ai/application/ChatContextAssembler.hpp"
+#include "ai/application/conversations/ChatContextAssembler.hpp"
 #include "ai/application/ProjectContextSnapshot.hpp"
 
 #include <algorithm>

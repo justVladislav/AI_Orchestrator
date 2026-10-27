@@ -1,7 +1,7 @@
 #pragma once
 
-#include "ai/application/IChatMemoryRepository.hpp"
-#include "ai/application/IChatRepository.hpp"
+#include "ai/application/conversations/IChatMemoryRepository.hpp"
+#include "ai/application/conversations/IChatRepository.hpp"
 #include "ai/application/IProjectMemoryCompactionRepository.hpp"
 #include "ai/application/IProjectMemoryRepository.hpp"
 #include "ai/common/Result.hpp"

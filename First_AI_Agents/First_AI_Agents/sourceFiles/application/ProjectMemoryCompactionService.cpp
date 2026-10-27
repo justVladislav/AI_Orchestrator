@@ -1,6 +1,6 @@
 #include "ai/application/ProjectMemoryCompactionService.hpp"
 
-#include "ai/application/ChatContextAssembler.hpp"
+#include "ai/application/conversations/ChatContextAssembler.hpp"
 #include "ai/application/CostCalculation.hpp"
 #include "ai/application/IdGenerator.hpp"
 #include "ai/application/Sha256.hpp"

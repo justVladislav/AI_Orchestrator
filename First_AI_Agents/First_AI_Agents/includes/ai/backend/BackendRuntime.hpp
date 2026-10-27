@@ -10,7 +10,7 @@
 #include "ai/providers/IProviderAgentSession.hpp"
 #include "ai/application/settings/ApplicationSettingsService.hpp"
 #include "ai/application/CredentialManagementService.hpp"
-#include "ai/application/ChatService.hpp"
+#include "ai/application/conversations/ChatService.hpp"
 #include "ai/application/comparison/ComparisonService.hpp"
 #include "ai/application/comparison/ComparisonReadModelService.hpp"
 #include "ai/application/comparison/ComparisonExecutionManager.hpp"

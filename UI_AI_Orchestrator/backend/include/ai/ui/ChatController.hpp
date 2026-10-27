@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ai/application/ChatService.hpp>
+#include <ai/application/conversations/ChatService.hpp>
 #include <ai/application/catalog/ProviderCatalogService.hpp>
 
 #include <QObject>

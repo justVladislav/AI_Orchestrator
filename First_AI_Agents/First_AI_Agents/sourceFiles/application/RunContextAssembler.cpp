@@ -1,6 +1,6 @@
 #include "ai/application/RunContextAssembler.hpp"
 
-#include "ai/application/ChatContextAssembler.hpp"
+#include "ai/application/conversations/ChatContextAssembler.hpp"
 
 #include <algorithm>
 #include <string_view>

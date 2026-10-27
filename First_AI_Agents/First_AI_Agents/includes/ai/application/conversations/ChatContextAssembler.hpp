@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/ChatTypes.hpp"
+#include "ai/application/conversations/ChatTypes.hpp"
 #include "ai/common/Result.hpp"
 
 #include <cstdint>

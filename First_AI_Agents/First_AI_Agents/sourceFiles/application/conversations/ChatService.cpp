@@ -1,9 +1,9 @@
-#include "ai/application/ChatService.hpp"
+#include "ai/application/conversations/ChatService.hpp"
 
-#include "ai/application/ChatProjectContext.hpp"
+#include "ai/application/conversations/ChatProjectContext.hpp"
 
 #include "ai/application/settings/ApplicationSettingsService.hpp"
-#include "ai/application/ChatContextAssembler.hpp"
+#include "ai/application/conversations/ChatContextAssembler.hpp"
 #include "ai/application/CostCalculation.hpp"
 #include "ai/application/IdGenerator.hpp"
 #include "ai/application/ModelExecutionService.hpp"

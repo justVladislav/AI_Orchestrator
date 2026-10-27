@@ -1,6 +1,6 @@
 #include "../../test_support/QtTestSupport.hpp"
 
-#include <ai/application/ChatTypes.hpp>
+#include <ai/application/conversations/ChatTypes.hpp>
 #include <ai/backend/BackendRuntime.hpp>
 #include <ai/infrastructure/SqliteRepositories.hpp>
 #include <ai/ui/BackendBridge.hpp>

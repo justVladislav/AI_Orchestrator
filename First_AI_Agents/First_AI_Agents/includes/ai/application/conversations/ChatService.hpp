@@ -1,7 +1,7 @@
 #pragma once
 
-#include "ai/application/IChatRepository.hpp"
-#include "ai/application/IChatMemoryRepository.hpp"
+#include "ai/application/conversations/IChatRepository.hpp"
+#include "ai/application/conversations/IChatMemoryRepository.hpp"
 #include "ai/application/catalog/IModelRepository.hpp"
 #include "ai/application/projects/IProjectRepository.hpp"
 #include "ai/application/IProviderClient.hpp"

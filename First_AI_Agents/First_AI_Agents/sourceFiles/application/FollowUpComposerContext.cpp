@@ -1,8 +1,8 @@
 #include "ai/application/FollowUpComposerContext.hpp"
 
 #include "ai/application/ChangeProposalValidator.hpp"
-#include "ai/application/ChatContextAssembler.hpp"
-#include "ai/application/ChatProjectContext.hpp"
+#include "ai/application/conversations/ChatContextAssembler.hpp"
+#include "ai/application/conversations/ChatProjectContext.hpp"
 #include "ai/application/FilesystemPathUtils.hpp"
 #include "ai/application/FollowUpPlanAdvisories.hpp"
 #include "ai/application/NextRunPlan.hpp"

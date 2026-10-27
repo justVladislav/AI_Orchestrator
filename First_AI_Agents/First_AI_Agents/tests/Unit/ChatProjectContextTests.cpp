@@ -1,4 +1,4 @@
-#include "ai/application/ChatProjectContext.hpp"
+#include "ai/application/conversations/ChatProjectContext.hpp"
 
 #include <cstddef>
 #include <cstdio>

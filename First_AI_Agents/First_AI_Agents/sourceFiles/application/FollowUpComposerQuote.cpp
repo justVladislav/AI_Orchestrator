@@ -1,6 +1,6 @@
 #include "ai/application/FollowUpComposerQuote.hpp"
 
-#include "ai/application/ChatContextAssembler.hpp"
+#include "ai/application/conversations/ChatContextAssembler.hpp"
 #include "ai/application/Sha256.hpp"
 
 #include <algorithm>
