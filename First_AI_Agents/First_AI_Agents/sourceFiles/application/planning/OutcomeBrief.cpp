@@ -1,4 +1,4 @@
-#include "ai/application/OutcomeBrief.hpp"
+#include "ai/application/planning/OutcomeBrief.hpp"
 
 #include "ai/application/IWorkflowRunner.hpp"
 #include "ai/application/ManifestVerificationContinuationPreparationService.hpp"

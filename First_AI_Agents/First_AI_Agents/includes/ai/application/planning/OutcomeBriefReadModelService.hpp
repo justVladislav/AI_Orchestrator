@@ -1,8 +1,8 @@
 #pragma once
 
-#include "ai/application/IOutcomeBriefRepository.hpp"
+#include "ai/application/planning/IOutcomeBriefRepository.hpp"
 #include "ai/application/IRunRepository.hpp"
-#include "ai/application/OutcomeBrief.hpp"
+#include "ai/application/planning/OutcomeBrief.hpp"
 #include "ai/common/Result.hpp"
 
 #include <chrono>

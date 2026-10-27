@@ -2,7 +2,7 @@
 
 #include "ai/application/ApplicationTypes.hpp"
 #include "ai/application/planning/NextRunPlan.hpp"
-#include "ai/application/OutcomeBrief.hpp"
+#include "ai/application/planning/OutcomeBrief.hpp"
 #include "ai/common/Result.hpp"
 
 #include <cstdint>

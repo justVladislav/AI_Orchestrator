@@ -1,7 +1,7 @@
 #include "ai/application/RunManager.hpp"
 
 #include "ai/application/CostCalculation.hpp"
-#include "ai/application/IOutcomeBriefTrigger.hpp"
+#include "ai/application/planning/IOutcomeBriefTrigger.hpp"
 
 #include "ai/application/IdGenerator.hpp"
 #include "ai/application/RunStageSettlement.hpp"

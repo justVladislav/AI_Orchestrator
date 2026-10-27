@@ -4,7 +4,7 @@
 #include "ai/application/planning/FollowUpPlanRequest.hpp"
 #include "ai/application/planning/IFollowUpPlanRequestRepository.hpp"
 #include "ai/application/catalog/IModelRepository.hpp"
-#include "ai/application/IOutcomeBriefRepository.hpp"
+#include "ai/application/planning/IOutcomeBriefRepository.hpp"
 #include "ai/application/catalog/IProviderRepository.hpp"
 #include "ai/application/planning/IRunDraftRepository.hpp"
 #include "ai/application/IRunSourceLookup.hpp"

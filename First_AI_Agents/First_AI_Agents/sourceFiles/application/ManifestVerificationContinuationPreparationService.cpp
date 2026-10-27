@@ -1,6 +1,6 @@
 #include "ai/application/ManifestVerificationContinuationPreparationService.hpp"
 
-#include "ai/application/IOutcomeBriefTrigger.hpp"
+#include "ai/application/planning/IOutcomeBriefTrigger.hpp"
 
 #include "ai/application/IdGenerator.hpp"
 #include "ai/application/ManifestProposalOverlay.hpp"

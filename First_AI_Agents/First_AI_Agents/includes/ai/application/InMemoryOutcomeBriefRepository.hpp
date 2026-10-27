@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/IOutcomeBriefRepository.hpp"
+#include "ai/application/planning/IOutcomeBriefRepository.hpp"
 
 #include <map>
 #include <mutex>

@@ -12,7 +12,7 @@
 #include "ai/application/Sha256.hpp"
 #include "ai/application/ManifestVerificationContinuationPreparationService.hpp"
 #include "ai/application/ManifestVerificationManualHandoffTypes.hpp"
-#include "ai/application/OutcomeBriefReconciler.hpp"
+#include "ai/application/planning/OutcomeBriefReconciler.hpp"
 
 #include <algorithm>
 #include <atomic>

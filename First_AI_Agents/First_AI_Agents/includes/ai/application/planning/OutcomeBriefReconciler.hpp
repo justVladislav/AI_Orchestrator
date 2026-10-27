@@ -1,9 +1,9 @@
 #pragma once
 
-#include "ai/application/IOutcomeBriefRepository.hpp"
-#include "ai/application/IOutcomeBriefTrigger.hpp"
-#include "ai/application/OutcomeBrief.hpp"
-#include "ai/application/OutcomeBriefSources.hpp"
+#include "ai/application/planning/IOutcomeBriefRepository.hpp"
+#include "ai/application/planning/IOutcomeBriefTrigger.hpp"
+#include "ai/application/planning/OutcomeBrief.hpp"
+#include "ai/application/planning/OutcomeBriefSources.hpp"
 #include "ai/common/Result.hpp"
 
 #include <atomic>

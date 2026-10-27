@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/OutcomeBrief.hpp"
+#include "ai/application/planning/OutcomeBrief.hpp"
 #include "ai/common/Result.hpp"
 
 #include <chrono>

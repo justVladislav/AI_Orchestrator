@@ -1,4 +1,4 @@
-#include "ai/application/OutcomeBriefSources.hpp"
+#include "ai/application/planning/OutcomeBriefSources.hpp"
 
 #include "ai/application/IChangeApprovalRepository.hpp"
 #include "ai/application/IChangeProposalRepository.hpp"

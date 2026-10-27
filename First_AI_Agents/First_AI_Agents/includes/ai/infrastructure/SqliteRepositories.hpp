@@ -22,7 +22,7 @@
 #include "ai/application/IManifestWorkLedgerRepository.hpp"
 #include "ai/application/catalog/IModelRepository.hpp"
 #include "ai/application/IModelExecutionRepository.hpp"
-#include "ai/application/IOutcomeBriefRepository.hpp"
+#include "ai/application/planning/IOutcomeBriefRepository.hpp"
 #include "ai/application/conversations/IProjectMemoryCompactionRepository.hpp"
 #include "ai/application/conversations/IProjectMemoryRepository.hpp"
 #include "ai/application/projects/IProjectRepository.hpp"

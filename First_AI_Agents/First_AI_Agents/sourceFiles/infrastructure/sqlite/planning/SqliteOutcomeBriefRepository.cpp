@@ -2,7 +2,7 @@
 #include "../SqlitePrimitives.hpp"
 #include "../execution/SqliteRunStatusMapping.hpp"
 
-#include "ai/application/IOutcomeBriefRepository.hpp"
+#include "ai/application/planning/IOutcomeBriefRepository.hpp"
 
 #include <sqlite3.h>
 #include <nlohmann/json.hpp>

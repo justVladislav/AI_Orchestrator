@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ai/application/OutcomeBriefReadModelService.hpp>
+#include <ai/application/planning/OutcomeBriefReadModelService.hpp>
 
 #include <QObject>
 #include <QString>

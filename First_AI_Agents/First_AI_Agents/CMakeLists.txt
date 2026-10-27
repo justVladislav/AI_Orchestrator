@@ -160,12 +160,12 @@ set(APPLICATION_SOURCES
     sourceFiles/application/FilesystemFollowUpFileLoader.cpp
     sourceFiles/application/planning/FollowUpSourceReader.cpp
     sourceFiles/application/planning/FollowUpPlanReadModel.cpp
-    sourceFiles/application/OutcomeBrief.cpp
-    sourceFiles/application/OutcomeBriefRepository.cpp
+    sourceFiles/application/planning/OutcomeBrief.cpp
+    sourceFiles/application/planning/OutcomeBriefRepository.cpp
     sourceFiles/application/InMemoryOutcomeBriefRepository.cpp
-    sourceFiles/application/OutcomeBriefSources.cpp
-    sourceFiles/application/OutcomeBriefReconciler.cpp
-    sourceFiles/application/OutcomeBriefReadModelService.cpp
+    sourceFiles/application/planning/OutcomeBriefSources.cpp
+    sourceFiles/application/planning/OutcomeBriefReconciler.cpp
+    sourceFiles/application/planning/OutcomeBriefReadModelService.cpp
     sourceFiles/application/planning/RunDraftGroup.cpp
     sourceFiles/application/planning/RunDraftPlanService.cpp
     sourceFiles/application/ChangeProposalTypes.cpp

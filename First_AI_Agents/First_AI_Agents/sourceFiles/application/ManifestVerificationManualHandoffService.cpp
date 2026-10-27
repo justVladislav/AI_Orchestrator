@@ -1,6 +1,6 @@
 #include "ai/application/ManifestVerificationManualHandoffService.hpp"
 
-#include "ai/application/IOutcomeBriefTrigger.hpp"
+#include "ai/application/planning/IOutcomeBriefTrigger.hpp"
 
 #include "ai/application/ExecutionAcceptanceContract.hpp"
 #include "ai/application/FilesystemPathUtils.hpp"

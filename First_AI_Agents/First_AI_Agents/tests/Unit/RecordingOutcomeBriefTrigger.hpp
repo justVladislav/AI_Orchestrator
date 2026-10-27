@@ -2,7 +2,7 @@
 
 // PC-4C: a recording IOutcomeBriefTrigger for the tests of the producers (RunManager, review / apply, continuation, manual handoff).
 
-#include "ai/application/IOutcomeBriefTrigger.hpp"
+#include "ai/application/planning/IOutcomeBriefTrigger.hpp"
 
 #include <algorithm>
 #include <chrono>

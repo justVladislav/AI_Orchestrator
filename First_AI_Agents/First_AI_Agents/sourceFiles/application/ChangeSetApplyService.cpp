@@ -1,6 +1,6 @@
 #include "ai/application/ChangeSetApplyService.hpp"
 
-#include "ai/application/IOutcomeBriefTrigger.hpp"
+#include "ai/application/planning/IOutcomeBriefTrigger.hpp"
 
 #include "ai/application/artifacts/ArtifactService.hpp"
 #include "ai/application/FilesystemPathUtils.hpp"

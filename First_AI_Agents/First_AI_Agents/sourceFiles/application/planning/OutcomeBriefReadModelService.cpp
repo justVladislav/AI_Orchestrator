@@ -1,6 +1,6 @@
-#include "ai/application/OutcomeBriefReadModelService.hpp"
+#include "ai/application/planning/OutcomeBriefReadModelService.hpp"
 
-#include "ai/application/OutcomeBriefReconciler.hpp"
+#include "ai/application/planning/OutcomeBriefReconciler.hpp"
 
 #include <utility>
 
