@@ -23,7 +23,7 @@
 #include "ai/application/settings/IApplicationSettingsRepository.hpp"
 #include "ai/application/IArtifactRepository.hpp"
 #include "ai/application/IChatRepository.hpp"
-#include "ai/application/IComparisonSessionRepository.hpp"
+#include "ai/application/comparison/IComparisonSessionRepository.hpp"
 #include "ai/application/IModelExecutionRepository.hpp"
 #include "ai/application/IArtifactStore.hpp"
 #include "ai/application/IProjectMemoryRepository.hpp"

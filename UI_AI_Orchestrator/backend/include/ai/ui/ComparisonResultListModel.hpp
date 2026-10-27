@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ai/application/ComparisonReadModelService.hpp>
+#include <ai/application/comparison/ComparisonReadModelService.hpp>
 
 #include <QAbstractListModel>
 #include <vector>

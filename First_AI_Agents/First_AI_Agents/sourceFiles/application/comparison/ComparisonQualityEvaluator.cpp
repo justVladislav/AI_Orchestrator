@@ -1,4 +1,4 @@
-#include "ai/application/ComparisonQualityEvaluator.hpp"
+#include "ai/application/comparison/ComparisonQualityEvaluator.hpp"
 
 #include <algorithm>
 #include <cctype>

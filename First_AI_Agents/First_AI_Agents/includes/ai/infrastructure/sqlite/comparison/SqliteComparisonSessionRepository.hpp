@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/IComparisonSessionRepository.hpp"
+#include "ai/application/comparison/IComparisonSessionRepository.hpp"
 #include "ai/common/Result.hpp"
 #include "ai/infrastructure/sqlite/SqliteDatabase.hpp"
 

@@ -1,4 +1,4 @@
-#include "ai/application/ComparisonTypes.hpp"
+#include "ai/application/comparison/ComparisonTypes.hpp"
 
 namespace ai::application {
 

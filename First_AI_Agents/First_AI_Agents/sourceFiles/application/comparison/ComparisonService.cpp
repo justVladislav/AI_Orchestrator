@@ -1,4 +1,4 @@
-#include "ai/application/ComparisonService.hpp"
+#include "ai/application/comparison/ComparisonService.hpp"
 
 #include "ai/application/IdGenerator.hpp"
 #include "ai/application/Sha256.hpp"

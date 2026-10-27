@@ -1,7 +1,7 @@
 #pragma once
 
-#include "ai/application/ComparisonQualityEvaluator.hpp"
-#include "ai/application/ComparisonService.hpp"
+#include "ai/application/comparison/ComparisonQualityEvaluator.hpp"
+#include "ai/application/comparison/ComparisonService.hpp"
 #include "ai/application/projects/IProjectRepository.hpp"
 #include "ai/application/IProviderClient.hpp"
 

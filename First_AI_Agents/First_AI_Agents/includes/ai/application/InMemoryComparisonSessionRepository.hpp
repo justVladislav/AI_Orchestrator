@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/IComparisonSessionRepository.hpp"
+#include "ai/application/comparison/IComparisonSessionRepository.hpp"
 
 #include <mutex>
 #include <unordered_map>

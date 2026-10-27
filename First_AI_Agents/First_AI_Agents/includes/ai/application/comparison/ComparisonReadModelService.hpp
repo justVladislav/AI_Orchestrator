@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/ComparisonService.hpp"
+#include "ai/application/comparison/ComparisonService.hpp"
 #include "ai/application/catalog/ProviderCatalogService.hpp"
 
 #include <optional>

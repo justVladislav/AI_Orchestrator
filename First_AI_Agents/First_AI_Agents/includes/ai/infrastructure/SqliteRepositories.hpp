@@ -11,7 +11,7 @@
 #include "ai/application/IChangeProposalRepository.hpp"
 #include "ai/application/IChatMemoryRepository.hpp"
 #include "ai/application/IChatRepository.hpp"
-#include "ai/application/IComparisonSessionRepository.hpp"
+#include "ai/application/comparison/IComparisonSessionRepository.hpp"
 #include "ai/application/catalog/IExecutionProfileRepository.hpp"
 #include "ai/application/IExecutionManifestRepository.hpp"
 #include "ai/application/IFollowUpPlanRequestRepository.hpp"

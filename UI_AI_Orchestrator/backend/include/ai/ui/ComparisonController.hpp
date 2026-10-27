@@ -3,9 +3,9 @@
 #include "ai/ui/ComparisonResultListModel.hpp"
 #include "ai/ui/ComparisonSessionListModel.hpp"
 
-#include <ai/application/ComparisonReadModelService.hpp>
-#include <ai/application/ComparisonService.hpp>
-#include <ai/application/ComparisonExecutionManager.hpp>
+#include <ai/application/comparison/ComparisonReadModelService.hpp>
+#include <ai/application/comparison/ComparisonService.hpp>
+#include <ai/application/comparison/ComparisonExecutionManager.hpp>
 #include <ai/application/catalog/ProviderCatalogService.hpp>
 
 #include <QObject>

@@ -1,4 +1,4 @@
-#include "ai/application/ComparisonReadModelService.hpp"
+#include "ai/application/comparison/ComparisonReadModelService.hpp"
 
 #include <algorithm>
 #include <unordered_map>

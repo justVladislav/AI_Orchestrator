@@ -1,4 +1,4 @@
-#include "ai/application/ComparisonExecutionManager.hpp"
+#include "ai/application/comparison/ComparisonExecutionManager.hpp"
 
 #include "ai/application/CostCalculation.hpp"
 

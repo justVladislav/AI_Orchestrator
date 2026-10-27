@@ -1,7 +1,7 @@
 #pragma once
 
-#include "ai/application/ComparisonTypes.hpp"
-#include "ai/application/IComparisonSessionRepository.hpp"
+#include "ai/application/comparison/ComparisonTypes.hpp"
+#include "ai/application/comparison/IComparisonSessionRepository.hpp"
 #include "ai/application/projects/IProjectRepository.hpp"
 #include "ai/application/ModelExecutionService.hpp"
 #include "ai/application/catalog/ProviderCatalogService.hpp"

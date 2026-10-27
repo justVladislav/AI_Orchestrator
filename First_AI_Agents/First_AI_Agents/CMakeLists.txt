@@ -200,12 +200,12 @@ set(APPLICATION_SOURCES
     sourceFiles/application/InMemoryModelExecutionRepository.cpp
     sourceFiles/application/ModelExecutionService.cpp
     sourceFiles/application/ExecutionAnalyticsService.cpp
-    sourceFiles/application/ComparisonTypes.cpp
+    sourceFiles/application/comparison/ComparisonTypes.cpp
     sourceFiles/application/InMemoryComparisonSessionRepository.cpp
-    sourceFiles/application/ComparisonService.cpp
-    sourceFiles/application/ComparisonReadModelService.cpp
-    sourceFiles/application/ComparisonQualityEvaluator.cpp
-    sourceFiles/application/ComparisonExecutionManager.cpp
+    sourceFiles/application/comparison/ComparisonService.cpp
+    sourceFiles/application/comparison/ComparisonReadModelService.cpp
+    sourceFiles/application/comparison/ComparisonQualityEvaluator.cpp
+    sourceFiles/application/comparison/ComparisonExecutionManager.cpp
     sourceFiles/application/ReleaseEvaluationService.cpp
 )
 
