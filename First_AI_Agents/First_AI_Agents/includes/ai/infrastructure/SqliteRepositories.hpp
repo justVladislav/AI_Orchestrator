@@ -32,7 +32,7 @@
 #include "ai/application/catalog/IProviderRepository.hpp"
 #include "ai/application/planning/IRunDraftRepository.hpp"
 #include "ai/application/IRunRepository.hpp"
-#include "ai/application/IVerificationBootstrapRepository.hpp"
+#include "ai/application/verification/IVerificationBootstrapRepository.hpp"
 #include "ai/application/verification/IVerificationEnvironmentRepository.hpp"
 #include "ai/application/IWorkspaceStateRepository.hpp"
 #include "ai/common/Result.hpp"

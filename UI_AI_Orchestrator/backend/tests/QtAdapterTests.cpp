@@ -22,7 +22,7 @@
 #include <ai/application/OrchestrationService.hpp>
 #include <ai/application/RunManager.hpp>
 #include <ai/application/Sha256.hpp>
-#include <ai/application/VerificationBootstrapRetryService.hpp>
+#include <ai/application/verification/VerificationBootstrapRetryService.hpp>
 #include <ai/application/WorkflowRouter.hpp>
 #include <ai/application/workspace/WorkspaceBaselineProvenance.hpp>
 #include <ai/application/workspace/WorkspaceReadPolicy.hpp>

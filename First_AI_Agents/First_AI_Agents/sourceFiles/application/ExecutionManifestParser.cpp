@@ -1,7 +1,7 @@
 #include "ai/application/ExecutionManifestParser.hpp"
 
 #include "ai/application/ManifestJsonParsingSupport.hpp"
-#include "ai/application/VerificationBootstrapTypes.hpp"
+#include "ai/application/verification/VerificationBootstrapTypes.hpp"
 
 #include <nlohmann/json.hpp>
 

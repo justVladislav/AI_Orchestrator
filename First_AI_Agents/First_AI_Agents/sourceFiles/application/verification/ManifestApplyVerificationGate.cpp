@@ -10,7 +10,7 @@
 #include "ai/application/IRunRepository.hpp"
 #include "ai/application/IWorkflowRunner.hpp"
 #include "ai/application/verification/ManifestProposalContentHash.hpp"
-#include "ai/application/IVerificationBootstrapRepository.hpp"
+#include "ai/application/verification/IVerificationBootstrapRepository.hpp"
 #include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"
 #include "ai/application/ManifestWorkLedgerTypes.hpp"
 #include "ai/application/Sha256.hpp"

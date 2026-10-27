@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/VerificationBootstrapTypes.hpp"
+#include "ai/application/verification/VerificationBootstrapTypes.hpp"
 #include "ai/common/Result.hpp"
 
 #include <optional>

@@ -5,7 +5,7 @@
 // bootstrap). Pure function tests over already-constructed ExecutionManifest/
 // VerificationEnvironmentSnapshot values - no HTTP, no SQLite, no filesystem.
 #include "ai/application/ExecutionManifestTypes.hpp"
-#include "ai/application/ManifestBootstrapValidator.hpp"
+#include "ai/application/verification/ManifestBootstrapValidator.hpp"
 #include "ai/application/verification/ManifestVerificationProfileBinder.hpp"
 
 #include <iostream>

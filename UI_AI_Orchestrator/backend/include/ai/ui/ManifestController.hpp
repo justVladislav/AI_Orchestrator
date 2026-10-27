@@ -4,7 +4,7 @@
 #include <ai/application/verification/ManifestVerificationContinuationPreparationService.hpp>
 #include <ai/application/verification/ManifestVerificationContinuationReadModelService.hpp>
 #include <ai/application/verification/ManifestVerificationContinuationRepairService.hpp>
-#include <ai/application/VerificationBootstrapRetryService.hpp>
+#include <ai/application/verification/VerificationBootstrapRetryService.hpp>
 
 #include <QFutureWatcher>
 #include <QObject>

@@ -3,7 +3,7 @@
 #include "ai/application/verification/IManifestVerificationBaselineNormalizationRepository.hpp"
 #include "ai/application/verification/IManifestVerificationContinuationRepository.hpp"
 #include "ai/application/verification/IManifestVerificationManualHandoffRepository.hpp"
-#include "ai/application/IVerificationBootstrapRepository.hpp"
+#include "ai/application/verification/IVerificationBootstrapRepository.hpp"
 #include "ai/application/verification/IVerificationEnvironmentRepository.hpp"
 #include "ai/common/Result.hpp"
 #include "ai/infrastructure/sqlite/SqliteDatabase.hpp"

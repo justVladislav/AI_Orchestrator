@@ -2,7 +2,7 @@
 
 #include "ai/application/ExecutionManifestDependencyGraph.hpp"
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
-#include "ai/application/ManifestBootstrapValidator.hpp"
+#include "ai/application/verification/ManifestBootstrapValidator.hpp"
 #include "ai/application/verification/ManifestMandatoryVerificationPolicy.hpp"
 #include "ai/application/ManifestRouting.hpp"
 #include "ai/application/RunWorkspaceScopeTypes.hpp"

@@ -2,7 +2,7 @@
 
 #include "ai/application/ManifestJsonParsingSupport.hpp"
 #include "ai/application/ManifestRouting.hpp"
-#include "ai/application/VerificationBootstrapTypes.hpp"
+#include "ai/application/verification/VerificationBootstrapTypes.hpp"
 
 #include <nlohmann/json.hpp>
 

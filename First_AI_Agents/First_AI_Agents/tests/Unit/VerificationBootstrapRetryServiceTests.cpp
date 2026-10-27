@@ -8,7 +8,7 @@
 #include "ai/application/MockWorkflowRunner.hpp"
 #include "ai/application/OrchestrationService.hpp"
 #include "ai/application/RunManager.hpp"
-#include "ai/application/VerificationBootstrapRetryService.hpp"
+#include "ai/application/verification/VerificationBootstrapRetryService.hpp"
 #include "ai/application/WorkflowRouter.hpp"
 
 #include <atomic>

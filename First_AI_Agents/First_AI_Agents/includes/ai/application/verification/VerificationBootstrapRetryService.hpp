@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/projects/IProjectRepository.hpp"
-#include "ai/application/IVerificationBootstrapRepository.hpp"
+#include "ai/application/verification/IVerificationBootstrapRepository.hpp"
 #include "ai/application/OrchestrationService.hpp"
 #include "ai/common/Result.hpp"
 

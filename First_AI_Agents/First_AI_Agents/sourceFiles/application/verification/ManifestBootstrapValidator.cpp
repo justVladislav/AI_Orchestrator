@@ -1,6 +1,6 @@
-#include "ai/application/ManifestBootstrapValidator.hpp"
+#include "ai/application/verification/ManifestBootstrapValidator.hpp"
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
-#include "ai/application/VerificationBootstrapTypes.hpp"
+#include "ai/application/verification/VerificationBootstrapTypes.hpp"
 
 #include <algorithm>
 #include <unordered_set>

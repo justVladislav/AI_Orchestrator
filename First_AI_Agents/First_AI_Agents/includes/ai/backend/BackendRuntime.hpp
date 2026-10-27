@@ -24,7 +24,7 @@
 #include "ai/application/ExecutionAnalyticsService.hpp"
 #include "ai/application/ICredentialStore.hpp"
 #include "ai/application/OrchestrationService.hpp"
-#include "ai/application/VerificationBootstrapRetryService.hpp"
+#include "ai/application/verification/VerificationBootstrapRetryService.hpp"
 #include "ai/application/MockWorkflowRunner.hpp"
 #include "ai/application/agents/ModelExecutionService.hpp"
 #include "ai/application/proposals/ChangeProposalService.hpp"

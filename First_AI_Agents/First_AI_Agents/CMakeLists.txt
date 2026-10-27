@@ -180,10 +180,10 @@ set(APPLICATION_SOURCES
     sourceFiles/application/LegacyConversionRecord.cpp
     sourceFiles/application/ManifestMemberUsage.cpp
     sourceFiles/application/verification/ManifestVerificationProfileBinder.cpp
-    sourceFiles/application/VerificationBootstrapTypes.cpp
+    sourceFiles/application/verification/VerificationBootstrapTypes.cpp
     sourceFiles/application/InMemoryVerificationBootstrapRepository.cpp
-    sourceFiles/application/ManifestBootstrapValidator.cpp
-    sourceFiles/application/VerificationBootstrapRetryService.cpp
+    sourceFiles/application/verification/ManifestBootstrapValidator.cpp
+    sourceFiles/application/verification/VerificationBootstrapRetryService.cpp
     sourceFiles/application/proposals/ChangeSetApplyService.cpp
     sourceFiles/application/proposals/ProposedChangeSetParser.cpp
     sourceFiles/application/proposals/ChangeProposalValidator.cpp

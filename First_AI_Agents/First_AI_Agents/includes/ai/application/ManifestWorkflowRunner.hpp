@@ -12,7 +12,7 @@
 #include "ai/application/IProviderClient.hpp"
 #include "ai/application/catalog/IProviderRepository.hpp"
 #include "ai/application/IWorkflowRunner.hpp"
-#include "ai/application/IVerificationBootstrapRepository.hpp"
+#include "ai/application/verification/IVerificationBootstrapRepository.hpp"
 #include "ai/application/verification/IVerificationScratchRootProvider.hpp"
 #include "ai/application/ManifestWorkLedgerService.hpp"
 

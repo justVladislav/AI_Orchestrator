@@ -8,7 +8,7 @@
 #include "ai/application/ExecutionManifestTypes.hpp"
 #include "ai/application/verification/ManifestProposalSetVerifier.hpp"
 #include "ai/application/TaskRouteResolver.hpp"
-#include "ai/application/VerificationBootstrapTypes.hpp"
+#include "ai/application/verification/VerificationBootstrapTypes.hpp"
 #include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 #include "ai/models/TokenUsage.hpp"
 #include "ai/providers/IProviderAgentSession.hpp"

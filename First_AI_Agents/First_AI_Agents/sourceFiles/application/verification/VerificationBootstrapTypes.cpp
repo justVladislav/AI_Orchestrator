@@ -1,4 +1,4 @@
-#include "ai/application/VerificationBootstrapTypes.hpp"
+#include "ai/application/verification/VerificationBootstrapTypes.hpp"
 
 namespace ai::application {
 

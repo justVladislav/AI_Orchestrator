@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/IVerificationBootstrapRepository.hpp"
+#include "ai/application/verification/IVerificationBootstrapRepository.hpp"
 
 #include <map>
 #include <mutex>
