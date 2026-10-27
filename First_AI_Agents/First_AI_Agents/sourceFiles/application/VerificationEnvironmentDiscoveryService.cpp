@@ -432,6 +432,7 @@ bool configuredBuildTreeExists(
     auto policy = WorkspaceReadPolicy::secureDefaults(workspaceRoot);
     policy.deniedPaths.clear();
     policy.deniedDirectoryNames.clear();
+    policy.deniedDirectorySequences.clear();
     policy.deniedFileNames.clear();
     policy.deniedExtensions.clear();
     const auto cache = WorkspacePathGuard::validate(

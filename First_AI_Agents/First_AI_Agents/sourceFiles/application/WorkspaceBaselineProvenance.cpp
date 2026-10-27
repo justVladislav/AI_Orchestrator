@@ -95,6 +95,8 @@ bool isWithin(const fs::path& candidate, const fs::path& parent)
 
 bool pathDenied(const fs::path& relative, const WorkspaceReadPolicy& policy)
 {
+    if (WorkspaceReadPolicyValidator::matchesDeniedDirectorySequence(relative, policy))
+        return true;
     const auto normalized = relative.lexically_normal();
     for (const auto& denied : policy.deniedPaths) {
         const auto deniedNormalized = denied.lexically_normal();
@@ -113,14 +115,29 @@ bool pathDenied(const fs::path& relative, const WorkspaceReadPolicy& policy)
     return false;
 }
 
+std::string fileLimitMessage(std::string_view relativePath,
+    std::optional<std::uintmax_t> size, std::uint64_t limit,
+    std::string_view limitName = "per-file limit")
+{
+    return "Policy-visible workspace file "
+        + nlohmann::json(std::string(relativePath)).dump()
+        + (size ? " is " + std::to_string(*size) + " bytes"
+                : " has an unavailable size")
+        + "; " + std::string(limitName) + " is " + std::to_string(limit) + " bytes";
+}
+
 common::Result<std::string> readBounded(
-    const fs::path& path, std::uint64_t maxBytes, std::string_view errorPrefix)
+    const fs::path& path, std::uint64_t maxBytes, std::string_view errorPrefix,
+    std::string_view diagnosticRelativePath = {})
 {
     std::error_code error;
     const auto size = fs::file_size(detail::longPath(path), error);
     if (error || size > maxBytes) return fail<std::string>(
         std::string(errorPrefix) + ".file_limit",
-        "Workspace file is unavailable or exceeds the configured byte limit");
+        diagnosticRelativePath.empty()
+            ? "Workspace file is unavailable or exceeds the configured byte limit"
+            : fileLimitMessage(diagnosticRelativePath,
+                  error ? std::nullopt : std::optional<std::uintmax_t>(size), maxBytes));
     std::ifstream stream(detail::longPath(path), std::ios::binary);
     if (!stream) return fail<std::string>(
         std::string(errorPrefix) + ".read_failed",
@@ -140,6 +157,8 @@ std::vector<std::string> exclusions(const WorkspaceReadPolicy& policy)
     std::vector<std::string> values;
     for (const auto& value : policy.deniedDirectoryNames)
         values.push_back("directory-name:" + value);
+    for (const auto& value : policy.deniedDirectorySequences)
+        values.push_back("directory-sequence:" + detail::genericUtf8(value));
     for (const auto& value : policy.deniedFileNames)
         values.push_back("file-name:" + value);
     for (const auto& value : policy.deniedExtensions)
@@ -331,20 +350,31 @@ common::Result<WorkspaceBaselineSnapshot> WorkspaceBaselineProvenance::capture(
                 "workspace_baseline.scan_failed",
                 "Workspace baseline entry type could not be inspected");
             if (!regular) continue;
+            const auto relativePath = detail::genericUtf8(relative);
             const auto size = iterator->file_size(error);
-            if (error || size > policy.maxFileBytes
-                || size > limits.maxTotalBytes - (std::min)(
-                    limits.maxTotalBytes, totalBytes)) {
+            if (error || size > policy.maxFileBytes) {
                 return fail<WorkspaceBaselineSnapshot>(
                     "workspace_baseline.file_limit",
-                    "Policy-visible workspace file exceeds the baseline limits");
+                    fileLimitMessage(relativePath,
+                        error ? std::nullopt : std::optional<std::uintmax_t>(size),
+                        policy.maxFileBytes));
+            }
+            const auto remainingBytes = limits.maxTotalBytes - (std::min)(
+                limits.maxTotalBytes, totalBytes);
+            if (size > remainingBytes) {
+                return fail<WorkspaceBaselineSnapshot>(
+                    "workspace_baseline.file_limit",
+                    fileLimitMessage(relativePath, size, remainingBytes,
+                        "remaining baseline byte budget")
+                        + " (total baseline limit: "
+                        + std::to_string(limits.maxTotalBytes) + " bytes)");
             }
             const auto content = readBounded(
-                iterator->path(), policy.maxFileBytes, "workspace_baseline");
+                iterator->path(), policy.maxFileBytes, "workspace_baseline", relativePath);
             if (!content.success()) return fail<WorkspaceBaselineSnapshot>(
                 content.error()->code, content.error()->message);
             WorkspaceBaselineEntry entry;
-            entry.relativePath = detail::genericUtf8(relative);
+            entry.relativePath = relativePath;
             entry.byteSize = static_cast<std::uint64_t>(content.value().size());
             entry.sha256 = sha256Hex(content.value());
             const auto [found, inserted] = entries.emplace(entry.relativePath, std::move(entry));
