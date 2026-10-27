@@ -16,7 +16,7 @@
 #include "RecordingOutcomeBriefTrigger.hpp"
 
 #include "ai/application/AgentToolExecutionService.hpp"
-#include "ai/application/ArtifactService.hpp"
+#include "ai/application/artifacts/ArtifactService.hpp"
 #include "ai/application/FilesystemPathUtils.hpp"
 #include "ai/infrastructure/FileArtifactStore.hpp"
 #include "ai/application/InMemoryExecutionManifestRepository.hpp"

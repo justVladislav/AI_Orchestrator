@@ -1,7 +1,7 @@
 #pragma once
 
-#include "ai/application/IArtifactRepository.hpp"
-#include "ai/application/IArtifactStore.hpp"
+#include "ai/application/artifacts/IArtifactRepository.hpp"
+#include "ai/application/artifacts/IArtifactStore.hpp"
 #include "ai/application/IRunWarningRepository.hpp"
 
 #include <functional>

@@ -1,6 +1,6 @@
 #include "ai/application/ManifestWorkLedgerService.hpp"
 
-#include "ai/application/ArtifactService.hpp"
+#include "ai/application/artifacts/ArtifactService.hpp"
 #include "ai/application/ExecutionManifestPlanner.hpp"
 #include "ai/application/IWorkflowRunner.hpp"
 #include "ai/application/ManifestVerificationContinuationPreparationService.hpp"

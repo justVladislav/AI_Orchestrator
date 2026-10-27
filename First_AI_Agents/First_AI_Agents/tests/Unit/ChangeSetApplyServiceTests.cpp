@@ -3,7 +3,7 @@
 // directories so file I/O paths are fully exercised without mocking.
 #include "ai/application/ChangeProposalService.hpp"
 #include "ai/application/ChangeSetApplyService.hpp"
-#include "ai/application/ArtifactService.hpp"
+#include "ai/application/artifacts/ArtifactService.hpp"
 #include "ai/application/FilesystemPathUtils.hpp"
 #include "ai/application/IChangeApprovalRepository.hpp"
 #include "ai/application/IChangeProposalRepository.hpp"

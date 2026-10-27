@@ -2,9 +2,9 @@
 
 #include "ai/application/IAgentToolAuditRepository.hpp"
 #include "ai/application/IAgentToolSessionRepository.hpp"
-#include "ai/application/IArtifactRepository.hpp"
+#include "ai/application/artifacts/IArtifactRepository.hpp"
 #include "ai/application/IRunWarningRepository.hpp"
-#include "ai/application/IArtifactStore.hpp"
+#include "ai/application/artifacts/IArtifactStore.hpp"
 #include "ai/application/catalog/IExecutionProfileRepository.hpp"
 #include "ai/application/catalog/IModelRepository.hpp"
 #include "ai/application/IModelExecutionRepository.hpp"

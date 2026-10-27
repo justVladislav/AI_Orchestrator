@@ -1,4 +1,4 @@
-#include "ai/application/ArtifactService.hpp"
+#include "ai/application/artifacts/ArtifactService.hpp"
 
 #include "ai/application/IdGenerator.hpp"
 #include "ai/application/Sha256.hpp"

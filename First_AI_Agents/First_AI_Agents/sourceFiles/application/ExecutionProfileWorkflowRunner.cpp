@@ -1,6 +1,6 @@
 #include "ai/application/ExecutionProfileWorkflowRunner.hpp"
 
-#include "ai/application/ArtifactService.hpp"
+#include "ai/application/artifacts/ArtifactService.hpp"
 #include "ai/application/ContextSnapshot.hpp"
 #include "ai/application/CostCalculation.hpp"
 #include "ai/application/ExecutionManifestParser.hpp"

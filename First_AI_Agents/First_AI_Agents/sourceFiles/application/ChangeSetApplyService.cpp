@@ -2,7 +2,7 @@
 
 #include "ai/application/IOutcomeBriefTrigger.hpp"
 
-#include "ai/application/ArtifactService.hpp"
+#include "ai/application/artifacts/ArtifactService.hpp"
 #include "ai/application/FilesystemPathUtils.hpp"
 #include "ai/application/IChangeApprovalRepository.hpp"
 #include "ai/application/IChangeProposalRepository.hpp"

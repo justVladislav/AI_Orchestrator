@@ -53,9 +53,9 @@ set(APPLICATION_SOURCES
     sourceFiles/application/settings/ApplicationSettingsTypes.cpp
     sourceFiles/application/settings/ApplicationSettingsService.cpp
     sourceFiles/application/ApplicationTypes.cpp
-    sourceFiles/application/ArtifactTypes.cpp
-    sourceFiles/application/ArtifactPathPolicy.cpp
-    sourceFiles/application/ArtifactService.cpp
+    sourceFiles/application/artifacts/ArtifactTypes.cpp
+    sourceFiles/application/artifacts/ArtifactPathPolicy.cpp
+    sourceFiles/application/artifacts/ArtifactService.cpp
     sourceFiles/application/RunWarning.cpp
     sourceFiles/application/VerificationScratchPolicy.cpp
     sourceFiles/application/VerificationScratchService.cpp

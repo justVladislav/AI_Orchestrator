@@ -1,5 +1,5 @@
-#include "ai/application/ArtifactService.hpp"
-#include "ai/application/ArtifactPathPolicy.hpp"
+#include "ai/application/artifacts/ArtifactService.hpp"
+#include "ai/application/artifacts/ArtifactPathPolicy.hpp"
 #include "ai/application/ContextSnapshot.hpp"
 #include "ai/application/InMemoryRepositories.hpp"
 #include "ai/application/MockWorkflowRunner.hpp"

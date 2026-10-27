@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/ArtifactTypes.hpp"
+#include "ai/application/artifacts/ArtifactTypes.hpp"
 #include "ai/common/Result.hpp"
 
 #include <cstdint>

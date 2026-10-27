@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/ArtifactService.hpp"
+#include "ai/application/artifacts/ArtifactService.hpp"
 #include "ai/application/ChangeProposalService.hpp"
 #include "ai/application/IManifestVerificationBaselineNormalizationRepository.hpp"
 #include "ai/application/ManifestVerificationContinuationTypes.hpp"

@@ -1,6 +1,6 @@
 #include "ai/infrastructure/FileArtifactStore.hpp"
 
-#include "ai/application/ArtifactPathPolicy.hpp"
+#include "ai/application/artifacts/ArtifactPathPolicy.hpp"
 #include "ai/application/FilesystemPathUtils.hpp"
 #include "ai/application/Sha256.hpp"
 

@@ -2,7 +2,7 @@
 
 #include "ai/application/IOutcomeBriefTrigger.hpp"
 
-#include "ai/application/ArtifactService.hpp"
+#include "ai/application/artifacts/ArtifactService.hpp"
 #include "ai/application/ExecutionAcceptanceContract.hpp"
 #include "ai/application/ExecutionManifestExecutionCapacity.hpp"
 #include "ai/application/ManifestMandatoryVerificationPolicy.hpp"

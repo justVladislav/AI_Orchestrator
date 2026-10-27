@@ -1,4 +1,4 @@
-#include "ai/application/ArtifactTypes.hpp"
+#include "ai/application/artifacts/ArtifactTypes.hpp"
 
 namespace ai::application {
 

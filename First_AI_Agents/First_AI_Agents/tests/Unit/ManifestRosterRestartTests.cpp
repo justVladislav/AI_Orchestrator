@@ -10,7 +10,7 @@
 // sequence (ai::backend::runStartupRecovery - the very function BackendRuntime calls).
 #include "ScriptedManifestSupport.hpp"
 
-#include "ai/application/ArtifactService.hpp"
+#include "ai/application/artifacts/ArtifactService.hpp"
 #include "ai/application/ChangeProposalService.hpp"
 #include "ai/application/ExecutionManifestReadModelService.hpp"
 #include "ai/application/ExecutionAnalyticsService.hpp"

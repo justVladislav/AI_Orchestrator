@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/IArtifactStore.hpp"
+#include "ai/application/artifacts/IArtifactStore.hpp"
 
 #include <memory>
 #include <mutex>

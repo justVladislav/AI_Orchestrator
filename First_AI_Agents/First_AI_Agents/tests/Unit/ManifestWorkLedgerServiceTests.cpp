@@ -10,7 +10,7 @@
 #include "ai/application/OrchestrationService.hpp"
 #include "ai/application/RunManager.hpp"
 
-#include "ai/application/ArtifactService.hpp"
+#include "ai/application/artifacts/ArtifactService.hpp"
 #include "ai/application/ExecutionAcceptanceContract.hpp"
 #include "ai/application/ExecutionManifestPlanner.hpp"
 #include "ai/application/IWorkflowRunner.hpp"

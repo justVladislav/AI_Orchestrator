@@ -4,7 +4,7 @@
 #include "ai/application/AgentToolReadModelService.hpp"
 #include "ai/application/IAgentToolAuditRepository.hpp"
 #include "ai/application/IAgentToolSessionRepository.hpp"
-#include "ai/application/ArtifactService.hpp"
+#include "ai/application/artifacts/ArtifactService.hpp"
 #include "ai/application/ProjectReadinessService.hpp"
 #include "ai/application/VerificationScratchService.hpp"
 #include "ai/providers/IProviderAgentSession.hpp"

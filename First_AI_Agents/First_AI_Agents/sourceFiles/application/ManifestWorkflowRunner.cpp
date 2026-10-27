@@ -1,6 +1,6 @@
 #include "ai/application/ManifestWorkflowRunner.hpp"
 
-#include "ai/application/ArtifactService.hpp"
+#include "ai/application/artifacts/ArtifactService.hpp"
 #include "ai/application/CostCalculation.hpp"
 #include "ai/application/ExecutionManifestDraftTypes.hpp"
 #include "ai/application/ExecutionManifestExecutionCapacity.hpp"

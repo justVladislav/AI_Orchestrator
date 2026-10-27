@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ai/application/ArtifactService.hpp>
+#include <ai/application/artifacts/ArtifactService.hpp>
 #include <ai/application/OrchestrationService.hpp>
 #include <ai/application/catalog/ProviderCatalogService.hpp>
 #include <ai/application/ManifestVerificationManualHandoffReadModelService.hpp>

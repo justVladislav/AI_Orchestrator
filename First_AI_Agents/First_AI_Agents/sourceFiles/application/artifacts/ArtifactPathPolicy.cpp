@@ -1,4 +1,4 @@
-#include "ai/application/ArtifactPathPolicy.hpp"
+#include "ai/application/artifacts/ArtifactPathPolicy.hpp"
 
 #include <cctype>
 #include <chrono>
