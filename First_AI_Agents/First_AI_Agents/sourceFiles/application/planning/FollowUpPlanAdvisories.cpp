@@ -1,6 +1,6 @@
 #include "ai/application/planning/FollowUpPlanAdvisories.hpp"
 
-#include "ai/application/AgentToolTurnLoopRunner.hpp"
+#include "ai/application/agents/AgentToolTurnLoopRunner.hpp"
 #include "ai/application/RunInterfaceContract.hpp"
 
 #include <nlohmann/json.hpp>

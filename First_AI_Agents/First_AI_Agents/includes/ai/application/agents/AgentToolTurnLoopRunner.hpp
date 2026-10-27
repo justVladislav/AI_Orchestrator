@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/AgentToolExecutionService.hpp"
+#include "ai/application/agents/AgentToolExecutionService.hpp"
 #include "ai/application/ProviderExecutionBudget.hpp"
 #include "ai/application/ApplicationTypes.hpp"
 #include "ai/application/proposals/ChangeProposalService.hpp"

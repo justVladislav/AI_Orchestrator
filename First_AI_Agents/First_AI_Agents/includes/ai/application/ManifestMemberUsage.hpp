@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/ExecutionManifestTypes.hpp"
-#include "ai/application/ModelExecutionTypes.hpp"
+#include "ai/application/agents/ModelExecutionTypes.hpp"
 
 #include <cstdint>
 #include <string>

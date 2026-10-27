@@ -1,4 +1,4 @@
-#include "ai/application/AgentToolTurnLoopRunner.hpp"
+#include "ai/application/agents/AgentToolTurnLoopRunner.hpp"
 #include "ai/application/CostCalculation.hpp"
 
 #include "ai/application/FilesystemPathUtils.hpp"

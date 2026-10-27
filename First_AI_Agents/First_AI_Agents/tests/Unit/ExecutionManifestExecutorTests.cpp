@@ -4,7 +4,7 @@
 // IProviderAgentSession - no network, no CURL, no real provider adapter).
 // Fixture shape mirrors AgentToolTurnLoopRunnerTests.cpp; kept local since
 // each test file in this codebase is self-contained.
-#include "ai/application/AgentToolExecutionService.hpp"
+#include "ai/application/agents/AgentToolExecutionService.hpp"
 #include "ai/application/proposals/ChangeProposalService.hpp"
 #include "ai/application/ExecutionManifestExecutionCapacity.hpp"
 #include "ai/application/ExecutionManifestExecutor.hpp"
@@ -12,7 +12,7 @@
 #include "ai/application/FilesystemWorkspaceToolExecutor.hpp"
 #include "ai/application/InMemoryRepositories.hpp"
 #include "ai/application/InMemoryRunWorkspaceScopeRepository.hpp"
-#include "ai/application/ModelExecutionService.hpp"
+#include "ai/application/agents/ModelExecutionService.hpp"
 #include "ai/application/QmlLintDiagnosticPolicy.hpp"
 #include "ai/application/RunPathClaimRegistry.hpp"
 #include "ai/application/RunWorkspaceScopeService.hpp"

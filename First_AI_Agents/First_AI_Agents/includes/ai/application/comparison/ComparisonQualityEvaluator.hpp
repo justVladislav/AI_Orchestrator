@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/ModelExecutionService.hpp"
+#include "ai/application/agents/ModelExecutionService.hpp"
 
 #include <string_view>
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/IModelExecutionRepository.hpp"
+#include "ai/application/agents/IModelExecutionRepository.hpp"
 
 #include <optional>
 #include <string>

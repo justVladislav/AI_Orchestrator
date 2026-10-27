@@ -1,13 +1,13 @@
 #pragma once
 
-#include "ai/application/IAgentToolAuditRepository.hpp"
-#include "ai/application/IAgentToolSessionRepository.hpp"
+#include "ai/application/agents/IAgentToolAuditRepository.hpp"
+#include "ai/application/agents/IAgentToolSessionRepository.hpp"
 #include "ai/application/artifacts/IArtifactRepository.hpp"
 #include "ai/application/IRunWarningRepository.hpp"
 #include "ai/application/artifacts/IArtifactStore.hpp"
 #include "ai/application/catalog/IExecutionProfileRepository.hpp"
 #include "ai/application/catalog/IModelRepository.hpp"
-#include "ai/application/IModelExecutionRepository.hpp"
+#include "ai/application/agents/IModelExecutionRepository.hpp"
 #include "ai/application/projects/IProjectRepository.hpp"
 #include "ai/application/catalog/IProviderRepository.hpp"
 #include "ai/application/planning/IRunDraftRepository.hpp"

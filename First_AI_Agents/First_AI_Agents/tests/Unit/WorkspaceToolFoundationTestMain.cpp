@@ -1,5 +1,5 @@
 #include "ai/application/ToolRegistry.hpp"
-#include "ai/application/IAgentToolAuditRepository.hpp"
+#include "ai/application/agents/IAgentToolAuditRepository.hpp"
 #include "ai/application/WorkspaceReadPolicy.hpp"
 
 #include <cassert>

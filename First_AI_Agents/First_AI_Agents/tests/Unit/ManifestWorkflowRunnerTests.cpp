@@ -7,7 +7,7 @@
 // directory) validates and stages proposals, and a fake IProviderClient
 // stands in for the conditional Architect integration call. No network, no
 // CURL, no real provider adapter.
-#include "ai/application/AgentToolExecutionService.hpp"
+#include "ai/application/agents/AgentToolExecutionService.hpp"
 #include "ai/application/artifacts/ArtifactService.hpp"
 #include "ai/application/proposals/ChangeProposalService.hpp"
 #include "ai/application/ExecutionManifestDraftParser.hpp"
@@ -27,7 +27,7 @@
 #include "ai/application/ManifestWorkflowRunner.hpp"
 #include "ai/application/VerificationEnvironmentDiscoveryService.hpp"
 #include "ai/application/MockWorkflowRunner.hpp"
-#include "ai/application/ModelExecutionService.hpp"
+#include "ai/application/agents/ModelExecutionService.hpp"
 #include "ai/application/OrchestrationService.hpp"
 #include "ai/application/ProjectReadinessService.hpp"
 #include "ai/application/projects/ProjectService.hpp"

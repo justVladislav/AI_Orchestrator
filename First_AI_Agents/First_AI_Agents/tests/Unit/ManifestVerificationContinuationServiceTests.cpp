@@ -15,7 +15,7 @@
 #include "ai/application/InMemoryManifestVerificationManualHandoffRepository.hpp"
 #include "RecordingOutcomeBriefTrigger.hpp"
 
-#include "ai/application/AgentToolExecutionService.hpp"
+#include "ai/application/agents/AgentToolExecutionService.hpp"
 #include "ai/application/artifacts/ArtifactService.hpp"
 #include "ai/application/FilesystemPathUtils.hpp"
 #include "ai/infrastructure/FileArtifactStore.hpp"

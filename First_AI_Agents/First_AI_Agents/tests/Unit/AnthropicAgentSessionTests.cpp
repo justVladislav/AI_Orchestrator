@@ -1,5 +1,5 @@
 #include "ai/providers/AnthropicAgentSession.hpp"
-#include "ai/application/AgentToolTurnLoopRunner.hpp"
+#include "ai/application/agents/AgentToolTurnLoopRunner.hpp"
 #include "ai/http/IHttpClient.hpp"
 #include "ai/http/HttpResponse.hpp"
 

@@ -4,7 +4,7 @@
 #include "ai/application/planning/FollowUpPlanRequest.hpp"
 #include "ai/application/planning/IFollowUpPlanRequestRepository.hpp"
 #include "ai/application/IProviderClient.hpp"
-#include "ai/application/ModelExecutionService.hpp"
+#include "ai/application/agents/ModelExecutionService.hpp"
 
 #include <chrono>
 #include <condition_variable>

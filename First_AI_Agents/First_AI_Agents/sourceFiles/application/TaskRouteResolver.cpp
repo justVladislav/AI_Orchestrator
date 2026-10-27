@@ -1,6 +1,6 @@
 #include "ai/application/TaskRouteResolver.hpp"
 
-#include "ai/application/AgentToolTurnLoopRunner.hpp"
+#include "ai/application/agents/AgentToolTurnLoopRunner.hpp"
 
 #include <algorithm>
 #include <limits>

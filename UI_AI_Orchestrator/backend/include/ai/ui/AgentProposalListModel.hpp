@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ai/application/AgentToolReadModelService.hpp>
+#include <ai/application/agents/AgentToolReadModelService.hpp>
 #include <ai/application/proposals/ProposalReviewTypes.hpp>
 
 #include <QAbstractListModel>

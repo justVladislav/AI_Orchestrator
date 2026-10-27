@@ -6,7 +6,7 @@
 #include "ai/application/conversations/ChatContextAssembler.hpp"
 #include "ai/application/CostCalculation.hpp"
 #include "ai/application/IdGenerator.hpp"
-#include "ai/application/ModelExecutionService.hpp"
+#include "ai/application/agents/ModelExecutionService.hpp"
 #include "ai/application/Sha256.hpp"
 
 #include <algorithm>

@@ -7,7 +7,7 @@
 #include "ai/application/IManifestWorkLedgerRepository.hpp"
 #include "ai/application/IRunWorkspaceScopeRepository.hpp"
 #include "ai/application/IVerificationBootstrapRepository.hpp"
-#include "ai/application/IModelExecutionRepository.hpp"
+#include "ai/application/agents/IModelExecutionRepository.hpp"
 #include "ai/application/catalog/IModelRepository.hpp"
 #include "ai/application/catalog/IProviderRepository.hpp"
 #include "ai/application/IVerificationEnvironmentRepository.hpp"

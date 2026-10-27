@@ -3,7 +3,7 @@
 // turn timeout, pricing, member instructions), verified against the frozen routing
 // record. Pure value tests plus the Backend builder over in-memory repositories: no
 // provider, no SQLite.
-#include "ai/application/AgentToolTurnLoopRunner.hpp"
+#include "ai/application/agents/AgentToolTurnLoopRunner.hpp"
 #include "ai/application/InMemoryRepositories.hpp"
 #include "ai/application/ManifestRouting.hpp"
 #include "ai/application/TaskRouteResolver.hpp"

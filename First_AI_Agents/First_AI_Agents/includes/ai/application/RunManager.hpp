@@ -5,7 +5,7 @@
 #include "ai/application/IWorkflowResolver.hpp"
 #include "ai/application/IWorkflowRunner.hpp"
 #include "ai/application/ManifestWorkLedgerService.hpp"
-#include "ai/application/ModelExecutionService.hpp"
+#include "ai/application/agents/ModelExecutionService.hpp"
 #include "ai/application/conversations/ProjectMemoryService.hpp"
 #include "ai/application/RunPathClaimRegistry.hpp"
 

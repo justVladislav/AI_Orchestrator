@@ -5,7 +5,7 @@
 #include "ai/application/FilesystemPathUtils.hpp"
 #include "ai/application/ManifestVerificationProfileBinder.hpp"
 #include "ai/application/ManifestVerificationRepairability.hpp"
-#include "ai/application/ModelExecutionService.hpp"
+#include "ai/application/agents/ModelExecutionService.hpp"
 #include "ai/application/Sha256.hpp"
 #include "ai/application/VerificationEnvironmentDiscoveryService.hpp"
 

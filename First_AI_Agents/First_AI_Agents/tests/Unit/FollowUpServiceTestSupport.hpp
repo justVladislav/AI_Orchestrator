@@ -10,7 +10,7 @@
 #include "ai/application/IProviderClient.hpp"
 #include "ai/application/InMemoryFollowUpPlanRepository.hpp"
 #include "ai/application/InMemoryRepositories.hpp"
-#include "ai/application/ModelExecutionService.hpp"
+#include "ai/application/agents/ModelExecutionService.hpp"
 
 #include <atomic>
 #include <condition_variable>

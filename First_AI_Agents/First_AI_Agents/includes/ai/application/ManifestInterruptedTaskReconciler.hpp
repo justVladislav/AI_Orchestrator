@@ -3,7 +3,7 @@
 #include "ai/application/IExecutionManifestRepository.hpp"
 #include "ai/application/IManifestTaskExecutionRepository.hpp"
 #include "ai/application/IManifestWorkLedgerRepository.hpp"
-#include "ai/application/IModelExecutionRepository.hpp"
+#include "ai/application/agents/IModelExecutionRepository.hpp"
 #include "ai/application/IRunRepository.hpp"
 #include "ai/common/Result.hpp"
 

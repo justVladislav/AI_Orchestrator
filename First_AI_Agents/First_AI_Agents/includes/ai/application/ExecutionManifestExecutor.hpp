@@ -1,7 +1,7 @@
 #pragma once
 
-#include "ai/application/AgentToolExecutionService.hpp"
-#include "ai/application/AgentToolTurnLoopRunner.hpp"
+#include "ai/application/agents/AgentToolExecutionService.hpp"
+#include "ai/application/agents/AgentToolTurnLoopRunner.hpp"
 #include "ai/application/ApplicationTypes.hpp"
 #include "ai/application/ExecutionAcceptanceContract.hpp"
 #include "ai/application/ExecutionManifestScheduler.hpp"

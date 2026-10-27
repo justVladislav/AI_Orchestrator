@@ -2,7 +2,7 @@
 
 #include "ai/application/ExecutionAnalyticsTypes.hpp"
 #include "ai/application/catalog/IModelRepository.hpp"
-#include "ai/application/IModelExecutionRepository.hpp"
+#include "ai/application/agents/IModelExecutionRepository.hpp"
 
 #include <chrono>
 #include <optional>

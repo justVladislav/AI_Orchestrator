@@ -6,7 +6,7 @@
 #include "ai/application/ExecutionManifestExecutionCapacity.hpp"
 #include "ai/application/ExecutionManifestPlannerTurnBudget.hpp"
 #include "ai/application/IdGenerator.hpp"
-#include "ai/application/ModelExecutionService.hpp"
+#include "ai/application/agents/ModelExecutionService.hpp"
 #include "ai/application/ManifestMandatoryVerificationPolicy.hpp"
 #include "ai/application/ManifestRouting.hpp"
 #include "ai/application/ManifestVerificationProfileBinder.hpp"

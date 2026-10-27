@@ -1,8 +1,8 @@
 #pragma once
 
-#include "ai/application/AgentToolTypes.hpp"
-#include "ai/application/IAgentToolAuditRepository.hpp"
-#include "ai/application/IAgentToolSessionRepository.hpp"
+#include "ai/application/agents/AgentToolTypes.hpp"
+#include "ai/application/agents/IAgentToolAuditRepository.hpp"
+#include "ai/application/agents/IAgentToolSessionRepository.hpp"
 #include "ai/application/IWorkspaceToolExecutor.hpp"
 #include "ai/application/ToolRegistry.hpp"
 #include "ai/application/WorkspaceReadPolicy.hpp"

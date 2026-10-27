@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/ModelExecutionTypes.hpp"
+#include "ai/application/agents/ModelExecutionTypes.hpp"
 #include "ai/common/Result.hpp"
 
 #include <optional>

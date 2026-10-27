@@ -9,7 +9,7 @@
 #include "ai/application/InMemoryRepositories.hpp"
 #include "ai/application/ManifestMemberUsage.hpp"
 #include "ai/application/ManifestRouting.hpp"
-#include "ai/application/ModelExecutionService.hpp"
+#include "ai/application/agents/ModelExecutionService.hpp"
 
 #include <algorithm>
 #include <iostream>

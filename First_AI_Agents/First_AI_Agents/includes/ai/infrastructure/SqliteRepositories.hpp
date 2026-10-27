@@ -1,7 +1,7 @@
 #pragma once
 
-#include "ai/application/IAgentToolAuditRepository.hpp"
-#include "ai/application/IAgentToolSessionRepository.hpp"
+#include "ai/application/agents/IAgentToolAuditRepository.hpp"
+#include "ai/application/agents/IAgentToolSessionRepository.hpp"
 #include "ai/application/settings/IApplicationSettingsRepository.hpp"
 #include "ai/application/artifacts/IArtifactRepository.hpp"
 #include "ai/application/IRunWarningRepository.hpp"
@@ -21,7 +21,7 @@
 #include "ai/application/IManifestVerificationManualHandoffRepository.hpp"
 #include "ai/application/IManifestWorkLedgerRepository.hpp"
 #include "ai/application/catalog/IModelRepository.hpp"
-#include "ai/application/IModelExecutionRepository.hpp"
+#include "ai/application/agents/IModelExecutionRepository.hpp"
 #include "ai/application/planning/IOutcomeBriefRepository.hpp"
 #include "ai/application/conversations/IProjectMemoryCompactionRepository.hpp"
 #include "ai/application/conversations/IProjectMemoryRepository.hpp"

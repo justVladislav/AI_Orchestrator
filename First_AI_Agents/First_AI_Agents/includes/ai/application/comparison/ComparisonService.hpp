@@ -3,7 +3,7 @@
 #include "ai/application/comparison/ComparisonTypes.hpp"
 #include "ai/application/comparison/IComparisonSessionRepository.hpp"
 #include "ai/application/projects/IProjectRepository.hpp"
-#include "ai/application/ModelExecutionService.hpp"
+#include "ai/application/agents/ModelExecutionService.hpp"
 #include "ai/application/catalog/ProviderCatalogService.hpp"
 
 namespace ai::application {

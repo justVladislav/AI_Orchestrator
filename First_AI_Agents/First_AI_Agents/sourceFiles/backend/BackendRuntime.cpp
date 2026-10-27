@@ -2,7 +2,7 @@
 
 #include "ai/backend/StartupRecovery.hpp"
 
-#include "ai/application/AgentToolExecutionService.hpp"
+#include "ai/application/agents/AgentToolExecutionService.hpp"
 #include "ai/application/ExecutionManifestReadModelService.hpp"
 #include "ai/application/ExecutionProfileWorkflowRunner.hpp"
 #include "ai/application/FilesystemFollowUpFileLoader.hpp"
@@ -12,8 +12,8 @@
 #include "ai/application/planning/FollowUpSourceReader.hpp"
 #include "ai/application/ManifestWorkflowRunner.hpp"
 #include "ai/application/FilesystemWorkspaceToolExecutor.hpp"
-#include "ai/application/IAgentToolAuditRepository.hpp"
-#include "ai/application/IAgentToolSessionRepository.hpp"
+#include "ai/application/agents/IAgentToolAuditRepository.hpp"
+#include "ai/application/agents/IAgentToolSessionRepository.hpp"
 #include "ai/application/proposals/IChangeApprovalRepository.hpp"
 #include "ai/application/proposals/IProposalReviewRepository.hpp"
 #include "ai/application/proposals/ProposalReviewService.hpp"
@@ -24,7 +24,7 @@
 #include "ai/application/artifacts/IArtifactRepository.hpp"
 #include "ai/application/conversations/IChatRepository.hpp"
 #include "ai/application/comparison/IComparisonSessionRepository.hpp"
-#include "ai/application/IModelExecutionRepository.hpp"
+#include "ai/application/agents/IModelExecutionRepository.hpp"
 #include "ai/application/artifacts/IArtifactStore.hpp"
 #include "ai/application/conversations/IProjectMemoryRepository.hpp"
 #include "ai/application/conversations/IProjectMemoryCompactionRepository.hpp"

@@ -8,7 +8,7 @@
 // and ProjectWritePolicy.allowedRoots hard-rejects foreign paths before the
 // RunPathClaimRegistry race guard. A manifest worker also receives a compact,
 // self-contained handoff rather than the Architect's full project context.
-#include "ai/application/AgentToolExecutionService.hpp"
+#include "ai/application/agents/AgentToolExecutionService.hpp"
 #include "ai/application/proposals/ChangeProposalService.hpp"
 #include "ai/application/ExecutionAssignmentValidation.hpp"
 #include "ai/application/ExecutionManifestService.hpp"
@@ -17,7 +17,7 @@
 #include "ai/application/InMemoryExecutionManifestRepository.hpp"
 #include "ai/application/InMemoryRepositories.hpp"
 #include "ai/application/MockWorkflowRunner.hpp"
-#include "ai/application/ModelExecutionService.hpp"
+#include "ai/application/agents/ModelExecutionService.hpp"
 #include "ai/application/OrchestrationService.hpp"
 #include "ai/application/projects/ProjectService.hpp"
 #include "ai/application/catalog/ProviderCatalogService.hpp"

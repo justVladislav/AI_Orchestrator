@@ -131,7 +131,7 @@ set(APPLICATION_SOURCES
     sourceFiles/application/ExecutionAssignmentValidation.cpp
     sourceFiles/application/WorkflowRouter.cpp
     sourceFiles/application/ExecutionProfileWorkflowRunner.cpp
-    sourceFiles/application/AgentToolTurnLoopRunner.cpp
+    sourceFiles/application/agents/AgentToolTurnLoopRunner.cpp
     sourceFiles/application/ManifestWorkerNoChanges.cpp
     sourceFiles/application/ManifestProposalOverlay.cpp
     sourceFiles/application/ManifestProposalSetVerifier.cpp
@@ -193,12 +193,12 @@ set(APPLICATION_SOURCES
     sourceFiles/application/WorkspacePathGuard.cpp
     sourceFiles/application/ToolRegistry.cpp
     sourceFiles/application/FilesystemWorkspaceToolExecutor.cpp
-    sourceFiles/application/AgentToolExecutionService.cpp
-    sourceFiles/application/AgentToolReadModelService.cpp
+    sourceFiles/application/agents/AgentToolExecutionService.cpp
+    sourceFiles/application/agents/AgentToolReadModelService.cpp
     sourceFiles/application/conversations/ChatService.cpp
-    sourceFiles/application/ModelExecutionTypes.cpp
+    sourceFiles/application/agents/ModelExecutionTypes.cpp
     sourceFiles/application/InMemoryModelExecutionRepository.cpp
-    sourceFiles/application/ModelExecutionService.cpp
+    sourceFiles/application/agents/ModelExecutionService.cpp
     sourceFiles/application/ExecutionAnalyticsService.cpp
     sourceFiles/application/comparison/ComparisonTypes.cpp
     sourceFiles/application/InMemoryComparisonSessionRepository.cpp

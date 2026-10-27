@@ -1,9 +1,9 @@
 #pragma once
 
-#include "ai/application/AgentToolExecutionService.hpp"
-#include "ai/application/AgentToolReadModelService.hpp"
-#include "ai/application/IAgentToolAuditRepository.hpp"
-#include "ai/application/IAgentToolSessionRepository.hpp"
+#include "ai/application/agents/AgentToolExecutionService.hpp"
+#include "ai/application/agents/AgentToolReadModelService.hpp"
+#include "ai/application/agents/IAgentToolAuditRepository.hpp"
+#include "ai/application/agents/IAgentToolSessionRepository.hpp"
 #include "ai/application/artifacts/ArtifactService.hpp"
 #include "ai/application/ProjectReadinessService.hpp"
 #include "ai/application/VerificationScratchService.hpp"
@@ -26,7 +26,7 @@
 #include "ai/application/OrchestrationService.hpp"
 #include "ai/application/VerificationBootstrapRetryService.hpp"
 #include "ai/application/MockWorkflowRunner.hpp"
-#include "ai/application/ModelExecutionService.hpp"
+#include "ai/application/agents/ModelExecutionService.hpp"
 #include "ai/application/proposals/ChangeProposalService.hpp"
 #include "ai/application/proposals/ChangeSetApplyService.hpp"
 #include "ai/application/ManifestApplyVerificationGate.hpp"

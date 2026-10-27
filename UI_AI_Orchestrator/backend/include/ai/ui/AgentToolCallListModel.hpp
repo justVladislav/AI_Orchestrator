@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ai/application/AgentToolTypes.hpp>
+#include <ai/application/agents/AgentToolTypes.hpp>
 
 #include <QAbstractListModel>
 #include <vector>

@@ -6,7 +6,7 @@
 #include "ai/application/ExecutionAnalyticsService.hpp"
 #include "ai/application/context/ProjectContextSnapshot.hpp"
 #include "ai/application/IProviderClient.hpp"
-#include "ai/application/ModelExecutionService.hpp"
+#include "ai/application/agents/ModelExecutionService.hpp"
 #include "ai/infrastructure/SqliteRepositories.hpp"
 
 #include <chrono>

@@ -18,7 +18,7 @@
 #include "ai/application/ManifestInterruptedTaskReconciler.hpp"
 #include "ai/application/ManifestMemberUsage.hpp"
 #include "ai/application/ManifestWorkLedgerService.hpp"
-#include "ai/application/ModelExecutionService.hpp"
+#include "ai/application/agents/ModelExecutionService.hpp"
 #include "ai/application/OrchestrationService.hpp"
 #include "ai/application/projects/ProjectService.hpp"
 #include "ai/application/catalog/ProviderCatalogService.hpp"

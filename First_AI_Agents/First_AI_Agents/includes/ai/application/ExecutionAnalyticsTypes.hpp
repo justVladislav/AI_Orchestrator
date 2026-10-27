@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/ModelExecutionTypes.hpp"
+#include "ai/application/agents/ModelExecutionTypes.hpp"
 
 #include <cstdint>
 #include <vector>

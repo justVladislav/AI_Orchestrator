@@ -11,7 +11,7 @@
 #include "ai/application/ICredentialStore.hpp"
 #include "ai/application/conversations/IProjectMemoryRepository.hpp"
 #include "ai/application/InMemoryRepositories.hpp"
-#include "ai/application/ModelExecutionService.hpp"
+#include "ai/application/agents/ModelExecutionService.hpp"
 #include "ai/application/MockWorkflowRunner.hpp"
 #include "ai/application/OrchestrationService.hpp"
 #include "ai/application/projects/ProjectService.hpp"

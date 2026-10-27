@@ -1,7 +1,7 @@
 #include "FollowUpPlanRequestRepositoryContract.hpp"
 #include "FollowUpOldV66Schema.hpp"
 
-#include "ai/application/ModelExecutionTypes.hpp"
+#include "ai/application/agents/ModelExecutionTypes.hpp"
 #include "ai/infrastructure/SqliteRepositories.hpp"
 
 #include <sqlite3.h>
