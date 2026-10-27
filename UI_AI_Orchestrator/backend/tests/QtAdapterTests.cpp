@@ -1632,6 +1632,7 @@ void testLegacyConversionRecordQmlOnlyRendersTheStoredAudit()
     const std::string details = read(runsDir / "Runs_Objects" / "RunDetailsPanel.qml");
     const std::string list = read(runsDir / "Runs_Objects" / "RunListPanel.qml");
     const std::string page = read(runsDir / "RunsPage.qml");
+    const std::string projections = read(runsDir / "Runs_Objects" / "RunModelSnapshots.qml");
     const auto count = [](const std::string& text, const std::string& needle) {
         std::size_t found = 0;
         for (std::size_t at = text.find(needle); at != std::string::npos; at = text.find(needle, at + 1))
@@ -1675,10 +1676,11 @@ void testLegacyConversionRecordQmlOnlyRendersTheStoredAudit()
     assert(has(list, "objectName: \"legacyConversionChip\"")
         && has(list, "String(runItem.modelData.legacyConversion || \"\") !== \"\"")
         && has(list, "runItem.modelData.legacyConversion === \"unreadable\""));
-    assert(has(page, "legacyConversion: it.legacyConversion")
-        && has(page, "required property string legacyConversion")
-        && has(page, "onLegacyConversionChanged: page.scheduleRunsSnapshotRebuild()")
-        && has(page, "function conversionLabel(marker)"));
+    assert(has(page, "RunModelSnapshots {") && has(page, "backend: page.backend"));
+    assert(has(projections, "legacyConversion: it.legacyConversion")
+        && has(projections, "required property string legacyConversion")
+        && has(projections, "onLegacyConversionChanged: snapshots.scheduleRunsSnapshotRebuild()")
+        && has(projections, "function conversionLabel(marker)"));
 }
 
 // AG-17.6: static proof that the shipped QML presents the roster as a pool of available
@@ -5929,6 +5931,7 @@ void testPromptWorkshopQmlOnlyRendersAndRelaysTheBackendsPreview()
     const QString rosterSetup = readQmlSource("pages/Runs/Runs_Objects/RosterSetupSection.qml");
     const QString rosterMember = readQmlSource("pages/Runs/Runs_Objects/RosterMemberRow.qml");
     const QString runsPage = readQmlSource("pages/Runs/RunsPage.qml");
+    const QString projections = readQmlSource("pages/Runs/Runs_Objects/RunModelSnapshots.qml");
     const QString pageHost = readQmlSource("pages/PageHost.qml");
 
     // The per-message action: the Backend decides, QML only looks at its answer. The reply text is never scanned.
@@ -5940,7 +5943,7 @@ void testPromptWorkshopQmlOnlyRendersAndRelaysTheBackendsPreview()
         && "QML must not look for a plan in a message");
     // No QML file parses a plan or asks for a direct write.
     for (const QString* source : {&delegate, &dialog, &chatsPage, &header, &drafts, &newRun,
-                                  &rosterSetup, &rosterMember, &runsPage, &pageHost}) {
+                                  &rosterSetup, &rosterMember, &runsPage, &projections, &pageHost}) {
         assert(!source->contains(QStringLiteral("createFromMessage"))
             && "There is no write that does not go through a preview token");
         assert(!source->contains(QStringLiteral("JSON.parse")) && "QML does not parse a plan");
@@ -5991,7 +5994,7 @@ void testPromptWorkshopQmlOnlyRendersAndRelaysTheBackendsPreview()
         && chatsPage.contains(QStringLiteral("onReloadChoicesRequested: page.loadPlanChoices()"))
         && dialog.contains(QStringLiteral("signal reloadChoicesRequested()"))
         && dialog.contains(QStringLiteral("nextRunPlanChoiceError")));
-    assert(runsPage.contains(QStringLiteral("required property bool edited")) && runsPage.contains(QStringLiteral("edited: it.edited")));
+    assert(projections.contains(QStringLiteral("required property bool edited")) && projections.contains(QStringLiteral("edited: it.edited")));
 
     // New Run: an empty-roster per-Run draft stays a real-provider Manifest roster (its contracts stay visible);
     // it never switches to Mock, and it cannot start before the models are chosen.
