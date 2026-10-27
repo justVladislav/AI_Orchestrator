@@ -77,7 +77,7 @@ Dialog {
     readonly property string manifestWorkflowId: "execution-manifest-v1"
     readonly property bool manifestRoster: productionCheck.checked
                                            && customRosterCheck.checked
-                                           && manifestRosterCheck.checked
+                                           && rosterSection.manifestChecked
 
     // AG-11 New Run indication: plain-JS mirror of executionProfilesModel's
     // profileId/assignments roles, used only to look up a saved profile's
@@ -312,7 +312,7 @@ Dialog {
                 "agentName": index === 0 ? qsTr("Lead Architect") : qsTr("Agent %1").arg(index + 1),
                 "role": index === 0 ? qsTr("Software Architect") : qsTr("Implementation specialist"),
                 "instructions": "",
-                "modelChoiceIndex": bulkModelCombo.currentIndex >= 0 ? bulkModelCombo.currentIndex : 0,
+                "modelChoiceIndex": rosterSection.bulkModelIndex >= 0 ? rosterSection.bulkModelIndex : 0,
                 "maxAttempts": 2,
                 "fallbackChoiceIndex": -1,
                 "fallbackMissing": false,
@@ -511,7 +511,7 @@ Dialog {
             "executionProfileId": launchMode === "saved_execution_profile"
                                   ? String(profileCombo.currentValue) : "",
             "roster": roster,
-            "maxParallelism": maxParallelismSpin.value,
+            "maxParallelism": rosterSection.maxParallelism,
             "workspacePath": dialog.workspaceOverridePath,
             "automaticVerificationRepair": automaticVerificationRepairCheck.checked,
             "workflowId": launchMode === "custom_roster" ? dialog.workflowIdForLaunch() : "",
@@ -668,7 +668,7 @@ Dialog {
             }
             dialog.rosterRunAccepted(String(projectCombo.currentValue),
                                      titleField.text.trim(), taskField.text.trim(), roster,
-                                     maxParallelismSpin.value,
+                                     rosterSection.maxParallelism,
                                      String(taskCombo.currentValue || ""),
                                      dialog.workspaceOverridePath,
                                      sourceRunId,
@@ -730,7 +730,7 @@ Dialog {
         const roster = prefill.roster || []
         agentsModel.clear()
         const manifest = String(prefill.workflowId || "") === dialog.manifestWorkflowId
-        manifestRosterCheck.checked = manifest
+        rosterSection.manifestChecked = manifest
         if (roster.length === 0) {
             // A per-Run roster draft with no roster yet (a draft made from a next-run plan). It stays what it is:
             // real providers, a per-Run roster, the Manifest workflow it was saved with - so its contracts stay
@@ -739,11 +739,11 @@ Dialog {
             productionCheck.checked = true
             customRosterCheck.checked = true
             const slots = manifest ? 2 : 1
-            agentCountSpin.value = slots
+            rosterSection.agentCount = slots
             dialog.resizeRoster(slots)
             for (let slot = 0; slot < agentsModel.count; ++slot)
                 agentsModel.setProperty(slot, "modelChoiceIndex", -1)
-            maxParallelismSpin.value = Math.min(prefill.maxParallelism || dialog.defaultMaxParallelAgents, slots)
+            rosterSection.maxParallelism = Math.min(prefill.maxParallelism || dialog.defaultMaxParallelAgents, slots)
             dialog.rosterNeedsModels = true
             dialog.refreshRosterModelsMissing()
             return
@@ -789,8 +789,8 @@ Dialog {
                 "timeoutMs": entry.timeoutMs || dialog.defaultTimeoutMs
             })
         }
-        agentCountSpin.value = agentsModel.count
-        maxParallelismSpin.value = Math.min(
+        rosterSection.agentCount = agentsModel.count
+        rosterSection.maxParallelism = Math.min(
                     prefill.maxParallelism || dialog.defaultMaxParallelAgents, agentsModel.count)
     }
 
@@ -824,12 +824,12 @@ Dialog {
             // Restore the execution snapshot's concurrency for every
             // production launch mode. Custom-roster prefill will clamp it to
             // the restored roster size after rebuilding the rows.
-            maxParallelismSpin.value = prefill.maxParallelism
+            rosterSection.maxParallelism = prefill.maxParallelism
                     || dialog.defaultMaxParallelAgents
             if (prefill.launchMode === "saved_execution_profile") {
                 productionCheck.checked = true
                 customRosterCheck.checked = false
-                manifestRosterCheck.checked = false
+                rosterSection.manifestChecked = false
                 agentsModel.clear()
                 const profileIndex = profileCombo.indexOfValue(prefill.executionProfileId)
                 profileCombo.currentIndex = profileIndex
@@ -840,7 +840,7 @@ Dialog {
             } else {
                 productionCheck.checked = false
                 customRosterCheck.checked = false
-                manifestRosterCheck.checked = false
+                rosterSection.manifestChecked = false
                 agentsModel.clear()
             }
             // Only a per-Run roster carries explicit limits; the Backend sent exactly the ones set.
@@ -875,9 +875,9 @@ Dialog {
         productionCheck.checked = dialog.agentChoices.length > 0
                                   || profileCombo.count > 0
         customRosterCheck.checked = dialog.agentChoices.length > 0
-        manifestRosterCheck.checked = false
+        rosterSection.manifestChecked = false
         agentsModel.clear()
-        agentCountSpin.value = 1
+        rosterSection.agentCount = 1
         dialog.resizeRoster(1)
         Qt.callLater(dialog.refreshMemoryBudget)
     }
@@ -1285,288 +1285,35 @@ Dialog {
             ToolTip.text: qsTr("When disabled, a failed combined verification ends the Run immediately without the additional paid repair wave. Structured findings remain available for continuation or manual handoff.")
         }
 
-        // A roster agent can be given read-only workspace tools +
-        // propose_change_set individually (see the per-agent "Workspace
-        // access" toggle below) - the model inspects the project and
-        // produces a proposal.v1 change proposal that is only ever staged
-        // for review, never applied to the workspace by this run itself.
-        ColumnLayout {
+        RosterSetupSection {
+            id: rosterSection
             Layout.fillWidth: true
             visible: productionCheck.checked && customRosterCheck.checked
-            spacing: dialog.hostWindow.dp(8)
-
-            CheckBox {
-                id: manifestRosterCheck
-                objectName: "manifestRosterCheck"
-                Layout.fillWidth: true
-                text: qsTr("Manifest: the lead plans, available workers execute")
-                checked: false
-                font.pixelSize: dialog.hostWindow.dp(11)
-                ToolTip.visible: hovered
-                ToolTip.text: qsTr("The lead inspects the workspace and freezes a task plan; each task is assigned to one of the available workers. Several tasks may go to one worker and a worker may get none - an unused worker is normal, not an error.")
-                onToggled: {
-                    if (checked) {
-                        dialog.resizeRoster(Math.max(2, agentsModel.count))
-                        agentCountSpin.value = agentsModel.count
-                    }
-                    dialog.refreshMemoryBudget()
+            hostWindow: dialog.hostWindow
+            colors: dialog.colors
+            historyStore: agentContextSuggestionStore
+            rosterModel: agentsModel
+            agentChoices: dialog.agentChoices
+            fallbackChoices: dialog.fallbackChoices
+            manifestRoster: dialog.manifestRoster
+            rosterModelsMissing: dialog.rosterModelsMissing
+            wideLayout: dialog.wideLayout
+            duplicateRoleWarning: dialog.duplicateRoleWarning
+            defaultMaxParallelAgents: dialog.defaultMaxParallelAgents
+            instructionsApplicable: dialog.rosterInstructionsApplicable
+            onManifestToggled: checked => {
+                if (checked) {
+                    dialog.resizeRoster(Math.max(2, agentsModel.count))
+                    rosterSection.agentCount = agentsModel.count
                 }
+                dialog.refreshMemoryBudget()
             }
-
-            Text {
-                objectName: "newRunRosterSetupHint"
-                Layout.fillWidth: true
-                visible: dialog.rosterModelsMissing
-                text: qsTr("This draft has no roster yet. Choose a model for the lead and for every worker below; the Run cannot start until you do. A plan never chooses models or cost.")
-                color: dialog.colors.warning
-                wrapMode: Text.WordWrap
-                font.pixelSize: dialog.hostWindow.dp(10)
+            onAgentCountEdited: count => dialog.resizeRoster(count)
+            onApplyModelToAllRequested: choiceIndex => {
+                for (let index = 0; index < agentsModel.count; ++index)
+                    agentsModel.setProperty(index, "modelChoiceIndex", choiceIndex)
             }
-
-            Text {
-                objectName: "manifestRosterHint"
-                Layout.fillWidth: true
-                visible: manifestRosterCheck.checked
-                text: qsTr("Row 1 is the lead (plans only). The other rows are the available workers. Role: a short name for each worker, for example recent-alerts. The lead assigns tasks by role, so give every worker its own role and use the same names in the task text. Instructions (workers only, optional): what the worker is good at - the lead reads them when assigning, and the worker receives them as its own instructions. Workers always get workspace access, one attempt and no provider fallback.")
-                color: dialog.colors.textMuted
-                wrapMode: Text.WordWrap
-                font.pixelSize: dialog.hostWindow.dp(9)
-            }
-
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: dialog.hostWindow.dp(8)
-                Text {
-                    // A fixed width: the label changes with the mode, and it must not move the
-                    // controls next to it.
-                    Layout.preferredWidth: dialog.hostWindow.dp(104)
-                    text: dialog.manifestRoster ? qsTr("Lead + workers") : qsTr("Agents")
-                    color: dialog.colors.textPrimary
-                    elide: Text.ElideRight
-                    font.pixelSize: dialog.hostWindow.dp(12)
-                }
-                SpinBox {
-                    id: agentCountSpin
-                    objectName: "agentCountSpin"
-                    from: dialog.manifestRoster ? 2 : 1
-                    to: 20
-                    value: 1
-                    editable: true
-                    onValueModified: dialog.resizeRoster(value)
-                }
-                Text {
-                    text: qsTr("Parallel")
-                    color: dialog.colors.textSecondary
-                    font.pixelSize: dialog.hostWindow.dp(10)
-                }
-                SpinBox {
-                    id: maxParallelismSpin
-                    from: 1
-                    to: 20
-                    value: Math.min(dialog.defaultMaxParallelAgents,
-                                    agentCountSpin.value)
-                    editable: true
-                }
-                Item { Layout.fillWidth: true }
-            }
-
-            // Its own row: next to the count and parallelism it did not fit, and the
-            // "Apply to all" button was cut off.
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: dialog.hostWindow.dp(8)
-                visible: agentCountSpin.value > 1
-                ComboBox {
-                    id: bulkModelCombo
-                    // A single agent already has its own model picker in the
-                    // roster row below; a second, duplicate control here is
-                    // just noise, so it only appears once there's more than
-                    // one agent to bulk-assign.
-                    visible: agentCountSpin.value > 1
-                    Layout.fillWidth: true
-                    Layout.minimumWidth: dialog.hostWindow.dp(120)
-                    model: dialog.agentChoices
-                    textRole: "label"
-                    font.pixelSize: dialog.hostWindow.dp(10)
-                }
-                RunActionButton {
-                    visible: agentCountSpin.value > 1
-                    hostWindow: dialog.hostWindow
-                    colors: dialog.colors
-                    text: qsTr("Apply to all")
-                    enabled: bulkModelCombo.currentIndex >= 0
-                    onClicked: {
-                        for (let index = 0; index < agentsModel.count; ++index)
-                            agentsModel.setProperty(index, "modelChoiceIndex", bulkModelCombo.currentIndex)
-                    }
-                }
-            }
-
-            ScrollView {
-                id: rosterScroll
-                Layout.fillWidth: true
-                // Wide: every row is shown and the dialog's own scroll area scrolls (no nested
-                // scrollbars). Narrow: a bounded list that scrolls on its own.
-                Layout.preferredHeight: dialog.wideLayout
-                                        ? rosterColumn.implicitHeight + dialog.hostWindow.dp(4)
-                                        : dialog.hostWindow.dp(190)
-                contentWidth: availableWidth
-                clip: true
-                rightPadding: dialog.hostWindow.dp(12)
-                ColumnLayout {
-                    id: rosterColumn
-                    width: rosterScroll.availableWidth
-                    spacing: dialog.hostWindow.dp(6)
-                    Repeater {
-                        model: agentsModel
-                        delegate: ColumnLayout {
-                            id: agentDelegate
-                            required property int index
-                            required property string role
-                            required property string instructions
-                            required property int modelChoiceIndex
-                            required property int maxAttempts
-                            required property int fallbackChoiceIndex
-                            required property bool fallbackMissing
-                            required property bool workspaceAccess
-                            Layout.fillWidth: true
-                            spacing: dialog.hostWindow.dp(4)
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: dialog.hostWindow.dp(6)
-                                Text {
-                                    text: dialog.manifestRoster
-                                          ? (agentDelegate.index === 0 ? qsTr("Lead") : qsTr("Worker %1").arg(agentDelegate.index))
-                                          : (agentDelegate.index === 0 ? qsTr("Architect") : qsTr("Agent %1").arg(agentDelegate.index + 1))
-                                    color: agentDelegate.index === 0 ? dialog.colors.accent : dialog.colors.textSecondary
-                                    font.pixelSize: dialog.hostWindow.dp(10)
-                                    Layout.preferredWidth: dialog.hostWindow.dp(70)
-                                }
-                                TextField {
-                                    Layout.fillWidth: true
-                                    Layout.preferredWidth: dialog.hostWindow.dp(120)
-                                    text: agentDelegate.role
-                                    placeholderText: dialog.manifestRoster && agentDelegate.index > 0
-                                                     ? qsTr("Role, e.g. recent-alerts")
-                                                     : qsTr("Role")
-                                    color: dialog.colors.textPrimary
-                                    font.pixelSize: dialog.hostWindow.dp(10)
-                                    onEditingFinished: agentsModel.setProperty(agentDelegate.index, "role", text.trim())
-                                }
-                                ComboBox {
-                                    Layout.fillWidth: true
-                                    Layout.preferredWidth: dialog.hostWindow.dp(210)
-                                    Layout.minimumWidth: dialog.hostWindow.dp(120)
-                                    model: dialog.agentChoices
-                                    textRole: "label"
-                                    currentIndex: agentDelegate.modelChoiceIndex
-                                    font.pixelSize: dialog.hostWindow.dp(9)
-                                    onActivated: selectedIndex => agentsModel.setProperty(agentDelegate.index, "modelChoiceIndex", selectedIndex)
-                                }
-                            }
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: dialog.hostWindow.dp(6)
-                                // A Manifest lead only plans, so it has no workspace toggle; a
-                                // Manifest worker always has workspace access (required to be
-                                // assignable), shown checked and fixed.
-                                visible: !(dialog.manifestRoster && agentDelegate.index === 0)
-                                Item { Layout.preferredWidth: dialog.hostWindow.dp(70) }
-                                CheckBox {
-                                    id: workspaceAccessCheck
-                                    objectName: "workspaceAccessCheck"
-                                    text: dialog.manifestRoster
-                                          ? qsTr("Workspace access (required for workers)")
-                                          : qsTr("Workspace access")
-                                    enabled: !dialog.manifestRoster
-                                    checked: dialog.manifestRoster || agentDelegate.workspaceAccess
-                                    font.pixelSize: dialog.hostWindow.dp(9)
-                                    // Read-only workspace tools + propose_change_set for
-                                    // this agent, instead of a single-shot completion -
-                                    // does not support retry attempts or a fallback
-                                    // model (see the Attempts/Fallback row below, which
-                                    // this disables - kept in its own row rather than
-                                    // that one, since a control cannot sit inside the
-                                    // row it disables).
-                                    onToggled: agentsModel.setProperty(agentDelegate.index, "workspaceAccess", checked)
-                                }
-                                Item { Layout.fillWidth: true }
-                            }
-                            SuggestionTextField {
-                                Layout.fillWidth: true
-                                visible: dialog.rosterInstructionsApplicable(agentDelegate.index)
-                                hostWindow: dialog.hostWindow
-                                colors: dialog.colors
-                                historyStore: agentContextSuggestionStore
-                                text: agentDelegate.instructions
-                                placeholderText: dialog.manifestRoster
-                                                 ? qsTr("Instructions for this worker: the lead reads them when assigning, the worker receives them (optional)")
-                                                 : (agentDelegate.index === 0
-                                                    ? qsTr("Architect context or orchestration constraints (optional)")
-                                                    : qsTr("Agent-specific task context (optional)"))
-                                color: dialog.colors.textPrimary
-                                font.pixelSize: dialog.hostWindow.dp(9)
-                                onCommitted: value => agentsModel.setProperty(agentDelegate.index, "instructions", value)
-                            }
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: dialog.hostWindow.dp(6)
-                                // A workspace-access agent does not support
-                                // retry attempts or a fallback model (see
-                                // rosterPayload()'s run.workspace_access_no_retry
-                                // note) - visibly disabled rather than hidden so
-                                // it stays clear these values are ignored, not lost.
-                                // A Manifest roster never uses attempts or a fallback (one attempt
-                                // per task, no provider fallback), so the row is not offered at all.
-                                visible: !dialog.manifestRoster
-                                enabled: !agentDelegate.workspaceAccess
-                                opacity: agentDelegate.workspaceAccess ? 0.5 : 1.0
-                                Item { Layout.preferredWidth: dialog.hostWindow.dp(70) }
-                                Text {
-                                    text: qsTr("Attempts")
-                                    color: dialog.colors.textSecondary
-                                    font.pixelSize: dialog.hostWindow.dp(9)
-                                }
-                                SpinBox {
-                                    from: 1
-                                    to: 5
-                                    value: agentDelegate.maxAttempts
-                                    editable: true
-                                    onValueModified: agentsModel.setProperty(agentDelegate.index, "maxAttempts", value)
-                                }
-                                Text {
-                                    text: qsTr("Fallback")
-                                    color: dialog.colors.textSecondary
-                                    font.pixelSize: dialog.hostWindow.dp(9)
-                                }
-                                ComboBox {
-                                    Layout.fillWidth: true
-                                    model: dialog.fallbackChoices
-                                    textRole: "label"
-                                    currentIndex: agentDelegate.fallbackChoiceIndex + 1
-                                    font.pixelSize: dialog.hostWindow.dp(9)
-                                    onActivated: selectedIndex => {
-                                        agentsModel.setProperty(
-                                            agentDelegate.index, "fallbackChoiceIndex", selectedIndex - 1)
-                                        agentsModel.setProperty(
-                                            agentDelegate.index, "fallbackMissing", false)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            Text {
-                objectName: "manifestRoleWarning"
-                Layout.fillWidth: true
-                visible: dialog.duplicateRoleWarning.length > 0
-                text: dialog.duplicateRoleWarning
-                color: dialog.colors.warning
-                wrapMode: Text.WordWrap
-                font.pixelSize: dialog.hostWindow.dp(9)
-            }
+            onMemberFieldChanged: (index, field, value) => agentsModel.setProperty(index, field, value)
         }
 
         // Provider limits of a per-Run roster (a saved profile carries its own). Off = the Backend

@@ -1632,6 +1632,7 @@ void testLegacyConversionRecordQmlOnlyRendersTheStoredAudit()
     const std::string details = read(runsDir / "Runs_Objects" / "RunDetailsPanel.qml");
     const std::string list = read(runsDir / "Runs_Objects" / "RunListPanel.qml");
     const std::string page = read(runsDir / "RunsPage.qml");
+    const std::string projections = read(runsDir / "Runs_Objects" / "RunModelSnapshots.qml");
     const auto count = [](const std::string& text, const std::string& needle) {
         std::size_t found = 0;
         for (std::size_t at = text.find(needle); at != std::string::npos; at = text.find(needle, at + 1))
@@ -1675,25 +1676,34 @@ void testLegacyConversionRecordQmlOnlyRendersTheStoredAudit()
     assert(has(list, "objectName: \"legacyConversionChip\"")
         && has(list, "String(runItem.modelData.legacyConversion || \"\") !== \"\"")
         && has(list, "runItem.modelData.legacyConversion === \"unreadable\""));
-    assert(has(page, "legacyConversion: it.legacyConversion")
-        && has(page, "required property string legacyConversion")
-        && has(page, "onLegacyConversionChanged: page.scheduleRunsSnapshotRebuild()")
-        && has(page, "function conversionLabel(marker)"));
+    assert(has(page, "RunModelSnapshots {") && has(page, "backend: page.backend"));
+    assert(has(projections, "legacyConversion: it.legacyConversion")
+        && has(projections, "required property string legacyConversion")
+        && has(projections, "onLegacyConversionChanged: snapshots.scheduleRunsSnapshotRebuild()")
+        && has(projections, "function conversionLabel(marker)"));
+}
+
+std::string readManifestPresentationQml()
+{
+    const auto directory = std::filesystem::path(AI_ORCHESTRATOR_QML_SOURCE_DIR)
+        / "pages" / "Runs" / "Runs_Objects";
+    std::ostringstream source;
+    for (const char* file : {"ManifestPanel.qml", "ManifestEnvironmentSection.qml",
+                             "ManifestRosterSection.qml", "ManifestTaskCard.qml"}) {
+        std::ifstream stream(directory / file, std::ios::binary);
+        assert(stream.is_open() && "Could not open a deployed Manifest presentation component");
+        source << stream.rdbuf() << '\n';
+    }
+    return source.str();
 }
 
 // AG-17.6: static proof that the shipped QML presents the roster as a pool of available
 // workers and never styles an unused worker as a problem.
 void testManifestPanelQmlPresentsUnusedWorkersWithoutWarning()
 {
-    const std::filesystem::path panelPath = std::filesystem::path(AI_ORCHESTRATOR_QML_SOURCE_DIR)
-        / "pages" / "Runs" / "Runs_Objects" / "ManifestPanel.qml";
-    std::ifstream stream(panelPath, std::ios::binary);
-    assert(stream.is_open() && "Could not open ManifestPanel.qml for the roster presentation contract");
-    std::ostringstream buffer;
-    buffer << stream.rdbuf();
-    const std::string qml = buffer.str();
+    const std::string qml = readManifestPresentationQml();
     assert(qml.find("Available workers") != std::string::npos);
-    assert(qml.find("qsTr(\"Unused\")") != std::string::npos);
+    assert(qml.find("qsTranslate(\"ManifestPanel\", \"Unused\")") != std::string::npos);
     // The participation text is coloured only success (assigned) or muted: a worker
     // without a task is never rendered with the warning or error colour.
     const auto text = qml.find("objectName: \"rosterParticipationText\"");
@@ -1711,27 +1721,21 @@ void testManifestPanelQmlPresentsUnusedWorkersWithoutWarning()
 // colour reserved for that debt block.
 void testManifestPanelQmlWordsPriceStatesAndNeverComputesCost()
 {
-    const std::filesystem::path panelPath = std::filesystem::path(AI_ORCHESTRATOR_QML_SOURCE_DIR)
-        / "pages" / "Runs" / "Runs_Objects" / "ManifestPanel.qml";
-    std::ifstream stream(panelPath, std::ios::binary);
-    assert(stream.is_open() && "Could not open ManifestPanel.qml for the usage presentation contract");
-    std::ostringstream buffer;
-    buffer << stream.rdbuf();
-    const std::string qml = buffer.str();
+    const std::string qml = readManifestPresentationQml();
 
     const auto functionStart = qml.find("function usageSummary(usage)");
     assert(functionStart != std::string::npos);
-    const auto functionEnd = qml.find("ColumnLayout {", functionStart);
+    const auto functionEnd = qml.find("\n    }", functionStart);
     assert(functionEnd != std::string::npos);
     const std::string summary = qml.substr(functionStart, functionEnd - functionStart);
     assert(summary.find("usage.priceState === \"none\"") != std::string::npos
         && summary.find("usage.priceState === \"known\"") != std::string::npos
         && summary.find("usage.priceState === \"partial\"") != std::string::npos);
-    assert(summary.find("qsTr(\"price unknown\")") != std::string::npos
+    assert(summary.find("qsTranslate(\"ManifestPanel\", \"price unknown\")") != std::string::npos
         && "An unknown price must be worded, not rendered as an amount");
     // costText is only used by the known and partial branches; the unknown branch is the
     // final else and never touches it.
-    const auto unknownBranch = summary.find("else cost = qsTr(\"price unknown\")");
+    const auto unknownBranch = summary.find("else cost = qsTranslate(\"ManifestPanel\", \"price unknown\")");
     assert(unknownBranch != std::string::npos);
     const auto unknownLineEnd = summary.find('\n', unknownBranch);
     assert(summary.substr(unknownBranch, unknownLineEnd - unknownBranch).find("costText")
@@ -1744,7 +1748,7 @@ void testManifestPanelQmlWordsPriceStatesAndNeverComputesCost()
     // A partial amount is worded as a lower bound ("at least ...").
     const auto partialBranch = summary.find("usage.priceState === \"partial\"");
     assert(partialBranch != std::string::npos
-        && summary.find("qsTr(\"at least %1", partialBranch) != std::string::npos);
+        && summary.find("qsTranslate(\"ManifestPanel\", \"at least %1", partialBranch) != std::string::npos);
 
     // The warning colour appears in the incomplete-attribution line, never in the per-member
     // usage line.
@@ -1787,13 +1791,7 @@ void testManifestPanelQmlWordsPriceStatesAndNeverComputesCost()
 // leftover string in the QML itself would be caught too.
 void testManifestPanelQmlNeverLabelsRetryAsCreateSetupRun()
 {
-    const std::filesystem::path qmlPath = std::filesystem::path(AI_ORCHESTRATOR_QML_SOURCE_DIR)
-        / "pages" / "Runs" / "Runs_Objects" / "ManifestPanel.qml";
-    std::ifstream stream(qmlPath, std::ios::binary);
-    assert(stream.is_open() && "Could not open ManifestPanel.qml for the naming-proof test");
-    std::ostringstream buffer;
-    buffer << stream.rdbuf();
-    const std::string content = buffer.str();
+    const std::string content = readManifestPresentationQml();
 
     assert(content.find("Create setup Run") == std::string::npos
         && "ManifestPanel.qml must never label the retry action \"Create setup Run\" - it is a "
@@ -3097,7 +3095,26 @@ void testManualHandoffPanelUsesBackendProjectionOnly()
     assert(panelStream.is_open());
     std::ostringstream panelBuffer;
     panelBuffer << panelStream.rdbuf();
-    const std::string panel = panelBuffer.str();
+    const std::string panelRoot = panelBuffer.str();
+    std::string panel = panelRoot;
+    for (const char* component : {"ManualHandoffCandidateChanges", "ManualHandoffAttemptHistory",
+                                  "ManualHandoffReviewSection"}) {
+        assert(panelRoot.find(std::string(component) + " {") != std::string::npos
+            && "The handoff panel must instantiate each extracted section");
+        const auto componentPath = panelPath.parent_path() / (std::string(component) + ".qml");
+        std::ifstream componentStream(componentPath, std::ios::binary);
+        assert(componentStream.is_open());
+        std::ostringstream componentBuffer;
+        componentBuffer << componentStream.rdbuf();
+        const std::string source = componentBuffer.str();
+        assert(source.find("required property var controller") != std::string::npos);
+        panel += "\n" + source;
+    }
+    assert(panelRoot.find("onResetRequested:") != std::string::npos
+        && panelRoot.find("onMemberSelectionRequested:") != std::string::npos
+        && panelRoot.find("onDiffToggleRequested:") != std::string::npos
+        && panelRoot.find("onFindingsRequested:") != std::string::npos
+        && "Section actions must be relayed to the panel's existing handlers");
 
     assert(panel.find("panel.controller.isApplicable") != std::string::npos
         && panel.find("panel.controller.canCreate") != std::string::npos
@@ -3239,6 +3256,12 @@ void testManualHandoffPanelUsesBackendProjectionOnly()
     assert(cmakeBuffer.str().find(
         "pages/Runs/Runs_Objects/ManualHandoffPanel.qml") != std::string::npos
         && "The deployed QML module must compile/register ManualHandoffPanel.qml");
+    for (const char* component : {"ManualHandoffCandidateChanges", "ManualHandoffAttemptHistory",
+                                  "ManualHandoffReviewSection"}) {
+        assert(cmakeBuffer.str().find(std::string("pages/Runs/Runs_Objects/") + component + ".qml")
+                != std::string::npos
+            && "Each extracted handoff section must be registered in the deployed QML module");
+    }
 
     // REMAIN_TO_DO 6a (b)+(c): the recorded findings stand in ONE shared block above BOTH repair panels, are
     // registered in the module, are not rendered a second time inside the handoff panel, and the block gates
@@ -5926,7 +5949,10 @@ void testPromptWorkshopQmlOnlyRendersAndRelaysTheBackendsPreview()
     const QString header = readQmlSource("pages/Chats/Chat_Objects/ChatHeader.qml");
     const QString drafts = readQmlSource("pages/Runs/Runs_Objects/DraftsDialog.qml");
     const QString newRun = readQmlSource("pages/Runs/Runs_Objects/NewRunDialog.qml").replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
+    const QString rosterSetup = readQmlSource("pages/Runs/Runs_Objects/RosterSetupSection.qml");
+    const QString rosterMember = readQmlSource("pages/Runs/Runs_Objects/RosterMemberRow.qml");
     const QString runsPage = readQmlSource("pages/Runs/RunsPage.qml");
+    const QString projections = readQmlSource("pages/Runs/Runs_Objects/RunModelSnapshots.qml");
     const QString pageHost = readQmlSource("pages/PageHost.qml");
 
     // The per-message action: the Backend decides, QML only looks at its answer. The reply text is never scanned.
@@ -5937,7 +5963,8 @@ void testPromptWorkshopQmlOnlyRendersAndRelaysTheBackendsPreview()
         && !delegate.contains(QStringLiteral("content.includes")) && !delegate.contains(QStringLiteral("content.search"))
         && "QML must not look for a plan in a message");
     // No QML file parses a plan or asks for a direct write.
-    for (const QString* source : {&delegate, &dialog, &chatsPage, &header, &drafts, &newRun, &runsPage, &pageHost}) {
+    for (const QString* source : {&delegate, &dialog, &chatsPage, &header, &drafts, &newRun,
+                                  &rosterSetup, &rosterMember, &runsPage, &projections, &pageHost}) {
         assert(!source->contains(QStringLiteral("createFromMessage"))
             && "There is no write that does not go through a preview token");
         assert(!source->contains(QStringLiteral("JSON.parse")) && "QML does not parse a plan");
@@ -5988,7 +6015,7 @@ void testPromptWorkshopQmlOnlyRendersAndRelaysTheBackendsPreview()
         && chatsPage.contains(QStringLiteral("onReloadChoicesRequested: page.loadPlanChoices()"))
         && dialog.contains(QStringLiteral("signal reloadChoicesRequested()"))
         && dialog.contains(QStringLiteral("nextRunPlanChoiceError")));
-    assert(runsPage.contains(QStringLiteral("required property bool edited")) && runsPage.contains(QStringLiteral("edited: it.edited")));
+    assert(projections.contains(QStringLiteral("required property bool edited")) && projections.contains(QStringLiteral("edited: it.edited")));
 
     // New Run: an empty-roster per-Run draft stays a real-provider Manifest roster (its contracts stay visible);
     // it never switches to Mock, and it cannot start before the models are chosen.
@@ -5999,13 +6026,13 @@ void testPromptWorkshopQmlOnlyRendersAndRelaysTheBackendsPreview()
     const QString emptyBranchText = newRun.mid(emptyBranch, emptyBranchEnd - emptyBranch);
     assert(!emptyBranchText.contains(QStringLiteral("productionCheck.checked = false"))
         && !emptyBranchText.contains(QStringLiteral("customRosterCheck.checked = false"))
-        && !emptyBranchText.contains(QStringLiteral("manifestRosterCheck.checked = false"))
+        && !emptyBranchText.contains(QStringLiteral("rosterSection.manifestChecked = false"))
         && "An empty-roster draft must not be switched to Mock");
     assert(emptyBranchText.contains(QStringLiteral("productionCheck.checked = true"))
         && emptyBranchText.contains(QStringLiteral("customRosterCheck.checked = true"))
         && emptyBranchText.contains(QStringLiteral("\"modelChoiceIndex\", -1"))
         && emptyBranchText.contains(QStringLiteral("rosterNeedsModels = true")));
-    assert(newRun.contains(QStringLiteral("objectName: \"newRunRosterSetupHint\""))
+    assert(rosterSetup.contains(QStringLiteral("objectName: \"newRunRosterSetupHint\""))
         && newRun.contains(QStringLiteral("Choose a model for the lead and for every worker before starting this Run.")));
     // A draft is written back in place from the same fields as a new one; the page owns the Backend call.
     assert(newRun.contains(QStringLiteral("signal updateDraftRequested("))

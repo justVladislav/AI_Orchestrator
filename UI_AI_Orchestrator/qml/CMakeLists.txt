@@ -57,10 +57,18 @@ qt_add_qml_module(UI_AI_Orchestrator_Content
         pages/Chats/Chat_Objects/ChatSidebar.qml
         pages/Chats/Chat_Objects/NextRunPlanDialog.qml
         pages/Runs/RunsPage.qml
+        pages/Runs/Runs_Objects/RunModelSnapshots.qml
+        pages/Runs/Runs_Objects/RosterMemberRow.qml
+        pages/Runs/Runs_Objects/RosterSetupSection.qml
         pages/Runs/Runs_Objects/RunActionButton.qml
         pages/Runs/Runs_Objects/RunComboBox.qml
         pages/Runs/Runs_Objects/RunCalendarView.qml
         pages/Runs/Runs_Objects/RunDetailsPanel.qml
+        pages/Runs/Runs_Objects/RunProviderBudgetCard.qml
+        pages/Runs/Runs_Objects/RunContractsCard.qml
+        pages/Runs/Runs_Objects/RunPlannerOutcomeCard.qml
+        pages/Runs/Runs_Objects/RunVerificationCard.qml
+        pages/Runs/Runs_Objects/RunWorkspaceProvenanceCard.qml
         pages/Runs/Runs_Objects/RunListPanel.qml
         pages/Runs/Runs_Objects/RunMetricCard.qml
         pages/Runs/Runs_Objects/RunScrollBar.qml
@@ -71,7 +79,13 @@ qt_add_qml_module(UI_AI_Orchestrator_Content
         pages/Runs/Runs_Objects/LegacyConversionRecordPanel.qml
         pages/Runs/Runs_Objects/AgentSessionPanel.qml
         pages/Runs/Runs_Objects/ManifestPanel.qml
+        pages/Runs/Runs_Objects/ManifestEnvironmentSection.qml
+        pages/Runs/Runs_Objects/ManifestRosterSection.qml
+        pages/Runs/Runs_Objects/ManifestTaskCard.qml
         pages/Runs/Runs_Objects/ManualHandoffPanel.qml
+        pages/Runs/Runs_Objects/ManualHandoffCandidateChanges.qml
+        pages/Runs/Runs_Objects/ManualHandoffAttemptHistory.qml
+        pages/Runs/Runs_Objects/ManualHandoffReviewSection.qml
         pages/Runs/Runs_Objects/ManualHandoffFindingsDialog.qml
         pages/Runs/Runs_Objects/RecordedFindingsBlock.qml
         pages/Runs/Runs_Objects/OutcomeBriefPanel.qml

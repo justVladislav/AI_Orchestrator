@@ -175,10 +175,6 @@ Rectangle {
         return colors.textMuted
     }
 
-    function budgetNumber(value) {
-        return Number(value || 0).toLocaleString(Qt.locale(), "f", 0)
-    }
-
     // Live process indicator: while a run is "running" at the run level, the
     // stage timeline (panel.runData.stages) is the only source that says
     // *what* is actually happening right now, so this label is derived from
@@ -490,124 +486,12 @@ Rectangle {
                 font.weight: Font.DemiBold
             }
 
-            Rectangle {
-                objectName: "providerBudgetPanel"
-                Layout.fillWidth: true
-                Layout.preferredHeight: providerBudgetColumn.implicitHeight + panel.hostWindow.dp(20)
-                radius: panel.colors.cornerRadiusSmall
-                color: panel.colors.surface
-                border.width: 1
-                border.color: panel.providerBudgetStopCode.length > 0
-                              ? panel.colors.error : panel.colors.border
-
-                ColumnLayout {
-                    id: providerBudgetColumn
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    anchors.leftMargin: panel.hostWindow.dp(11)
-                    anchors.rightMargin: panel.hostWindow.dp(11)
-                    spacing: panel.hostWindow.dp(5)
-
-                    Text {
-                        objectName: "providerBudgetUsageText"
-                        Layout.fillWidth: true
-                        text: panel.runData
-                              ? qsTr("Input %1 / %2 · output %3 / %4 · turns %5 / %6")
-                                .arg(panel.budgetNumber(panel.runData.providerBudgetInputTokens))
-                                .arg(panel.budgetNumber(panel.runData.providerBudgetMaxInputTokens))
-                                .arg(panel.budgetNumber(panel.runData.providerBudgetOutputTokens))
-                                .arg(panel.budgetNumber(panel.runData.providerBudgetMaxOutputTokens))
-                                .arg(panel.budgetNumber(panel.runData.providerTurnsStarted))
-                                .arg(panel.budgetNumber(panel.runData.providerBudgetMaxTurns))
-                                + (Number(panel.runData.providerBudgetTurnsRaisedFrom || 0) > 0
-                                   ? qsTr(" (raised automatically from %1)")
-                                     .arg(panel.budgetNumber(panel.runData.providerBudgetTurnsRaisedFrom))
-                                   : "")
-                              : ""
-                        color: panel.providerBudgetStopCode.length > 0
-                               ? panel.colors.error : panel.colors.textPrimary
-                        font.pixelSize: panel.hostWindow.dp(9.5)
-                        wrapMode: Text.WordWrap
-                    }
-                    Text {
-                        Layout.fillWidth: true
-                        text: panel.runData
-                              ? qsTr("Tool calls %1 / %2 · returned %3 / %4 bytes · request timeout %5 s · Run limit %6 min")
-                                .arg(panel.budgetNumber(panel.runData.providerToolCalls))
-                                .arg(panel.budgetNumber(panel.runData.providerBudgetMaxToolCalls))
-                                .arg(panel.budgetNumber(panel.runData.providerToolResultBytes))
-                                .arg(panel.budgetNumber(panel.runData.providerBudgetMaxToolResultBytes))
-                                .arg(panel.budgetNumber(panel.runData.providerBudgetMaxRequestTimeMs / 1000))
-                                .arg(panel.budgetNumber(panel.runData.providerBudgetMaxWallTimeMs / 60000))
-                              : ""
-                        color: panel.colors.textSecondary
-                        font.pixelSize: panel.hostWindow.dp(8.5)
-                        wrapMode: Text.WordWrap
-                    }
-                    Text {
-                        objectName: "providerCacheUsageText"
-                        Layout.fillWidth: true
-                        visible: panel.runData
-                                 && (Number(panel.runData.cacheCreationInputTokens) > 0
-                                     || Number(panel.runData.cacheReadInputTokens) > 0)
-                        text: panel.runData
-                              ? qsTr("Prompt cache: %1 written · %2 read (read tokens do not count toward the input limit above)")
-                                .arg(panel.budgetNumber(panel.runData.cacheCreationInputTokens))
-                                .arg(panel.budgetNumber(panel.runData.cacheReadInputTokens))
-                              : ""
-                        color: panel.colors.textSecondary
-                        font.pixelSize: panel.hostWindow.dp(8.5)
-                        wrapMode: Text.WordWrap
-                    }
-                    Text {
-                        // Package 4 (2026-09-28 planner-terminal-budget-hardening):
-                        // a real Anthropic usage export showed most of a Run's
-                        // "raw input" total is steeply-discounted cache-read
-                        // tokens, not fresh billable work - this line renders
-                        // all five Backend-projected categories explicitly so
-                        // none of them can be mistaken for another. Every
-                        // number here is a direct Backend read-model field;
-                        // QML performs no subtraction or classification.
-                        objectName: "providerUsageBreakdownText"
-                        Layout.fillWidth: true
-                        visible: panel.runData
-                                 && (Number(panel.runData.cacheCreationInputTokens) > 0
-                                     || Number(panel.runData.cacheReadInputTokens) > 0)
-                        text: panel.runData
-                              ? qsTr("Raw input %1 = non-cache input %2 + cache write %3 + cache read %4 · output %5")
-                                .arg(panel.budgetNumber(panel.runData.inputTokens))
-                                .arg(panel.budgetNumber(panel.runData.nonCacheInputTokens))
-                                .arg(panel.budgetNumber(panel.runData.cacheCreationInputTokens))
-                                .arg(panel.budgetNumber(panel.runData.cacheReadInputTokens))
-                                .arg(panel.budgetNumber(panel.runData.outputTokens))
-                              : ""
-                        color: panel.colors.textSecondary
-                        font.pixelSize: panel.hostWindow.dp(8.5)
-                        wrapMode: Text.WordWrap
-                    }
-                    Text {
-                        objectName: "providerBudgetStopReason"
-                        Layout.fillWidth: true
-                        visible: panel.providerUsageUnavailable
-                                 || panel.providerBudgetStopCode.length > 0
-                        text: panel.runData
-                              ? (panel.providerBudgetStopCode.length > 0
-                                 ? qsTr("Stopped by Backend: %1").arg(panel.providerBudgetStopCode)
-                                 : qsTr("Provider usage is unavailable; execution is fail-closed."))
-                              : ""
-                        color: panel.colors.error
-                        font.pixelSize: panel.hostWindow.dp(8.5)
-                        wrapMode: Text.WordWrap
-                    }
-                    Text {
-                        Layout.fillWidth: true
-                        text: qsTr("Cost enforcement is unavailable until a trusted versioned pricing snapshot is present; token limits remain authoritative.")
-                        color: panel.colors.textMuted
-                        font.pixelSize: panel.hostWindow.dp(8)
-                        wrapMode: Text.WordWrap
-                    }
-                }
+            RunProviderBudgetCard {
+                hostWindow: panel.hostWindow
+                colors: panel.colors
+                runData: panel.runData
+                providerBudgetStopCode: panel.providerBudgetStopCode
+                providerUsageUnavailable: panel.providerUsageUnavailable
             }
 
             // PC-2: the interface contracts and constraints this Run froze. The Backend delivers each one,
@@ -622,82 +506,11 @@ Rectangle {
                 font.weight: Font.DemiBold
             }
 
-            Rectangle {
-                objectName: "runContractsPanel"
-                Layout.fillWidth: true
-                visible: panel.contractCount > 0
-                Layout.preferredHeight: runContractsColumn.implicitHeight + panel.hostWindow.dp(20)
-                radius: panel.colors.cornerRadiusSmall
-                color: panel.colors.surface
-                border.width: 1
-                border.color: panel.colors.border
-
-                ColumnLayout {
-                    id: runContractsColumn
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    anchors.leftMargin: panel.hostWindow.dp(11)
-                    anchors.rightMargin: panel.hostWindow.dp(11)
-                    spacing: panel.hostWindow.dp(4)
-
-                    Text {
-                        objectName: "runContractsSummary"
-                        Layout.fillWidth: true
-                        text: qsTr("%1 frozen with this run · fingerprint %2")
-                              .arg(panel.contractCount)
-                              .arg(panel.runData ? String(panel.runData.interfaceContractsFingerprint || "").slice(0, 12) : "")
-                        color: panel.colors.textPrimary
-                        font.pixelSize: panel.hostWindow.dp(9.5)
-                        wrapMode: Text.WordWrap
-                    }
-
-                    Repeater {
-                        objectName: "runContractsRepeater"
-                        model: panel.runData ? panel.runData.interfaceContracts : []
-
-                        delegate: ColumnLayout {
-                            id: contractItem
-                            required property var modelData
-                            Layout.fillWidth: true
-                            spacing: panel.hostWindow.dp(3)
-
-                            Text {
-                                objectName: "runContractLine"
-                                Layout.fillWidth: true
-                                text: qsTr("%1 · %2 · %3 · applies to %4")
-                                      .arg(contractItem.modelData.id)
-                                      .arg(contractItem.modelData.kind === "constraint"
-                                           ? qsTr("constraint") : qsTr("interface contract"))
-                                      .arg(contractItem.modelData.title)
-                                      .arg(contractItem.modelData.appliesToPaths.length > 0
-                                           ? contractItem.modelData.appliesToPaths.join(", ")
-                                           : qsTr("every worker"))
-                                color: panel.colors.textSecondary
-                                font.pixelSize: panel.hostWindow.dp(8.5)
-                                wrapMode: Text.WordWrap
-                            }
-
-                            // The exact text the Backend hands to the workers, byte for byte (the Backend only
-                            // normalizes line endings). Read-only but selectable, so it can be compared with a
-                            // task's output or copied.
-                            TextEdit {
-                                objectName: "runContractText"
-                                Layout.fillWidth: true
-                                Layout.leftMargin: panel.hostWindow.dp(8)
-                                readOnly: true
-                                selectByMouse: true
-                                text: String(contractItem.modelData.text || "")
-                                color: panel.colors.textPrimary
-                                selectionColor: panel.colors.accent
-                                selectedTextColor: panel.colors.textOnAccent
-                                font.family: "monospace"
-                                font.pixelSize: panel.hostWindow.dp(8.5)
-                                wrapMode: TextEdit.Wrap
-                            }
-                        }
-                    }
-                }
+            RunContractsCard {
+                hostWindow: panel.hostWindow
+                colors: panel.colors
+                runData: panel.runData
+                contractCount: panel.contractCount
             }
 
             Text {
@@ -901,190 +714,29 @@ Rectangle {
                 }
             }
 
-            Rectangle {
-                objectName: "plannerOutcomeCard"
-                Layout.fillWidth: true
-                Layout.preferredHeight: plannerOutcomeColumn.implicitHeight
-                                        + panel.hostWindow.dp(20)
-                visible: panel.plannerReportArtifact !== null
-                radius: panel.colors.cornerRadiusSmall
-                color: panel.colors.surface
-                border.width: 1
-                border.color: panel.plannerReportArtifact
-                              && panel.plannerReportArtifact.name
-                                 === "manifest-planning-no-changes.md"
-                              ? panel.colors.success : panel.colors.warning
-
-                ColumnLayout {
-                    id: plannerOutcomeColumn
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    anchors.leftMargin: panel.hostWindow.dp(10)
-                    anchors.rightMargin: panel.hostWindow.dp(10)
-                    spacing: panel.hostWindow.dp(6)
-
-                    Text {
-                        Layout.fillWidth: true
-                        text: panel.plannerReportArtifact
-                              && panel.plannerReportArtifact.name
-                                 === "manifest-planning-no-changes.md"
-                              ? qsTr("Planner: current task already satisfied")
-                              : qsTr("Planner diagnostics")
-                        color: panel.colors.textPrimary
-                        font.pixelSize: panel.hostWindow.dp(10)
-                        font.weight: Font.DemiBold
-                    }
-                    Text {
-                        Layout.fillWidth: true
-                        text: panel.plannerReportArtifact
-                              && panel.plannerReportArtifact.name
-                                 === "manifest-planning-no-changes.md"
-                              ? qsTr("Execution was intentionally skipped. Review the evidence tied to inspected paths and any recommended next step; no next stage was launched automatically.")
-                              : qsTr("Review the exact primary/final rejection codes and safe Backend validation findings.")
-                        color: panel.colors.textSecondary
-                        font.pixelSize: panel.hostWindow.dp(9)
-                        wrapMode: Text.WordWrap
-                    }
-                    RunActionButton {
-                        objectName: "viewPlannerReportButton"
-                        hostWindow: panel.hostWindow
-                        colors: panel.colors
-                        text: qsTr("View planner report")
-                        iconText: "↗"
-                        primary: true
-                        onClicked: panel.artifactRequested(
-                                       panel.runData.runId,
-                                       panel.plannerReportArtifact.artifactId)
-                    }
-                }
+            RunPlannerOutcomeCard {
+                hostWindow: panel.hostWindow
+                colors: panel.colors
+                runData: panel.runData
+                plannerReportArtifact: panel.plannerReportArtifact
+                onArtifactRequested: (runId, artifactId) => panel.artifactRequested(runId, artifactId)
             }
 
-            Rectangle {
-                objectName: "manifestVerificationCard"
-                Layout.fillWidth: true
-                Layout.preferredHeight: verificationColumn.implicitHeight
-                                        + panel.hostWindow.dp(20)
-                visible: panel.runData !== null
-                         && panel.runData.workflowId === "execution-manifest-v1"
-                radius: panel.colors.cornerRadiusSmall
-                color: panel.colors.surface
-                border.width: 1
-                // The card is intentionally never green from artifact
-                // presence alone. Exact statuses live in the integrity-
-                // checked record and unknown/not-run must stay neutral.
-                border.color: panel.colors.information
-
-                ColumnLayout {
-                    id: verificationColumn
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    anchors.leftMargin: panel.hostWindow.dp(10)
-                    anchors.rightMargin: panel.hostWindow.dp(10)
-                    spacing: panel.hostWindow.dp(6)
-
-                    Text {
-                        Layout.fillWidth: true
-                        text: qsTr("Manifest verification")
-                        color: panel.colors.textPrimary
-                        font.pixelSize: panel.hostWindow.dp(10)
-                        font.weight: Font.DemiBold
-                    }
-                    Text {
-                        objectName: "manifestVerificationSummary"
-                        Layout.fillWidth: true
-                        text: panel.manifestVerificationArtifact !== null
-                              ? qsTr("Recorded separately: proposal safety/schema validation, combined build/lint/test verification, and acceptance-criteria verification. Open the record for exact statuses and evidence.")
-                              : qsTr("Verification not available or not run. This state is not treated as passed; older Runs are not assigned a result retroactively.")
-                        color: panel.colors.textSecondary
-                        font.pixelSize: panel.hostWindow.dp(9)
-                        wrapMode: Text.WordWrap
-                    }
-                    RunActionButton {
-                        objectName: "viewManifestVerificationButton"
-                        visible: panel.manifestVerificationArtifact !== null
-                        hostWindow: panel.hostWindow
-                        colors: panel.colors
-                        text: qsTr("View verification record")
-                        iconText: "↗"
-                        primary: true
-                        onClicked: panel.artifactRequested(
-                                       panel.runData.runId,
-                                       panel.manifestVerificationArtifact.artifactId)
-                    }
-                }
+            RunVerificationCard {
+                hostWindow: panel.hostWindow
+                colors: panel.colors
+                runData: panel.runData
+                manifestVerificationArtifact: panel.manifestVerificationArtifact
+                onArtifactRequested: (runId, artifactId) => panel.artifactRequested(runId, artifactId)
             }
 
-            Rectangle {
-                objectName: "workspaceProvenanceCard"
-                Layout.fillWidth: true
-                Layout.preferredHeight: workspaceProvenanceColumn.implicitHeight
-                                        + panel.hostWindow.dp(20)
-                visible: panel.runData !== null
-                         && panel.runData.workflowId === "execution-manifest-v1"
-                radius: panel.colors.cornerRadiusSmall
-                color: panel.colors.surface
-                border.width: 1
-                border.color: panel.colors.information
-
-                ColumnLayout {
-                    id: workspaceProvenanceColumn
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    anchors.leftMargin: panel.hostWindow.dp(10)
-                    anchors.rightMargin: panel.hostWindow.dp(10)
-                    spacing: panel.hostWindow.dp(6)
-
-                    Text {
-                        Layout.fillWidth: true
-                        text: qsTr("Workspace provenance")
-                        color: panel.colors.textPrimary
-                        font.pixelSize: panel.hostWindow.dp(10)
-                        font.weight: Font.DemiBold
-                    }
-                    Text {
-                        objectName: "workspaceProvenanceSummary"
-                        Layout.fillWidth: true
-                        text: panel.workspaceBaselineArtifact === null
-                              ? qsTr("Workspace baseline is not available for this Run. No provenance result is inferred.")
-                              : (panel.workspaceProvenanceArtifact === null
-                                 ? qsTr("The pre-provider baseline is recorded. Post-run comparison is not available or not run.")
-                                 : qsTr("The pre-provider baseline and latest post-run or post-apply comparison are recorded. Open them for the exact fingerprint, exclusions, proposal set, and manual/external drift classification."))
-                        color: panel.colors.textSecondary
-                        font.pixelSize: panel.hostWindow.dp(9)
-                        wrapMode: Text.WordWrap
-                    }
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: panel.hostWindow.dp(6)
-                        RunActionButton {
-                            objectName: "viewWorkspaceBaselineButton"
-                            visible: panel.workspaceBaselineArtifact !== null
-                            hostWindow: panel.hostWindow
-                            colors: panel.colors
-                            text: qsTr("View baseline")
-                            iconText: "↗"
-                            onClicked: panel.artifactRequested(
-                                           panel.runData.runId,
-                                           panel.workspaceBaselineArtifact.artifactId)
-                        }
-                        RunActionButton {
-                            objectName: "viewWorkspaceProvenanceButton"
-                            visible: panel.workspaceProvenanceArtifact !== null
-                            hostWindow: panel.hostWindow
-                            colors: panel.colors
-                            text: qsTr("View provenance")
-                            iconText: "↗"
-                            primary: true
-                            onClicked: panel.artifactRequested(
-                                           panel.runData.runId,
-                                           panel.workspaceProvenanceArtifact.artifactId)
-                        }
-                        Item { Layout.fillWidth: true }
-                    }
-                }
+            RunWorkspaceProvenanceCard {
+                hostWindow: panel.hostWindow
+                colors: panel.colors
+                runData: panel.runData
+                workspaceBaselineArtifact: panel.workspaceBaselineArtifact
+                workspaceProvenanceArtifact: panel.workspaceProvenanceArtifact
+                onArtifactRequested: (runId, artifactId) => panel.artifactRequested(runId, artifactId)
             }
 
             Text { Layout.fillWidth: true; text: qsTr("Stages"); color: panel.colors.textPrimary; font.pixelSize: panel.hostWindow.dp(13); font.weight: Font.DemiBold }
