@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/IChangeProposalStore.hpp"
+#include "ai/application/proposals/IChangeProposalStore.hpp"
 
 #include <filesystem>
 #include <memory>

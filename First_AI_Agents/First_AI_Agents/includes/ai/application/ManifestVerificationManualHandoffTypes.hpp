@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/ApplicationTypes.hpp"
-#include "ai/application/ChangeProposalTypes.hpp"
+#include "ai/application/proposals/ChangeProposalTypes.hpp"
 #include "ai/application/WorkspaceBaselineProvenance.hpp"
 #include "ai/common/Result.hpp"
 

@@ -9,7 +9,7 @@
 // RunPathClaimRegistry race guard. A manifest worker also receives a compact,
 // self-contained handoff rather than the Architect's full project context.
 #include "ai/application/AgentToolExecutionService.hpp"
-#include "ai/application/ChangeProposalService.hpp"
+#include "ai/application/proposals/ChangeProposalService.hpp"
 #include "ai/application/ExecutionAssignmentValidation.hpp"
 #include "ai/application/ExecutionManifestService.hpp"
 #include "ai/application/ExecutionProfileWorkflowRunner.hpp"

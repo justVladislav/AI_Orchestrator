@@ -1,12 +1,12 @@
 #pragma once
 
 #include "ai/application/ExecutionManifestScheduler.hpp"
-#include "ai/application/IChangeApprovalRepository.hpp"
-#include "ai/application/IChangeProposalRepository.hpp"
+#include "ai/application/proposals/IChangeApprovalRepository.hpp"
+#include "ai/application/proposals/IChangeProposalRepository.hpp"
 #include "ai/application/IExecutionManifestRepository.hpp"
 #include "ai/application/IManifestTaskExecutionRepository.hpp"
 #include "ai/application/IManifestWorkLedgerRepository.hpp"
-#include "ai/application/IProposalReviewRepository.hpp"
+#include "ai/application/proposals/IProposalReviewRepository.hpp"
 #include "ai/application/IRunRepository.hpp"
 #include "ai/application/IRunWorkspaceScopeRepository.hpp"
 #include "ai/application/ManifestWorkLedgerTypes.hpp"

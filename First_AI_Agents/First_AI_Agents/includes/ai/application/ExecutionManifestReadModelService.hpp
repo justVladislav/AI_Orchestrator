@@ -2,7 +2,7 @@
 
 #include "ai/application/ExecutionAcceptanceContract.hpp"
 #include "ai/application/ExecutionManifestService.hpp"
-#include "ai/application/IChangeProposalRepository.hpp"
+#include "ai/application/proposals/IChangeProposalRepository.hpp"
 #include "ai/application/IManifestTaskExecutionRepository.hpp"
 #include "ai/application/IManifestWorkLedgerRepository.hpp"
 #include "ai/application/IRunWorkspaceScopeRepository.hpp"

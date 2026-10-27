@@ -9,7 +9,7 @@
 #include "ai/application/ManifestProposalOverlay.hpp"
 #include "ai/application/ManifestVerificationContinuationPreparationService.hpp"
 #include "ai/application/ManifestVerificationRepairability.hpp"
-#include "ai/application/ProposedChangeSetParser.hpp"
+#include "ai/application/proposals/ProposedChangeSetParser.hpp"
 #include "ai/application/QmlLintDiagnosticPolicy.hpp"
 #include "ai/application/Sha256.hpp"
 #include "ai/application/WorkspaceBaselineProvenance.hpp"

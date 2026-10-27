@@ -1,5 +1,5 @@
 #include "ai/backend/BackendRuntime.hpp"
-#include "ai/application/ChangeProposalService.hpp"
+#include "ai/application/proposals/ChangeProposalService.hpp"
 #include "ai/application/Sha256.hpp"
 #include "ai/infrastructure/DatabaseOwnerLock.hpp"
 #include "ai/application/FilesystemPathUtils.hpp"

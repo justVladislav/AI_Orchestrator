@@ -1,7 +1,7 @@
 #pragma once
 
 #include <ai/application/AgentToolReadModelService.hpp>
-#include <ai/application/ProposalReviewTypes.hpp>
+#include <ai/application/proposals/ProposalReviewTypes.hpp>
 
 #include <QAbstractListModel>
 #include <QHash>

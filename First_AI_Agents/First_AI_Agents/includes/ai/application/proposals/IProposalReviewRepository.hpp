@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/ProposalReviewTypes.hpp"
+#include "ai/application/proposals/ProposalReviewTypes.hpp"
 #include "ai/common/Result.hpp"
 
 #include <optional>

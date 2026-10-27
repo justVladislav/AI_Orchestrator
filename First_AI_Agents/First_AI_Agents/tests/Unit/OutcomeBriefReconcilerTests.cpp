@@ -1,9 +1,9 @@
 #include "OutcomeBriefRepositoryContract.hpp"
 #include "RunPagingContract.hpp"
 
-#include "ai/application/IChangeApprovalRepository.hpp"
-#include "ai/application/IChangeProposalRepository.hpp"
-#include "ai/application/IProposalReviewRepository.hpp"
+#include "ai/application/proposals/IChangeApprovalRepository.hpp"
+#include "ai/application/proposals/IChangeProposalRepository.hpp"
+#include "ai/application/proposals/IProposalReviewRepository.hpp"
 #include "ai/application/InMemoryManifestVerificationContinuationRepository.hpp"
 #include "ai/application/InMemoryManifestVerificationManualHandoffRepository.hpp"
 #include "ai/application/InMemoryManifestWorkLedgerRepository.hpp"

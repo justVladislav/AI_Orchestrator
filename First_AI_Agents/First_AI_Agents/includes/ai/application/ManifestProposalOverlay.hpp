@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/ChangeProposalService.hpp"
+#include "ai/application/proposals/ChangeProposalService.hpp"
 #include "ai/application/WorkspaceBaselineProvenance.hpp"
 #include "ai/common/Result.hpp"
 

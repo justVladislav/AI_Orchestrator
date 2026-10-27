@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/AgentToolExecutionService.hpp"
-#include "ai/application/ChangeProposalService.hpp"
+#include "ai/application/proposals/ChangeProposalService.hpp"
 #include "ai/application/ExecutionManifestExecutionCapacity.hpp"
 #include "ai/application/ExecutionManifestExecutor.hpp"
 #include "ai/application/ExecutionManifestPlanner.hpp"

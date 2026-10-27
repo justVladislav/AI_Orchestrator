@@ -1,11 +1,11 @@
 #pragma once
 
 #include "ai/application/ApplicationTypes.hpp"
-#include "ai/application/ChangeProposalTypes.hpp"
+#include "ai/application/proposals/ChangeProposalTypes.hpp"
 #include "ai/application/ManifestVerificationManualHandoffResolution.hpp"
 #include "ai/application/ManifestWorkLedgerTypes.hpp"
 #include "ai/application/IRunRepository.hpp"
-#include "ai/application/ProposalReviewTypes.hpp"
+#include "ai/application/proposals/ProposalReviewTypes.hpp"
 #include "ai/common/Result.hpp"
 
 #include <optional>

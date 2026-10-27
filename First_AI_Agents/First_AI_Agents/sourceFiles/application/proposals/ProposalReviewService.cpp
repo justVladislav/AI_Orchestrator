@@ -1,4 +1,4 @@
-#include "ai/application/ProposalReviewService.hpp"
+#include "ai/application/proposals/ProposalReviewService.hpp"
 
 #include "ai/application/planning/IOutcomeBriefTrigger.hpp"
 

@@ -1,4 +1,4 @@
-#include "ai/application/ChangeProposalValidator.hpp"
+#include "ai/application/proposals/ChangeProposalValidator.hpp"
 
 #include "ai/application/FilesystemPathUtils.hpp"
 #include "ai/application/Sha256.hpp"

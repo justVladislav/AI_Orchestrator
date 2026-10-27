@@ -8,7 +8,7 @@
 // no CURL, no real provider adapter.
 #include "ai/application/AgentToolExecutionService.hpp"
 #include "ai/application/AgentToolTurnLoopRunner.hpp"
-#include "ai/application/ChangeProposalService.hpp"
+#include "ai/application/proposals/ChangeProposalService.hpp"
 #include "ai/application/FilesystemWorkspaceToolExecutor.hpp"
 #include "ai/application/InMemoryRepositories.hpp"
 #include "ai/application/InMemoryRunWorkspaceScopeRepository.hpp"

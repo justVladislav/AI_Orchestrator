@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/artifacts/ArtifactService.hpp"
-#include "ai/application/ChangeProposalService.hpp"
+#include "ai/application/proposals/ChangeProposalService.hpp"
 #include "ai/application/IManifestVerificationBaselineNormalizationRepository.hpp"
 #include "ai/application/ManifestVerificationContinuationTypes.hpp"
 #include "ai/application/WorkspaceBaselineProvenance.hpp"

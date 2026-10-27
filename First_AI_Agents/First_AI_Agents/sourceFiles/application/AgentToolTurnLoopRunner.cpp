@@ -3,7 +3,7 @@
 
 #include "ai/application/FilesystemPathUtils.hpp"
 #include "ai/application/IdGenerator.hpp"
-#include "ai/application/ProposedChangeSetParser.hpp"
+#include "ai/application/proposals/ProposedChangeSetParser.hpp"
 #include "ai/application/RunWorkspaceScopeService.hpp"
 
 #include <nlohmann/json.hpp>

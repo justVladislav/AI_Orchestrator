@@ -168,8 +168,8 @@ set(APPLICATION_SOURCES
     sourceFiles/application/planning/OutcomeBriefReadModelService.cpp
     sourceFiles/application/planning/RunDraftGroup.cpp
     sourceFiles/application/planning/RunDraftPlanService.cpp
-    sourceFiles/application/ChangeProposalTypes.cpp
-    sourceFiles/application/ProposalReviewService.cpp
+    sourceFiles/application/proposals/ChangeProposalTypes.cpp
+    sourceFiles/application/proposals/ProposalReviewService.cpp
     sourceFiles/application/ManifestProposalContentHash.cpp
     sourceFiles/application/ManifestVerificationManualHandoffApplyAuthority.cpp
     sourceFiles/application/ManifestApplyVerificationGate.cpp
@@ -184,11 +184,11 @@ set(APPLICATION_SOURCES
     sourceFiles/application/InMemoryVerificationBootstrapRepository.cpp
     sourceFiles/application/ManifestBootstrapValidator.cpp
     sourceFiles/application/VerificationBootstrapRetryService.cpp
-    sourceFiles/application/ChangeSetApplyService.cpp
-    sourceFiles/application/ProposedChangeSetParser.cpp
-    sourceFiles/application/ChangeProposalValidator.cpp
+    sourceFiles/application/proposals/ChangeSetApplyService.cpp
+    sourceFiles/application/proposals/ProposedChangeSetParser.cpp
+    sourceFiles/application/proposals/ChangeProposalValidator.cpp
     sourceFiles/application/RunPathClaimRegistry.cpp
-    sourceFiles/application/ChangeProposalService.cpp
+    sourceFiles/application/proposals/ChangeProposalService.cpp
     sourceFiles/application/WorkspaceReadPolicy.cpp
     sourceFiles/application/WorkspacePathGuard.cpp
     sourceFiles/application/ToolRegistry.cpp

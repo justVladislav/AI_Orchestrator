@@ -1,12 +1,12 @@
-#include "ai/application/ChangeSetApplyService.hpp"
+#include "ai/application/proposals/ChangeSetApplyService.hpp"
 
 #include "ai/application/planning/IOutcomeBriefTrigger.hpp"
 
 #include "ai/application/artifacts/ArtifactService.hpp"
 #include "ai/application/FilesystemPathUtils.hpp"
-#include "ai/application/IChangeApprovalRepository.hpp"
-#include "ai/application/IChangeProposalRepository.hpp"
-#include "ai/application/IChangeProposalStore.hpp"
+#include "ai/application/proposals/IChangeApprovalRepository.hpp"
+#include "ai/application/proposals/IChangeProposalRepository.hpp"
+#include "ai/application/proposals/IChangeProposalStore.hpp"
 #include "ai/application/projects/IProjectRepository.hpp"
 #include "ai/application/IRunRepository.hpp"
 #include "ai/application/ManifestApplyVerificationGate.hpp"

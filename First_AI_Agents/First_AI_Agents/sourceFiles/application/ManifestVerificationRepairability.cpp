@@ -1,6 +1,6 @@
 #include "ai/application/ManifestVerificationRepairability.hpp"
 
-#include "ai/application/ChangeProposalService.hpp"
+#include "ai/application/proposals/ChangeProposalService.hpp"
 #include "ai/application/QmlLintDiagnosticPolicy.hpp"
 
 #include <sstream>

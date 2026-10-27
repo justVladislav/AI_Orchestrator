@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/AgentToolTypes.hpp"
-#include "ai/application/ChangeProposalService.hpp"
+#include "ai/application/proposals/ChangeProposalService.hpp"
 #include "ai/application/IAgentToolAuditRepository.hpp"
 #include "ai/application/IAgentToolSessionRepository.hpp"
 #include "ai/common/Result.hpp"

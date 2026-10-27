@@ -9,7 +9,7 @@
 // CURL, no real provider adapter.
 #include "ai/application/AgentToolExecutionService.hpp"
 #include "ai/application/artifacts/ArtifactService.hpp"
-#include "ai/application/ChangeProposalService.hpp"
+#include "ai/application/proposals/ChangeProposalService.hpp"
 #include "ai/application/ExecutionManifestDraftParser.hpp"
 #include "ai/application/ExecutionManifestExecutionCapacity.hpp"
 #include "ai/application/ExecutionManifestPlannerTurnBudget.hpp"

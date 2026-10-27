@@ -5,7 +5,7 @@
 // Fixture shape mirrors AgentToolTurnLoopRunnerTests.cpp; kept local since
 // each test file in this codebase is self-contained.
 #include "ai/application/AgentToolExecutionService.hpp"
-#include "ai/application/ChangeProposalService.hpp"
+#include "ai/application/proposals/ChangeProposalService.hpp"
 #include "ai/application/ExecutionManifestExecutionCapacity.hpp"
 #include "ai/application/ExecutionManifestExecutor.hpp"
 #include "ai/application/ExecutionManifestScheduler.hpp"

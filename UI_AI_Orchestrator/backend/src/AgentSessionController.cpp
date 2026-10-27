@@ -1,6 +1,6 @@
 #include "ai/ui/AgentSessionController.hpp"
 
-#include <ai/application/ChangeProposalTypes.hpp>
+#include <ai/application/proposals/ChangeProposalTypes.hpp>
 #include <filesystem>
 
 #include <QDateTime>

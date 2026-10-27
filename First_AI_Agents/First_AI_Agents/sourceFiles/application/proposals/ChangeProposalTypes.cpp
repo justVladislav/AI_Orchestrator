@@ -1,4 +1,4 @@
-#include "ai/application/ChangeProposalTypes.hpp"
+#include "ai/application/proposals/ChangeProposalTypes.hpp"
 
 #include <stdexcept>
 

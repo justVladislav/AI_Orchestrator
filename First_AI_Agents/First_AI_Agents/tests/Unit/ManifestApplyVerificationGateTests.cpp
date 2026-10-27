@@ -3,11 +3,11 @@
 // change set, plus its wiring into ChangeSetApplyService::approve()/apply().
 // Real FileChangeProposalStore + temp directories, in-memory repositories,
 // no real provider HTTP calls.
-#include "ai/application/ChangeProposalService.hpp"
-#include "ai/application/ChangeSetApplyService.hpp"
+#include "ai/application/proposals/ChangeProposalService.hpp"
+#include "ai/application/proposals/ChangeSetApplyService.hpp"
 #include "ai/application/ExecutionAcceptanceContract.hpp"
-#include "ai/application/IChangeApprovalRepository.hpp"
-#include "ai/application/IChangeProposalRepository.hpp"
+#include "ai/application/proposals/IChangeApprovalRepository.hpp"
+#include "ai/application/proposals/IChangeProposalRepository.hpp"
 #include "ai/application/InMemoryManifestWorkLedgerRepository.hpp"
 #include "ai/application/InMemoryExecutionManifestRepository.hpp"
 #include "ai/application/InMemoryRepositories.hpp"

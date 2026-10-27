@@ -3,7 +3,7 @@
 #include "ai/application/AgentToolExecutionService.hpp"
 #include "ai/application/ProviderExecutionBudget.hpp"
 #include "ai/application/ApplicationTypes.hpp"
-#include "ai/application/ChangeProposalService.hpp"
+#include "ai/application/proposals/ChangeProposalService.hpp"
 #include "ai/application/ExecutionAcceptanceContract.hpp"
 #include "ai/application/ManifestWorkerNoChanges.hpp"
 #include "ai/application/RunEvent.hpp"

@@ -1,9 +1,9 @@
-#include "ai/application/ChangeProposalService.hpp"
+#include "ai/application/proposals/ChangeProposalService.hpp"
 
-#include "ai/application/ChangeProposalValidator.hpp"
+#include "ai/application/proposals/ChangeProposalValidator.hpp"
 #include "ai/application/FilesystemPathUtils.hpp"
 #include "ai/application/IdGenerator.hpp"
-#include "ai/application/ProposedChangeSetParser.hpp"
+#include "ai/application/proposals/ProposedChangeSetParser.hpp"
 #include "ai/application/Sha256.hpp"
 
 #include <algorithm>

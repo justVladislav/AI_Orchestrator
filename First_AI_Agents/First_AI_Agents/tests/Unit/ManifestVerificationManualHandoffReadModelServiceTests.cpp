@@ -10,7 +10,7 @@
 // attempt).
 #include "ai/application/ManifestVerificationManualHandoffReadModelService.hpp"
 
-#include "ai/application/ChangeProposalService.hpp"
+#include "ai/application/proposals/ChangeProposalService.hpp"
 #include "ai/application/FilesystemPathUtils.hpp"
 #include "ai/application/InMemoryExecutionManifestRepository.hpp"
 #include "ai/application/InMemoryManifestVerificationBaselineNormalizationRepository.hpp"
@@ -28,7 +28,7 @@
 #include "ai/application/ManifestVerificationContinuationService.hpp"
 #include "ai/application/ManifestVerificationLegacyBaselineNormalizationService.hpp"
 #include "ai/application/ManifestVerificationManualHandoffService.hpp"
-#include "ai/application/ProposalReviewService.hpp"
+#include "ai/application/proposals/ProposalReviewService.hpp"
 #include "ai/application/QmlLintDiagnosticPolicy.hpp"
 #include "ai/application/Sha256.hpp"
 #include "ai/application/WorkspaceBaselineProvenance.hpp"

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/IChangeProposalRepository.hpp"
+#include "ai/application/proposals/IChangeProposalRepository.hpp"
 #include "ai/application/IManifestVerificationContinuationRepository.hpp"
 #include "ai/application/IManifestWorkLedgerRepository.hpp"
 #include "ai/application/IRunRepository.hpp"

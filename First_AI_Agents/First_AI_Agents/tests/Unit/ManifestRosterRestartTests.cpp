@@ -11,7 +11,7 @@
 #include "ScriptedManifestSupport.hpp"
 
 #include "ai/application/artifacts/ArtifactService.hpp"
-#include "ai/application/ChangeProposalService.hpp"
+#include "ai/application/proposals/ChangeProposalService.hpp"
 #include "ai/application/ExecutionManifestReadModelService.hpp"
 #include "ai/application/ExecutionAnalyticsService.hpp"
 #include "ai/application/LegacyRosterAdapter.hpp"

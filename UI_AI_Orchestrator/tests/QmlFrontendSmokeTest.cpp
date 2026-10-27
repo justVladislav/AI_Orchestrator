@@ -7,8 +7,8 @@
 //
 // Also covers OverviewPage's live data binding: after project creation and run
 // completion the Overview page must reflect real backend state, not demo data.
-#include <ai/application/ChangeProposalService.hpp>
-#include <ai/application/ChangeProposalTypes.hpp>
+#include <ai/application/proposals/ChangeProposalService.hpp>
+#include <ai/application/proposals/ChangeProposalTypes.hpp>
 #include <ai/application/ExecutionAcceptanceContract.hpp>
 #include <ai/application/IManifestWorkLedgerRepository.hpp>
 #include <ai/application/IRunRepository.hpp>

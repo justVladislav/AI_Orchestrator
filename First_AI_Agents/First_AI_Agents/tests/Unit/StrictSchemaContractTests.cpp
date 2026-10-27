@@ -7,7 +7,7 @@
 
 #include "ai/application/AgentToolTurnLoopRunner.hpp"
 #include "ai/application/ExecutionManifestPlanner.hpp"
-#include "ai/application/ProposedChangeSetParser.hpp"
+#include "ai/application/proposals/ProposedChangeSetParser.hpp"
 #include "ai/providers/StrictSchemaValidation.hpp"
 
 #include <nlohmann/json.hpp>

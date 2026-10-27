@@ -1,5 +1,5 @@
-#include <ai/application/ChangeProposalService.hpp>
-#include <ai/application/ChangeProposalTypes.hpp>
+#include <ai/application/proposals/ChangeProposalService.hpp>
+#include <ai/application/proposals/ChangeProposalTypes.hpp>
 #include <ai/application/ExecutionAcceptanceContract.hpp>
 #include <ai/application/ExecutionAnalyticsService.hpp>
 #include <ai/application/ExecutionManifestReadModelService.hpp>

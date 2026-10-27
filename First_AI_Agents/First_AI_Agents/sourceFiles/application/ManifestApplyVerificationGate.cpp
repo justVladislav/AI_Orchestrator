@@ -1,6 +1,6 @@
 #include "ai/application/ManifestApplyVerificationGate.hpp"
 
-#include "ai/application/ChangeProposalService.hpp"
+#include "ai/application/proposals/ChangeProposalService.hpp"
 #include "ai/application/ExecutionAcceptanceContract.hpp"
 #include "ai/application/IExecutionManifestRepository.hpp"
 #include "ai/application/IManifestVerificationContinuationRepository.hpp"
