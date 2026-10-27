@@ -14,7 +14,7 @@
 #include <ai/application/IRunRepository.hpp>
 #include <ai/application/IWorkflowRunner.hpp>
 #include <ai/application/MockWorkflowRunner.hpp>
-#include <ai/application/ManifestProposalContentHash.hpp>
+#include <ai/application/verification/ManifestProposalContentHash.hpp>
 #include <ai/application/ManifestVerificationContinuationPreparationService.hpp>
 #include <ai/application/ManifestVerificationContinuationTypes.hpp>
 #include <ai/application/ManifestWorkLedgerTypes.hpp>

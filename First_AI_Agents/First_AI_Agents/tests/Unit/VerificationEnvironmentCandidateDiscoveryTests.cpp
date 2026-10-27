@@ -5,7 +5,7 @@
 // from a provider-proposed preset's declared `targets` array. No provider
 // HTTP calls; only a real local `cmake` invocation, exactly like the
 // existing ManifestProposalVerification_tests real-cmake regression tests.
-#include "ai/application/ManifestProposalSetVerifier.hpp"
+#include "ai/application/verification/ManifestProposalSetVerifier.hpp"
 #include "ai/application/verification/VerificationEnvironmentDiscoveryService.hpp"
 
 #include <algorithm>

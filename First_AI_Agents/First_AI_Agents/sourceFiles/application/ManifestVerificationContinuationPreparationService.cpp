@@ -3,8 +3,8 @@
 #include "ai/application/planning/IOutcomeBriefTrigger.hpp"
 
 #include "ai/application/IdGenerator.hpp"
-#include "ai/application/ManifestProposalOverlay.hpp"
-#include "ai/application/QmlLintDiagnosticPolicy.hpp"
+#include "ai/application/verification/ManifestProposalOverlay.hpp"
+#include "ai/application/verification/QmlLintDiagnosticPolicy.hpp"
 #include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 #include "ai/application/workspace/WorkspaceReadPolicy.hpp"
 

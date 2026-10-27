@@ -13,7 +13,7 @@
 #include "ai/application/InMemoryRepositories.hpp"
 #include "ai/application/InMemoryRunWorkspaceScopeRepository.hpp"
 #include "ai/application/agents/ModelExecutionService.hpp"
-#include "ai/application/QmlLintDiagnosticPolicy.hpp"
+#include "ai/application/verification/QmlLintDiagnosticPolicy.hpp"
 #include "ai/application/RunPathClaimRegistry.hpp"
 #include "ai/application/RunWorkspaceScopeService.hpp"
 #include "ai/application/Sha256.hpp"

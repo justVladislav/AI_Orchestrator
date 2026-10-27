@@ -133,10 +133,10 @@ set(APPLICATION_SOURCES
     sourceFiles/application/ExecutionProfileWorkflowRunner.cpp
     sourceFiles/application/agents/AgentToolTurnLoopRunner.cpp
     sourceFiles/application/ManifestWorkerNoChanges.cpp
-    sourceFiles/application/ManifestProposalOverlay.cpp
-    sourceFiles/application/ManifestProposalSetVerifier.cpp
-    sourceFiles/application/QmlLintDiagnosticPolicy.cpp
-    sourceFiles/application/ManifestVerificationEnvironmentPreflight.cpp
+    sourceFiles/application/verification/ManifestProposalOverlay.cpp
+    sourceFiles/application/verification/ManifestProposalSetVerifier.cpp
+    sourceFiles/application/verification/QmlLintDiagnosticPolicy.cpp
+    sourceFiles/application/verification/ManifestVerificationEnvironmentPreflight.cpp
     sourceFiles/application/CredentialManagementService.cpp
     sourceFiles/application/conversations/ChatTypes.cpp
     sourceFiles/application/conversations/ChatContextAssembler.cpp
@@ -170,16 +170,16 @@ set(APPLICATION_SOURCES
     sourceFiles/application/planning/RunDraftPlanService.cpp
     sourceFiles/application/proposals/ChangeProposalTypes.cpp
     sourceFiles/application/proposals/ProposalReviewService.cpp
-    sourceFiles/application/ManifestProposalContentHash.cpp
+    sourceFiles/application/verification/ManifestProposalContentHash.cpp
     sourceFiles/application/ManifestVerificationManualHandoffApplyAuthority.cpp
-    sourceFiles/application/ManifestApplyVerificationGate.cpp
-    sourceFiles/application/ManifestMandatoryVerificationPolicy.cpp
+    sourceFiles/application/verification/ManifestApplyVerificationGate.cpp
+    sourceFiles/application/verification/ManifestMandatoryVerificationPolicy.cpp
     sourceFiles/application/ManifestRouting.cpp
     sourceFiles/application/TaskRouteResolver.cpp
     sourceFiles/application/LegacyRosterAdapter.cpp
     sourceFiles/application/LegacyConversionRecord.cpp
     sourceFiles/application/ManifestMemberUsage.cpp
-    sourceFiles/application/ManifestVerificationProfileBinder.cpp
+    sourceFiles/application/verification/ManifestVerificationProfileBinder.cpp
     sourceFiles/application/VerificationBootstrapTypes.cpp
     sourceFiles/application/InMemoryVerificationBootstrapRepository.cpp
     sourceFiles/application/ManifestBootstrapValidator.cpp

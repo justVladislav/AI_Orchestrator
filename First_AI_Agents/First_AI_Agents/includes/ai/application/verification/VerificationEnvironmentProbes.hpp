@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/ManifestProposalSetVerifier.hpp"
+#include "ai/application/verification/ManifestProposalSetVerifier.hpp"
 #include "ai/application/verification/VerificationEnvironmentSnapshotTypes.hpp"
 
 #include <filesystem>

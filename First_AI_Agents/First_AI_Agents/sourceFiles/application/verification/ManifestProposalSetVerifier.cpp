@@ -1,8 +1,8 @@
-#include "ai/application/ManifestProposalSetVerifier.hpp"
+#include "ai/application/verification/ManifestProposalSetVerifier.hpp"
 
 #include "ai/application/ExecutionManifestDependencyGraph.hpp"
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
-#include "ai/application/QmlLintDiagnosticPolicy.hpp"
+#include "ai/application/verification/QmlLintDiagnosticPolicy.hpp"
 #include "ai/application/Sha256.hpp"
 #include "ai/application/verification/VerificationToolchain.hpp"
 

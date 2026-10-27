@@ -1,7 +1,7 @@
 #include "ai/application/ManifestVerificationRepairability.hpp"
 
 #include "ai/application/proposals/ChangeProposalService.hpp"
-#include "ai/application/QmlLintDiagnosticPolicy.hpp"
+#include "ai/application/verification/QmlLintDiagnosticPolicy.hpp"
 
 #include <sstream>
 #include <unordered_map>

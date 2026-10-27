@@ -6,7 +6,7 @@
 #include "ai/application/ExecutionAcceptanceContract.hpp"
 #include "ai/application/ExecutionManifestScheduler.hpp"
 #include "ai/application/ExecutionManifestTypes.hpp"
-#include "ai/application/ManifestProposalSetVerifier.hpp"
+#include "ai/application/verification/ManifestProposalSetVerifier.hpp"
 #include "ai/application/TaskRouteResolver.hpp"
 #include "ai/application/VerificationBootstrapTypes.hpp"
 #include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"

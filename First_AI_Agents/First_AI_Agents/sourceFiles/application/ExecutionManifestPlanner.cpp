@@ -9,9 +9,9 @@
 #include "ai/application/ExecutionManifestPlannerTurnBudget.hpp"
 #include "ai/application/ExecutionManifestRepairControls.hpp"
 #include "ai/application/IdGenerator.hpp"
-#include "ai/application/ManifestMandatoryVerificationPolicy.hpp"
+#include "ai/application/verification/ManifestMandatoryVerificationPolicy.hpp"
 #include "ai/application/ManifestRouting.hpp"
-#include "ai/application/ManifestVerificationProfileBinder.hpp"
+#include "ai/application/verification/ManifestVerificationProfileBinder.hpp"
 
 #include <nlohmann/json.hpp>
 

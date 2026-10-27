@@ -2,7 +2,7 @@
 
 #include "ai/application/ExecutionAcceptanceContract.hpp"
 #include "ai/application/ExecutionManifestTypes.hpp"
-#include "ai/application/ManifestProposalOverlay.hpp"
+#include "ai/application/verification/ManifestProposalOverlay.hpp"
 
 #include <chrono>
 #include <optional>

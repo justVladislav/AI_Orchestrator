@@ -8,7 +8,7 @@
 #include "ai/application/projects/IProjectRepository.hpp"
 #include "ai/application/verification/IVerificationScratchRootProvider.hpp"
 #include "ai/application/IRunRepository.hpp"
-#include "ai/application/ManifestProposalSetVerifier.hpp"
+#include "ai/application/verification/ManifestProposalSetVerifier.hpp"
 #include "ai/application/ManifestVerificationAttributionService.hpp"
 #include "ai/application/ManifestVerificationContinuationService.hpp"
 #include "ai/application/ManifestVerificationLegacyBaselineNormalizationService.hpp"

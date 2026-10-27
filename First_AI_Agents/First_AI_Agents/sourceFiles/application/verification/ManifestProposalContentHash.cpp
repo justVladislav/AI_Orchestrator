@@ -1,4 +1,4 @@
-#include "ai/application/ManifestProposalContentHash.hpp"
+#include "ai/application/verification/ManifestProposalContentHash.hpp"
 
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/Sha256.hpp"

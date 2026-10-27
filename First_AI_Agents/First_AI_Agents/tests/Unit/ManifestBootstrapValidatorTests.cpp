@@ -6,7 +6,7 @@
 // VerificationEnvironmentSnapshot values - no HTTP, no SQLite, no filesystem.
 #include "ai/application/ExecutionManifestTypes.hpp"
 #include "ai/application/ManifestBootstrapValidator.hpp"
-#include "ai/application/ManifestVerificationProfileBinder.hpp"
+#include "ai/application/verification/ManifestVerificationProfileBinder.hpp"
 
 #include <iostream>
 #include <stdexcept>

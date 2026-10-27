@@ -1,4 +1,4 @@
-#include "ai/application/ManifestApplyVerificationGate.hpp"
+#include "ai/application/verification/ManifestApplyVerificationGate.hpp"
 
 #include "ai/application/proposals/ChangeProposalService.hpp"
 #include "ai/application/ExecutionAcceptanceContract.hpp"
@@ -9,7 +9,7 @@
 #include "ai/application/IManifestWorkLedgerRepository.hpp"
 #include "ai/application/IRunRepository.hpp"
 #include "ai/application/IWorkflowRunner.hpp"
-#include "ai/application/ManifestProposalContentHash.hpp"
+#include "ai/application/verification/ManifestProposalContentHash.hpp"
 #include "ai/application/IVerificationBootstrapRepository.hpp"
 #include "ai/application/ManifestVerificationContinuationPreparationService.hpp"
 #include "ai/application/ManifestWorkLedgerTypes.hpp"

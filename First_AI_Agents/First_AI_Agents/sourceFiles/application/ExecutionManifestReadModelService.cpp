@@ -2,7 +2,7 @@
 
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/ManifestRouting.hpp"
-#include "ai/application/QmlLintDiagnosticPolicy.hpp"
+#include "ai/application/verification/QmlLintDiagnosticPolicy.hpp"
 #include "ai/application/TaskRouteResolver.hpp"
 
 #include <algorithm>

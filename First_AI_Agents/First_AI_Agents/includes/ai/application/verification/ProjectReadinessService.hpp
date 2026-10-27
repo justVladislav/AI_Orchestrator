@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/verification/IProjectReadinessRepository.hpp"
-#include "ai/application/ManifestProposalSetVerifier.hpp"
+#include "ai/application/verification/ManifestProposalSetVerifier.hpp"
 #include "ai/application/verification/ProjectSetupReadiness.hpp"
 #include "ai/common/Result.hpp"
 

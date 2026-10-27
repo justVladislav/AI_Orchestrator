@@ -1,6 +1,6 @@
-#include "ai/application/ManifestVerificationProfileBinder.hpp"
+#include "ai/application/verification/ManifestVerificationProfileBinder.hpp"
 
-#include "ai/application/QmlLintDiagnosticPolicy.hpp"
+#include "ai/application/verification/QmlLintDiagnosticPolicy.hpp"
 
 #include "ai/application/ExecutionAcceptanceContract.hpp"
 

@@ -5,7 +5,7 @@
 #include "ai/application/IManifestWorkLedgerRepository.hpp"
 #include "ai/application/IRunRepository.hpp"
 #include "ai/application/ManifestVerificationContinuationService.hpp"
-#include "ai/application/QmlLintDiagnosticPolicy.hpp"
+#include "ai/application/verification/QmlLintDiagnosticPolicy.hpp"
 
 namespace ai::application {
 

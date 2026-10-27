@@ -9,7 +9,7 @@
 // (see e.g. ARCHITECTURE_GAPS.md's QML-P4R.6 canary entries).
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/InMemoryVerificationEnvironmentRepository.hpp"
-#include "ai/application/ManifestProposalSetVerifier.hpp"
+#include "ai/application/verification/ManifestProposalSetVerifier.hpp"
 #include "ai/application/verification/VerificationEnvironmentDiscoveryService.hpp"
 #include "ai/application/verification/VerificationEnvironmentPresetSetupService.hpp"
 

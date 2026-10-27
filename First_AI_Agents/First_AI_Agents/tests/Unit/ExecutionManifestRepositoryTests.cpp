@@ -1,6 +1,6 @@
 #include "ai/application/ExecutionManifestService.hpp"
 #include "ai/application/ManifestRouting.hpp"
-#include "ai/application/QmlLintDiagnosticPolicy.hpp"
+#include "ai/application/verification/QmlLintDiagnosticPolicy.hpp"
 #include "ai/infrastructure/SqliteRepositories.hpp"
 
 #include <sqlite3.h>

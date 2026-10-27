@@ -1,4 +1,4 @@
-#include "ai/application/ManifestVerificationEnvironmentPreflight.hpp"
+#include "ai/application/verification/ManifestVerificationEnvironmentPreflight.hpp"
 
 #include <algorithm>
 #include <cctype>

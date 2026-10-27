@@ -12,7 +12,7 @@
 #include "ai/application/verification/IVerificationScratchRootProvider.hpp"
 #include "ai/application/catalog/IProviderRepository.hpp"
 #include "ai/application/IRunRepository.hpp"
-#include "ai/application/ManifestProposalSetVerifier.hpp"
+#include "ai/application/verification/ManifestProposalSetVerifier.hpp"
 #include "ai/application/ManifestVerificationContinuationPreparationService.hpp"
 #include "ai/application/ManifestWorkLedgerService.hpp"
 #include "ai/providers/IProviderAgentSession.hpp"

@@ -5,8 +5,8 @@
 // no SQLite - pure function tests over already-constructed
 // VerificationEnvironmentSnapshot/ExecutionManifest values.
 #include "ai/application/ExecutionManifestTypes.hpp"
-#include "ai/application/ManifestVerificationProfileBinder.hpp"
-#include "ai/application/QmlLintDiagnosticPolicy.hpp"
+#include "ai/application/verification/ManifestVerificationProfileBinder.hpp"
+#include "ai/application/verification/QmlLintDiagnosticPolicy.hpp"
 
 #include <cassert>
 #include <iostream>

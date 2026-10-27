@@ -1,4 +1,4 @@
-#include "ai/application/ManifestMandatoryVerificationPolicy.hpp"
+#include "ai/application/verification/ManifestMandatoryVerificationPolicy.hpp"
 
 #include "ai/application/ExecutionManifestDependencyGraph.hpp"
 

@@ -9,7 +9,7 @@
 #include "ai/application/proposals/IChangeProposalStore.hpp"
 #include "ai/application/projects/IProjectRepository.hpp"
 #include "ai/application/IRunRepository.hpp"
-#include "ai/application/ManifestApplyVerificationGate.hpp"
+#include "ai/application/verification/ManifestApplyVerificationGate.hpp"
 #include "ai/application/ManifestWorkLedgerService.hpp"
 #include "ai/application/Sha256.hpp"
 #include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"

@@ -13,10 +13,10 @@
 #include <ai/application/InMemoryVerificationEnvironmentRepository.hpp>
 #include <ai/application/IRunRepository.hpp>
 #include <ai/application/IWorkflowRunner.hpp>
-#include <ai/application/ManifestApplyVerificationGate.hpp>
-#include <ai/application/ManifestProposalContentHash.hpp>
+#include <ai/application/verification/ManifestApplyVerificationGate.hpp>
+#include <ai/application/verification/ManifestProposalContentHash.hpp>
 #include <ai/application/ManifestRouting.hpp>
-#include <ai/application/ManifestProposalOverlay.hpp>
+#include <ai/application/verification/ManifestProposalOverlay.hpp>
 #include <ai/application/ManifestWorkLedgerTypes.hpp>
 #include <ai/application/MockWorkflowRunner.hpp>
 #include <ai/application/OrchestrationService.hpp>

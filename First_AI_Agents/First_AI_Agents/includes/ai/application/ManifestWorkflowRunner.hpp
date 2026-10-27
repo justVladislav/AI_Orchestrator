@@ -6,7 +6,7 @@
 #include "ai/application/ExecutionManifestExecutor.hpp"
 #include "ai/application/ExecutionManifestPlanner.hpp"
 #include "ai/application/ExecutionManifestService.hpp"
-#include "ai/application/ManifestVerificationEnvironmentPreflight.hpp"
+#include "ai/application/verification/ManifestVerificationEnvironmentPreflight.hpp"
 #include "ai/application/IManifestTaskExecutionRepository.hpp"
 #include "ai/application/catalog/IModelRepository.hpp"
 #include "ai/application/IProviderClient.hpp"

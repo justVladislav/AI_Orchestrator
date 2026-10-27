@@ -6,7 +6,7 @@
 #include "ai/application/ManifestVerificationContinuationPreparationService.hpp"
 #include "ai/application/ManifestVerificationManualHandoffTypes.hpp"
 #include "ai/application/ManifestWorkerNoChanges.hpp"
-#include "ai/application/QmlLintDiagnosticPolicy.hpp"
+#include "ai/application/verification/QmlLintDiagnosticPolicy.hpp"
 #include "ai/application/Sha256.hpp"
 #include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/ExecutionManifestTypes.hpp"
-#include "ai/application/ManifestProposalSetVerifier.hpp"
+#include "ai/application/verification/ManifestProposalSetVerifier.hpp"
 
 #include <filesystem>
 #include <stop_token>

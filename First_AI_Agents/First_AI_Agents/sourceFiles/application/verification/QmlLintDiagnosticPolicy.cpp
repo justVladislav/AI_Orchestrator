@@ -1,4 +1,4 @@
-#include "ai/application/QmlLintDiagnosticPolicy.hpp"
+#include "ai/application/verification/QmlLintDiagnosticPolicy.hpp"
 
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
 

@@ -6,8 +6,8 @@
 // SQLite, no command execution.
 #include "ai/application/ExecutionManifestTypes.hpp"
 #include "ai/application/ExecutionManifestValidator.hpp"
-#include "ai/application/ManifestMandatoryVerificationPolicy.hpp"
-#include "ai/application/ManifestVerificationProfileBinder.hpp"
+#include "ai/application/verification/ManifestMandatoryVerificationPolicy.hpp"
+#include "ai/application/verification/ManifestVerificationProfileBinder.hpp"
 
 #include <algorithm>
 #include <functional>

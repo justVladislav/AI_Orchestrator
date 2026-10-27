@@ -29,7 +29,7 @@
 #include "ai/application/agents/ModelExecutionService.hpp"
 #include "ai/application/proposals/ChangeProposalService.hpp"
 #include "ai/application/proposals/ChangeSetApplyService.hpp"
-#include "ai/application/ManifestApplyVerificationGate.hpp"
+#include "ai/application/verification/ManifestApplyVerificationGate.hpp"
 #include "ai/application/ManifestVerificationContinuationPreparationService.hpp"
 #include "ai/application/ManifestVerificationContinuationReadModelService.hpp"
 #include "ai/application/ManifestVerificationContinuationRepairService.hpp"

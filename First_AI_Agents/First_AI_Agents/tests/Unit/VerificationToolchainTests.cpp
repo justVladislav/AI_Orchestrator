@@ -1,5 +1,5 @@
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
-#include "ai/application/ManifestProposalSetVerifier.hpp"
+#include "ai/application/verification/ManifestProposalSetVerifier.hpp"
 #include "ai/application/verification/VerificationToolchain.hpp"
 
 #include <chrono>

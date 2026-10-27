@@ -5,7 +5,7 @@
 #include "ai/application/ManifestVerificationContinuationPreparationService.hpp"
 #include "ai/application/ManifestVerificationManualHandoffApplyAuthority.hpp"
 #include "ai/application/ManifestVerificationRepairability.hpp"
-#include "ai/application/QmlLintDiagnosticPolicy.hpp"
+#include "ai/application/verification/QmlLintDiagnosticPolicy.hpp"
 
 #include <algorithm>
 #include <unordered_map>

@@ -6,7 +6,7 @@
 #include "ai/application/InMemoryExecutionManifestRepository.hpp"
 #include "ai/application/InMemoryRepositories.hpp"
 #include "ai/application/InMemoryRunWorkspaceScopeRepository.hpp"
-#include "ai/application/ManifestMandatoryVerificationPolicy.hpp"
+#include "ai/application/verification/ManifestMandatoryVerificationPolicy.hpp"
 #include "ai/application/ManifestRouting.hpp"
 #include "ai/application/RunWorkspaceScopeService.hpp"
 #include "ai/application/workspace/WorkspaceReadPolicy.hpp"

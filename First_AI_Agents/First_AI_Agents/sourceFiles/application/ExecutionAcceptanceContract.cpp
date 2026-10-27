@@ -1,6 +1,6 @@
 #include "ai/application/ExecutionAcceptanceContract.hpp"
 
-#include "ai/application/QmlLintDiagnosticPolicy.hpp"
+#include "ai/application/verification/QmlLintDiagnosticPolicy.hpp"
 
 #include <nlohmann/json.hpp>
 

@@ -3,7 +3,7 @@
 #include "ai/application/ExecutionManifestValidator.hpp"
 #include "ai/application/InMemoryExecutionManifestRepository.hpp"
 #include "ai/application/InMemoryRepositories.hpp"
-#include "ai/application/QmlLintDiagnosticPolicy.hpp"
+#include "ai/application/verification/QmlLintDiagnosticPolicy.hpp"
 #include "ai/application/workspace/WorkspaceReadPolicy.hpp"
 
 #include <algorithm>
