@@ -1447,9 +1447,9 @@ std::string readSource(const std::string& relative)
 void testTheServiceAndTheProcessorNameNoRunOrProposalWriter()
 {
     const std::vector<std::string> files = {"includes/ai/application/FollowUpPlanService.hpp", "includes/ai/application/FollowUpComposerProcessor.hpp",
-        "includes/ai/application/FollowUpAdmission.hpp", "includes/ai/application/IFollowUpSourceReader.hpp",
+        "includes/ai/application/planning/FollowUpAdmission.hpp", "includes/ai/application/planning/IFollowUpSourceReader.hpp",
         "sourceFiles/application/FollowUpPlanService.cpp", "sourceFiles/application/FollowUpComposerProcessor.cpp",
-        "sourceFiles/application/FollowUpAdmission.cpp"};
+        "sourceFiles/application/planning/FollowUpAdmission.cpp"};
     const std::vector<std::string> forbidden = {"RunManager", "IRunRepository", "IChangeProposalRepository", "IChangeProposalStore",
         "ChangeSetApplyService", "ChangeProposalService", "IManifestWorkLedgerRepository", "IOutcomeBriefRepository", "IOutcomeBriefTrigger",
         "OutcomeBriefReconciler", "ExecutionManifestExecutor", "startRun", "IWorkspaceStateRepository"};

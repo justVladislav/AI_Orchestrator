@@ -8,7 +8,7 @@
 #include "FollowUpRequestTestSupport.hpp"
 #include "RunDraftRepositoryContract.hpp"
 
-#include "ai/application/IFollowUpPlanRequestRepository.hpp"
+#include "ai/application/planning/IFollowUpPlanRequestRepository.hpp"
 #include "ai/application/planning/IRunDraftRepository.hpp"
 
 #include <atomic>

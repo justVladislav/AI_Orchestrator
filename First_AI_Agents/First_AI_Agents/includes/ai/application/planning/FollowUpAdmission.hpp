@@ -2,8 +2,8 @@
 
 #include "ai/application/FollowUpComposerContext.hpp"
 #include "ai/application/FollowUpComposerQuote.hpp"
-#include "ai/application/FollowUpPlanRequest.hpp"
-#include "ai/application/IFollowUpSourceReader.hpp"
+#include "ai/application/planning/FollowUpPlanRequest.hpp"
+#include "ai/application/planning/IFollowUpSourceReader.hpp"
 #include "ai/application/catalog/IModelRepository.hpp"
 #include "ai/application/catalog/IProviderRepository.hpp"
 

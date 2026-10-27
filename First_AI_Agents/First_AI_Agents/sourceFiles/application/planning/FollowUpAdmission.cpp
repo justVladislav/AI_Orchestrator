@@ -1,4 +1,4 @@
-#include "ai/application/FollowUpAdmission.hpp"
+#include "ai/application/planning/FollowUpAdmission.hpp"
 
 #include <algorithm>
 #include <set>

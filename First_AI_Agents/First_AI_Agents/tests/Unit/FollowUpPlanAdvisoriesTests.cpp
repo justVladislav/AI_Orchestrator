@@ -1,4 +1,4 @@
-#include "ai/application/FollowUpPlanAdvisories.hpp"
+#include "ai/application/planning/FollowUpPlanAdvisories.hpp"
 
 #include "ai/application/RunInterfaceContract.hpp"
 

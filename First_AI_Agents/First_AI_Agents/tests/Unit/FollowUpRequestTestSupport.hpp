@@ -5,7 +5,7 @@
 
 #include "ai/application/FollowUpComposerContext.hpp"
 #include "ai/application/FollowUpComposerQuote.hpp"
-#include "ai/application/FollowUpPlanRequest.hpp"
+#include "ai/application/planning/FollowUpPlanRequest.hpp"
 #include "ai/application/IWorkflowRunner.hpp"
 #include "ai/application/Sha256.hpp"
 

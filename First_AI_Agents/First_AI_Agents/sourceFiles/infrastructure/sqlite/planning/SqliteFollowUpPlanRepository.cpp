@@ -3,7 +3,7 @@
 #include "../execution/SqliteRunStatusMapping.hpp"
 #include "SqliteRunDraftGroupStorage.hpp"
 
-#include "ai/application/IFollowUpPlanRequestRepository.hpp"
+#include "ai/application/planning/IFollowUpPlanRequestRepository.hpp"
 #include "ai/application/planning/RunDraftGroup.hpp"
 
 #include <sqlite3.h>

@@ -148,13 +148,13 @@ set(APPLICATION_SOURCES
     sourceFiles/application/context/ProjectContextSnapshotService.cpp
     sourceFiles/application/RunInterfaceContract.cpp
     sourceFiles/application/planning/NextRunPlan.cpp
-    sourceFiles/application/FollowUpPlan.cpp
+    sourceFiles/application/planning/FollowUpPlan.cpp
     sourceFiles/application/FollowUpComposerContext.cpp
     sourceFiles/application/FollowUpComposerQuote.cpp
-    sourceFiles/application/FollowUpPlanAdvisories.cpp
-    sourceFiles/application/FollowUpPlanRequest.cpp
+    sourceFiles/application/planning/FollowUpPlanAdvisories.cpp
+    sourceFiles/application/planning/FollowUpPlanRequest.cpp
     sourceFiles/application/InMemoryFollowUpPlanRepository.cpp
-    sourceFiles/application/FollowUpAdmission.cpp
+    sourceFiles/application/planning/FollowUpAdmission.cpp
     sourceFiles/application/FollowUpPlanService.cpp
     sourceFiles/application/FollowUpComposerProcessor.cpp
     sourceFiles/application/FilesystemFollowUpFileLoader.cpp

@@ -14,7 +14,7 @@
 #include "ai/application/comparison/IComparisonSessionRepository.hpp"
 #include "ai/application/catalog/IExecutionProfileRepository.hpp"
 #include "ai/application/IExecutionManifestRepository.hpp"
-#include "ai/application/IFollowUpPlanRequestRepository.hpp"
+#include "ai/application/planning/IFollowUpPlanRequestRepository.hpp"
 #include "ai/application/IManifestTaskExecutionRepository.hpp"
 #include "ai/application/IManifestVerificationBaselineNormalizationRepository.hpp"
 #include "ai/application/IManifestVerificationContinuationRepository.hpp"

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/FollowUpPlan.hpp"
+#include "ai/application/planning/FollowUpPlan.hpp"
 #include "ai/application/OutcomeBrief.hpp"
 #include "ai/application/context/ProjectContextSnapshot.hpp"
 #include "ai/common/Result.hpp"

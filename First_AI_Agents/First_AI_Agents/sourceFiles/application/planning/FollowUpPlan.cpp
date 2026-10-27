@@ -1,4 +1,4 @@
-#include "ai/application/FollowUpPlan.hpp"
+#include "ai/application/planning/FollowUpPlan.hpp"
 
 #include <string>
 #include <utility>

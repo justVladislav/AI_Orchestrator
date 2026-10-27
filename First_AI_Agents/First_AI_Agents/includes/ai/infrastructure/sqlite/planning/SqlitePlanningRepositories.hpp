@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/IFollowUpPlanRequestRepository.hpp"
+#include "ai/application/planning/IFollowUpPlanRequestRepository.hpp"
 #include "ai/application/IOutcomeBriefRepository.hpp"
 #include "ai/application/planning/IRunDraftRepository.hpp"
 #include "ai/common/Result.hpp"

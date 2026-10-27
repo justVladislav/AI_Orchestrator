@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/IFollowUpFileLoader.hpp"
+#include "ai/application/planning/IFollowUpFileLoader.hpp"
 
 #include <filesystem>
 #include <functional>

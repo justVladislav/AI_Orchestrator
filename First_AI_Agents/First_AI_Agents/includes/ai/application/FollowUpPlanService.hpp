@@ -1,10 +1,10 @@
 #pragma once
 
-#include "ai/application/FollowUpAdmission.hpp"
-#include "ai/application/FollowUpPlanAdvisories.hpp"
-#include "ai/application/FollowUpPlanRequest.hpp"
-#include "ai/application/IFollowUpPlanRequestRepository.hpp"
-#include "ai/application/IFollowUpSourceReader.hpp"
+#include "ai/application/planning/FollowUpAdmission.hpp"
+#include "ai/application/planning/FollowUpPlanAdvisories.hpp"
+#include "ai/application/planning/FollowUpPlanRequest.hpp"
+#include "ai/application/planning/IFollowUpPlanRequestRepository.hpp"
+#include "ai/application/planning/IFollowUpSourceReader.hpp"
 #include "ai/application/catalog/IModelRepository.hpp"
 #include "ai/application/catalog/IProviderRepository.hpp"
 #include "ai/application/planning/IRunDraftRepository.hpp"

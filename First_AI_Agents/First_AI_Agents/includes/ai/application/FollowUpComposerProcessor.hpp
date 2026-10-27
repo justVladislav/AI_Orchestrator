@@ -1,8 +1,8 @@
 #pragma once
 
-#include "ai/application/FollowUpAdmission.hpp"
-#include "ai/application/FollowUpPlanRequest.hpp"
-#include "ai/application/IFollowUpPlanRequestRepository.hpp"
+#include "ai/application/planning/FollowUpAdmission.hpp"
+#include "ai/application/planning/FollowUpPlanRequest.hpp"
+#include "ai/application/planning/IFollowUpPlanRequestRepository.hpp"
 #include "ai/application/IProviderClient.hpp"
 #include "ai/application/ModelExecutionService.hpp"
 

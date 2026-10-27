@@ -2,7 +2,7 @@
 
 #include "ai/application/FollowUpComposerContext.hpp"
 #include "ai/application/FollowUpComposerQuote.hpp"
-#include "ai/application/FollowUpPlan.hpp"
+#include "ai/application/planning/FollowUpPlan.hpp"
 #include "ai/application/planning/NextRunPlan.hpp"
 #include "ai/application/planning/RunDraftTypes.hpp"
 #include "ai/common/Result.hpp"

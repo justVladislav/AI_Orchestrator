@@ -1,8 +1,8 @@
 #pragma once
 
 #include "ai/application/IChangeProposalRepository.hpp"
-#include "ai/application/IFollowUpFileLoader.hpp"
-#include "ai/application/IFollowUpSourceReader.hpp"
+#include "ai/application/planning/IFollowUpFileLoader.hpp"
+#include "ai/application/planning/IFollowUpSourceReader.hpp"
 #include "ai/application/IOutcomeBriefRepository.hpp"
 #include "ai/application/projects/IProjectRepository.hpp"
 #include "ai/application/IRunRepository.hpp"

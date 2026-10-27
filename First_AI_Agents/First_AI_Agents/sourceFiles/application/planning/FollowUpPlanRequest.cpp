@@ -1,7 +1,7 @@
-#include "ai/application/FollowUpPlanRequest.hpp"
+#include "ai/application/planning/FollowUpPlanRequest.hpp"
 
 #include "ai/application/IWorkflowRunner.hpp"
-#include "ai/application/FollowUpPlanAdvisories.hpp"
+#include "ai/application/planning/FollowUpPlanAdvisories.hpp"
 #include "ai/application/context/ProjectContextSnapshot.hpp"
 
 #include <nlohmann/json.hpp>

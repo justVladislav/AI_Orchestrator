@@ -1,7 +1,7 @@
 #include "ai/application/FollowUpComposerContext.hpp"
 
 #include "ai/application/conversations/ChatContextAssembler.hpp"
-#include "ai/application/FollowUpPlanAdvisories.hpp"
+#include "ai/application/planning/FollowUpPlanAdvisories.hpp"
 #include "ai/application/IWorkflowRunner.hpp"
 #include "ai/application/planning/NextRunPlan.hpp"
 #include "ai/application/RunInterfaceContract.hpp"
