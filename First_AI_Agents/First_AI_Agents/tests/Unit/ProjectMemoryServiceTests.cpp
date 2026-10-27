@@ -7,8 +7,8 @@
 #include "ai/application/IWorkflowResolver.hpp"
 #include "ai/application/MockWorkflowRunner.hpp"
 #include "ai/application/OrchestrationService.hpp"
-#include "ai/application/ProjectMemoryCompactionService.hpp"
-#include "ai/application/ProjectMemoryService.hpp"
+#include "ai/application/conversations/ProjectMemoryCompactionService.hpp"
+#include "ai/application/conversations/ProjectMemoryService.hpp"
 #include "ai/application/projects/ProjectService.hpp"
 #include "ai/application/RunManager.hpp"
 

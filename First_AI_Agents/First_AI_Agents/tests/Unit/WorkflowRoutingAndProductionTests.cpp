@@ -9,7 +9,7 @@
 #include "ai/application/catalog/ExecutionProfileService.hpp"
 #include "ai/application/ExecutionProfileWorkflowRunner.hpp"
 #include "ai/application/ICredentialStore.hpp"
-#include "ai/application/IProjectMemoryRepository.hpp"
+#include "ai/application/conversations/IProjectMemoryRepository.hpp"
 #include "ai/application/InMemoryRepositories.hpp"
 #include "ai/application/ModelExecutionService.hpp"
 #include "ai/application/MockWorkflowRunner.hpp"

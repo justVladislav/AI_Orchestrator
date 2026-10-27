@@ -142,8 +142,8 @@ set(APPLICATION_SOURCES
     sourceFiles/application/conversations/ChatContextAssembler.cpp
     sourceFiles/application/conversations/ChatProjectContext.cpp
     sourceFiles/application/RunContextAssembler.cpp
-    sourceFiles/application/ProjectMemoryService.cpp
-    sourceFiles/application/ProjectMemoryCompactionService.cpp
+    sourceFiles/application/conversations/ProjectMemoryService.cpp
+    sourceFiles/application/conversations/ProjectMemoryCompactionService.cpp
     sourceFiles/application/ProjectContextSnapshot.cpp
     sourceFiles/application/ProjectContextSnapshotService.cpp
     sourceFiles/application/RunInterfaceContract.cpp

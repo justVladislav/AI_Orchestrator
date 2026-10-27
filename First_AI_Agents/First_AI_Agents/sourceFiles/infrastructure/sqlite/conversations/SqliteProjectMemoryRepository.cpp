@@ -2,7 +2,7 @@
 #include "../SqlitePrimitives.hpp"
 
 #include "ai/application/ApplicationTypes.hpp"
-#include "ai/application/IProjectMemoryRepository.hpp"
+#include "ai/application/conversations/IProjectMemoryRepository.hpp"
 
 #include <sqlite3.h>
 

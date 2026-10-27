@@ -1,4 +1,4 @@
-#include "ai/application/ProjectMemoryCompactionService.hpp"
+#include "ai/application/conversations/ProjectMemoryCompactionService.hpp"
 
 #include "ai/application/conversations/ChatContextAssembler.hpp"
 #include "ai/application/CostCalculation.hpp"

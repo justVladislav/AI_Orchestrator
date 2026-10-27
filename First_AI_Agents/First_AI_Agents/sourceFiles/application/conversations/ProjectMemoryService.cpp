@@ -1,4 +1,4 @@
-#include "ai/application/ProjectMemoryService.hpp"
+#include "ai/application/conversations/ProjectMemoryService.hpp"
 
 #include "ai/application/conversations/ChatContextAssembler.hpp"
 #include "ai/application/IdGenerator.hpp"

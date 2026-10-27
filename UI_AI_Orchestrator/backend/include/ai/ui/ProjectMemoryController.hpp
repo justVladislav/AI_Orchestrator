@@ -1,8 +1,8 @@
 #pragma once
 
 #include <ai/application/catalog/ExecutionProfileTypes.hpp>
-#include <ai/application/ProjectMemoryCompactionService.hpp>
-#include <ai/application/ProjectMemoryService.hpp>
+#include <ai/application/conversations/ProjectMemoryCompactionService.hpp>
+#include <ai/application/conversations/ProjectMemoryService.hpp>
 #include <ai/application/catalog/ProviderCatalogService.hpp>
 
 #include <QObject>

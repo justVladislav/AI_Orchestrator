@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/ProjectMemoryCompactionTypes.hpp"
+#include "ai/application/conversations/ProjectMemoryCompactionTypes.hpp"
 #include "ai/common/Result.hpp"
 
 #include <vector>

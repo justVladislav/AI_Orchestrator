@@ -2,8 +2,8 @@
 
 #include "ai/application/conversations/IChatMemoryRepository.hpp"
 #include "ai/application/conversations/IChatRepository.hpp"
-#include "ai/application/IProjectMemoryCompactionRepository.hpp"
-#include "ai/application/IProjectMemoryRepository.hpp"
+#include "ai/application/conversations/IProjectMemoryCompactionRepository.hpp"
+#include "ai/application/conversations/IProjectMemoryRepository.hpp"
 #include "ai/common/Result.hpp"
 #include "ai/infrastructure/sqlite/SqliteDatabase.hpp"
 

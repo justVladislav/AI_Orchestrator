@@ -6,7 +6,7 @@
 #include "ai/application/ExecutionManifestParser.hpp"
 #include "ai/application/ExecutionManifestService.hpp"
 #include "ai/application/ExecutionManifestValidator.hpp"
-#include "ai/application/IProjectMemoryRepository.hpp"
+#include "ai/application/conversations/IProjectMemoryRepository.hpp"
 #include "ai/application/ModelExecutionService.hpp"
 #include "ai/application/ProjectWritePolicy.hpp"
 #include "ai/application/RunContextAssembler.hpp"

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/IProjectMemoryRepository.hpp"
+#include "ai/application/conversations/IProjectMemoryRepository.hpp"
 #include "ai/common/Result.hpp"
 
 #include <string_view>

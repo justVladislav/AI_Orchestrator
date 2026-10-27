@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/IManifestWorkLedgerRepository.hpp"
-#include "ai/application/IProjectMemoryRepository.hpp"
+#include "ai/application/conversations/IProjectMemoryRepository.hpp"
 #include "ai/application/projects/IProjectRepository.hpp"
 #include "ai/application/IRunRepository.hpp"
 #include "ai/application/ManifestVerificationManualHandoffResolution.hpp"
