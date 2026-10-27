@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/IApplicationSettingsRepository.hpp"
+#include "ai/application/settings/IApplicationSettingsRepository.hpp"
 #include "ai/application/catalog/IExecutionProfileRepository.hpp"
 #include "ai/application/catalog/IModelRepository.hpp"
 #include "ai/application/catalog/IProviderRepository.hpp"

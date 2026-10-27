@@ -2,7 +2,7 @@
 
 #include "ai/application/ArtifactService.hpp"
 #include "ai/application/ChatProjectContext.hpp"
-#include "ai/application/ApplicationSettingsService.hpp"
+#include "ai/application/settings/ApplicationSettingsService.hpp"
 #include "ai/application/catalog/ExecutionProfileService.hpp"
 #include "ai/application/InMemoryRepositories.hpp"
 #include "ai/application/MockWorkflowRunner.hpp"

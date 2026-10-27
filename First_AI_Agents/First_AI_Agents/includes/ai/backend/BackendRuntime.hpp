@@ -8,7 +8,7 @@
 #include "ai/application/ProjectReadinessService.hpp"
 #include "ai/application/VerificationScratchService.hpp"
 #include "ai/providers/IProviderAgentSession.hpp"
-#include "ai/application/ApplicationSettingsService.hpp"
+#include "ai/application/settings/ApplicationSettingsService.hpp"
 #include "ai/application/CredentialManagementService.hpp"
 #include "ai/application/ChatService.hpp"
 #include "ai/application/ComparisonService.hpp"

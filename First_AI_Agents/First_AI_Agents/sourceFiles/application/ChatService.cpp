@@ -2,7 +2,7 @@
 
 #include "ai/application/ChatProjectContext.hpp"
 
-#include "ai/application/ApplicationSettingsService.hpp"
+#include "ai/application/settings/ApplicationSettingsService.hpp"
 #include "ai/application/ChatContextAssembler.hpp"
 #include "ai/application/CostCalculation.hpp"
 #include "ai/application/IdGenerator.hpp"

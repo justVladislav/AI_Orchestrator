@@ -1,4 +1,4 @@
-#include "ai/application/ApplicationSettingsService.hpp"
+#include "ai/application/settings/ApplicationSettingsService.hpp"
 
 #include <chrono>
 #include <utility>

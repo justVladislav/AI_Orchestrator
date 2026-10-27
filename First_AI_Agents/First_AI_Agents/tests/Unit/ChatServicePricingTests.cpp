@@ -1,4 +1,4 @@
-#include "ai/application/ApplicationSettingsService.hpp"
+#include "ai/application/settings/ApplicationSettingsService.hpp"
 #include "ai/application/ChatService.hpp"
 #include "ai/application/ChatContextAssembler.hpp"
 #include "ai/application/ChatProjectContext.hpp"

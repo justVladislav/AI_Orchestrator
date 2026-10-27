@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/ApplicationSettingsTypes.hpp"
+#include "ai/application/settings/ApplicationSettingsTypes.hpp"
 #include "ai/common/Result.hpp"
 
 namespace ai::application {

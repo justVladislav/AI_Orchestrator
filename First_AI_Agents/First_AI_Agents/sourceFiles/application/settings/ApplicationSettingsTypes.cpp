@@ -1,4 +1,4 @@
-#include "ai/application/ApplicationSettingsTypes.hpp"
+#include "ai/application/settings/ApplicationSettingsTypes.hpp"
 
 namespace ai::application {
 

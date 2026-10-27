@@ -50,8 +50,8 @@ set(RUNTIME_SOURCES
 )
 
 set(APPLICATION_SOURCES
-    sourceFiles/application/ApplicationSettingsTypes.cpp
-    sourceFiles/application/ApplicationSettingsService.cpp
+    sourceFiles/application/settings/ApplicationSettingsTypes.cpp
+    sourceFiles/application/settings/ApplicationSettingsService.cpp
     sourceFiles/application/ApplicationTypes.cpp
     sourceFiles/application/ArtifactTypes.cpp
     sourceFiles/application/ArtifactPathPolicy.cpp

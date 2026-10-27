@@ -2,7 +2,7 @@
 
 #include "ai/application/IAgentToolAuditRepository.hpp"
 #include "ai/application/IAgentToolSessionRepository.hpp"
-#include "ai/application/IApplicationSettingsRepository.hpp"
+#include "ai/application/settings/IApplicationSettingsRepository.hpp"
 #include "ai/application/IArtifactRepository.hpp"
 #include "ai/application/IRunWarningRepository.hpp"
 #include "ai/application/IProjectReadinessRepository.hpp"
