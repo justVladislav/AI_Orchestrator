@@ -3,7 +3,7 @@
 #include "ai/application/proposals/IChangeApprovalRepository.hpp"
 #include "ai/application/proposals/IChangeProposalRepository.hpp"
 #include "ai/application/verification/IManifestVerificationContinuationRepository.hpp"
-#include "ai/application/IManifestVerificationManualHandoffRepository.hpp"
+#include "ai/application/verification/IManifestVerificationManualHandoffRepository.hpp"
 #include "ai/application/IManifestWorkLedgerRepository.hpp"
 #include "ai/application/projects/IProjectRepository.hpp"
 #include "ai/application/proposals/IProposalReviewRepository.hpp"

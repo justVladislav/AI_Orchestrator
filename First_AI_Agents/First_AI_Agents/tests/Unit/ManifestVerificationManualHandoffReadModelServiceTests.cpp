@@ -8,7 +8,7 @@
 // health, and never selects the authoritative attempt independently of
 // QML-P4R.4's own established rule (the highest-ordinal VerifiedSuccess
 // attempt).
-#include "ai/application/ManifestVerificationManualHandoffReadModelService.hpp"
+#include "ai/application/verification/ManifestVerificationManualHandoffReadModelService.hpp"
 
 #include "ai/application/proposals/ChangeProposalService.hpp"
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
@@ -27,7 +27,7 @@
 #include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"
 #include "ai/application/verification/ManifestVerificationContinuationService.hpp"
 #include "ai/application/verification/ManifestVerificationLegacyBaselineNormalizationService.hpp"
-#include "ai/application/ManifestVerificationManualHandoffService.hpp"
+#include "ai/application/verification/ManifestVerificationManualHandoffService.hpp"
 #include "ai/application/proposals/ProposalReviewService.hpp"
 #include "ai/application/verification/QmlLintDiagnosticPolicy.hpp"
 #include "ai/application/Sha256.hpp"

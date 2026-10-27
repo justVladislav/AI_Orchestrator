@@ -18,7 +18,7 @@
 #include "ai/application/IManifestTaskExecutionRepository.hpp"
 #include "ai/application/verification/IManifestVerificationBaselineNormalizationRepository.hpp"
 #include "ai/application/verification/IManifestVerificationContinuationRepository.hpp"
-#include "ai/application/IManifestVerificationManualHandoffRepository.hpp"
+#include "ai/application/verification/IManifestVerificationManualHandoffRepository.hpp"
 #include "ai/application/IManifestWorkLedgerRepository.hpp"
 #include "ai/application/catalog/IModelRepository.hpp"
 #include "ai/application/agents/IModelExecutionRepository.hpp"

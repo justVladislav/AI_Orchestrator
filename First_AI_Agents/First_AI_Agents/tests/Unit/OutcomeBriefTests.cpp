@@ -2,7 +2,7 @@
 
 #include "ai/application/IWorkflowRunner.hpp"
 #include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"
-#include "ai/application/ManifestVerificationManualHandoffTypes.hpp"
+#include "ai/application/verification/ManifestVerificationManualHandoffTypes.hpp"
 #include "ai/application/Sha256.hpp"
 
 #include <algorithm>

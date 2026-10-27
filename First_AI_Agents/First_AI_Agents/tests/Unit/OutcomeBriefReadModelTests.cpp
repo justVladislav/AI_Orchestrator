@@ -3,7 +3,7 @@
 #include "ai/application/InMemoryOutcomeBriefRepository.hpp"
 #include "ai/application/InMemoryRepositories.hpp"
 #include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"
-#include "ai/application/ManifestVerificationManualHandoffTypes.hpp"
+#include "ai/application/verification/ManifestVerificationManualHandoffTypes.hpp"
 #include "ai/application/planning/OutcomeBriefReadModelService.hpp"
 
 #include <iostream>

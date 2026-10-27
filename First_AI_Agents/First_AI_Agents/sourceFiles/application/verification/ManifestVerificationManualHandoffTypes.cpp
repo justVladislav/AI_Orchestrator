@@ -1,4 +1,4 @@
-#include "ai/application/ManifestVerificationManualHandoffTypes.hpp"
+#include "ai/application/verification/ManifestVerificationManualHandoffTypes.hpp"
 
 #include <algorithm>
 #include <unordered_set>

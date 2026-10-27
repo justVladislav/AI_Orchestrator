@@ -2,7 +2,7 @@
 
 #include "ai/application/verification/IManifestVerificationBaselineNormalizationRepository.hpp"
 #include "ai/application/verification/IManifestVerificationContinuationRepository.hpp"
-#include "ai/application/IManifestVerificationManualHandoffRepository.hpp"
+#include "ai/application/verification/IManifestVerificationManualHandoffRepository.hpp"
 #include "ai/application/IVerificationBootstrapRepository.hpp"
 #include "ai/application/verification/IVerificationEnvironmentRepository.hpp"
 #include "ai/common/Result.hpp"

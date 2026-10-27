@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/ManifestVerificationManualHandoffTypes.hpp"
+#include "ai/application/verification/ManifestVerificationManualHandoffTypes.hpp"
 #include "ai/common/Result.hpp"
 
 #include <optional>

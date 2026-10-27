@@ -3,8 +3,8 @@
 #include <ai/application/proposals/ChangeProposalService.hpp>
 #include <ai/application/proposals/ChangeSetApplyService.hpp>
 #include <ai/application/verification/ManifestApplyVerificationGate.hpp>
-#include <ai/application/ManifestVerificationManualHandoffReadModelService.hpp>
-#include <ai/application/ManifestVerificationManualHandoffService.hpp>
+#include <ai/application/verification/ManifestVerificationManualHandoffReadModelService.hpp>
+#include <ai/application/verification/ManifestVerificationManualHandoffService.hpp>
 #include <ai/application/proposals/ProposalReviewService.hpp>
 
 #include <QFutureWatcher>

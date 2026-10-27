@@ -1,7 +1,7 @@
-#include "ai/application/ManifestVerificationManualHandoffApplyAuthority.hpp"
+#include "ai/application/verification/ManifestVerificationManualHandoffApplyAuthority.hpp"
 
 #include "ai/application/ExecutionAcceptanceContract.hpp"
-#include "ai/application/ManifestVerificationManualHandoffTypes.hpp"
+#include "ai/application/verification/ManifestVerificationManualHandoffTypes.hpp"
 
 #include <algorithm>
 #include <unordered_set>

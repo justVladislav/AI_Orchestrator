@@ -1,9 +1,9 @@
-#include "ai/application/ManifestVerificationManualHandoffReadModelService.hpp"
+#include "ai/application/verification/ManifestVerificationManualHandoffReadModelService.hpp"
 
 #include "ai/application/IWorkflowRunner.hpp"
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"
-#include "ai/application/ManifestVerificationManualHandoffApplyAuthority.hpp"
+#include "ai/application/verification/ManifestVerificationManualHandoffApplyAuthority.hpp"
 #include "ai/application/verification/ManifestVerificationRepairability.hpp"
 #include "ai/application/verification/QmlLintDiagnosticPolicy.hpp"
 

@@ -1,12 +1,12 @@
 #pragma once
 
 #include "ai/application/proposals/ChangeProposalService.hpp"
-#include "ai/application/IManifestVerificationManualHandoffRepository.hpp"
+#include "ai/application/verification/IManifestVerificationManualHandoffRepository.hpp"
 #include "ai/application/IManifestWorkLedgerRepository.hpp"
 #include "ai/application/IRunRepository.hpp"
 #include "ai/application/verification/ManifestApplyVerificationGate.hpp"
-#include "ai/application/ManifestVerificationManualHandoffResolution.hpp"
-#include "ai/application/ManifestVerificationManualHandoffService.hpp"
+#include "ai/application/verification/ManifestVerificationManualHandoffResolution.hpp"
+#include "ai/application/verification/ManifestVerificationManualHandoffService.hpp"
 #include "ai/application/proposals/ProposalReviewService.hpp"
 
 #include <cstddef>

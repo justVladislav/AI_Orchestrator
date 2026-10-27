@@ -2,7 +2,7 @@
 
 #include "ai/application/ApplicationTypes.hpp"
 #include "ai/application/proposals/ChangeProposalTypes.hpp"
-#include "ai/application/ManifestVerificationManualHandoffResolution.hpp"
+#include "ai/application/verification/ManifestVerificationManualHandoffResolution.hpp"
 #include "ai/application/ManifestWorkLedgerTypes.hpp"
 #include "ai/common/Result.hpp"
 

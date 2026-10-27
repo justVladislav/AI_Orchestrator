@@ -4,7 +4,7 @@
 #include "ai/application/conversations/IProjectMemoryRepository.hpp"
 #include "ai/application/projects/IProjectRepository.hpp"
 #include "ai/application/IRunRepository.hpp"
-#include "ai/application/ManifestVerificationManualHandoffResolution.hpp"
+#include "ai/application/verification/ManifestVerificationManualHandoffResolution.hpp"
 #include "ai/application/context/ProjectContextSnapshot.hpp"
 
 #include <cstddef>

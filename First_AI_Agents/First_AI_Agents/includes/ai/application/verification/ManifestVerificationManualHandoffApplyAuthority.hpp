@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/ApplicationTypes.hpp"
-#include "ai/application/IManifestVerificationManualHandoffRepository.hpp"
+#include "ai/application/verification/IManifestVerificationManualHandoffRepository.hpp"
 #include "ai/application/IManifestWorkLedgerRepository.hpp"
 #include "ai/application/IRunRepository.hpp"
 #include "ai/application/ManifestWorkLedgerTypes.hpp"

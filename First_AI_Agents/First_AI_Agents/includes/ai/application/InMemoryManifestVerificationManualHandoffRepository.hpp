@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/IManifestVerificationManualHandoffRepository.hpp"
+#include "ai/application/verification/IManifestVerificationManualHandoffRepository.hpp"
 
 #include <map>
 #include <mutex>

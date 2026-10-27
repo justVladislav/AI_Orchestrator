@@ -91,10 +91,10 @@ set(APPLICATION_SOURCES
     sourceFiles/application/verification/ManifestVerificationAttributionService.cpp
     sourceFiles/application/verification/ManifestVerificationLegacyBaselineNormalizationService.cpp
     sourceFiles/application/InMemoryManifestVerificationBaselineNormalizationRepository.cpp
-    sourceFiles/application/ManifestVerificationManualHandoffTypes.cpp
+    sourceFiles/application/verification/ManifestVerificationManualHandoffTypes.cpp
     sourceFiles/application/InMemoryManifestVerificationManualHandoffRepository.cpp
-    sourceFiles/application/ManifestVerificationManualHandoffService.cpp
-    sourceFiles/application/ManifestVerificationManualHandoffReadModelService.cpp
+    sourceFiles/application/verification/ManifestVerificationManualHandoffService.cpp
+    sourceFiles/application/verification/ManifestVerificationManualHandoffReadModelService.cpp
     sourceFiles/application/verification/ManifestVerificationContinuationRepairService.cpp
     sourceFiles/application/RunWorkspaceScopeTypes.cpp
     sourceFiles/application/RunWorkspaceScopeService.cpp
@@ -171,7 +171,7 @@ set(APPLICATION_SOURCES
     sourceFiles/application/proposals/ChangeProposalTypes.cpp
     sourceFiles/application/proposals/ProposalReviewService.cpp
     sourceFiles/application/verification/ManifestProposalContentHash.cpp
-    sourceFiles/application/ManifestVerificationManualHandoffApplyAuthority.cpp
+    sourceFiles/application/verification/ManifestVerificationManualHandoffApplyAuthority.cpp
     sourceFiles/application/verification/ManifestApplyVerificationGate.cpp
     sourceFiles/application/verification/ManifestMandatoryVerificationPolicy.cpp
     sourceFiles/application/ManifestRouting.cpp
