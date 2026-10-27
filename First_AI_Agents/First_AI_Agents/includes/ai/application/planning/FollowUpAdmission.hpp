@@ -1,7 +1,7 @@
 #pragma once
 
-#include "ai/application/FollowUpComposerContext.hpp"
-#include "ai/application/FollowUpComposerQuote.hpp"
+#include "ai/application/planning/FollowUpComposerContext.hpp"
+#include "ai/application/planning/FollowUpComposerQuote.hpp"
 #include "ai/application/planning/FollowUpPlanRequest.hpp"
 #include "ai/application/planning/IFollowUpSourceReader.hpp"
 #include "ai/application/catalog/IModelRepository.hpp"

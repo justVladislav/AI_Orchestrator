@@ -149,17 +149,17 @@ set(APPLICATION_SOURCES
     sourceFiles/application/RunInterfaceContract.cpp
     sourceFiles/application/planning/NextRunPlan.cpp
     sourceFiles/application/planning/FollowUpPlan.cpp
-    sourceFiles/application/FollowUpComposerContext.cpp
-    sourceFiles/application/FollowUpComposerQuote.cpp
+    sourceFiles/application/planning/FollowUpComposerContext.cpp
+    sourceFiles/application/planning/FollowUpComposerQuote.cpp
     sourceFiles/application/planning/FollowUpPlanAdvisories.cpp
     sourceFiles/application/planning/FollowUpPlanRequest.cpp
     sourceFiles/application/InMemoryFollowUpPlanRepository.cpp
     sourceFiles/application/planning/FollowUpAdmission.cpp
-    sourceFiles/application/FollowUpPlanService.cpp
-    sourceFiles/application/FollowUpComposerProcessor.cpp
+    sourceFiles/application/planning/FollowUpPlanService.cpp
+    sourceFiles/application/planning/FollowUpComposerProcessor.cpp
     sourceFiles/application/FilesystemFollowUpFileLoader.cpp
-    sourceFiles/application/FollowUpSourceReader.cpp
-    sourceFiles/application/FollowUpPlanReadModel.cpp
+    sourceFiles/application/planning/FollowUpSourceReader.cpp
+    sourceFiles/application/planning/FollowUpPlanReadModel.cpp
     sourceFiles/application/OutcomeBrief.cpp
     sourceFiles/application/OutcomeBriefRepository.cpp
     sourceFiles/application/InMemoryOutcomeBriefRepository.cpp

@@ -1446,9 +1446,9 @@ std::string readSource(const std::string& relative)
 // repository, no Run manager or workflow runner, no proposal / Apply / Work Ledger / Outcome Brief writer.
 void testTheServiceAndTheProcessorNameNoRunOrProposalWriter()
 {
-    const std::vector<std::string> files = {"includes/ai/application/FollowUpPlanService.hpp", "includes/ai/application/FollowUpComposerProcessor.hpp",
+    const std::vector<std::string> files = {"includes/ai/application/planning/FollowUpPlanService.hpp", "includes/ai/application/planning/FollowUpComposerProcessor.hpp",
         "includes/ai/application/planning/FollowUpAdmission.hpp", "includes/ai/application/planning/IFollowUpSourceReader.hpp",
-        "sourceFiles/application/FollowUpPlanService.cpp", "sourceFiles/application/FollowUpComposerProcessor.cpp",
+        "sourceFiles/application/planning/FollowUpPlanService.cpp", "sourceFiles/application/planning/FollowUpComposerProcessor.cpp",
         "sourceFiles/application/planning/FollowUpAdmission.cpp"};
     const std::vector<std::string> forbidden = {"RunManager", "IRunRepository", "IChangeProposalRepository", "IChangeProposalStore",
         "ChangeSetApplyService", "ChangeProposalService", "IManifestWorkLedgerRepository", "IOutcomeBriefRepository", "IOutcomeBriefTrigger",
@@ -1469,7 +1469,7 @@ void testTheServiceAndTheProcessorNameNoRunOrProposalWriter()
         }
         // The one thing taken from the workflow header is the Manifest workflow id constant, in the service source only.
         const bool includesRunner = text.find("IWorkflowRunner") != std::string::npos;
-        check(!includesRunner || file == "sourceFiles/application/FollowUpPlanService.cpp",
+        check(!includesRunner || file == "sourceFiles/application/planning/FollowUpPlanService.cpp",
             file + " must not include the workflow runner header");
     }
 }

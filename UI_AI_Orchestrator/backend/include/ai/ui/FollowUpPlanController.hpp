@@ -1,7 +1,7 @@
 #pragma once
 
-#include <ai/application/FollowUpPlanReadModel.hpp>
-#include <ai/application/FollowUpPlanService.hpp>
+#include <ai/application/planning/FollowUpPlanReadModel.hpp>
+#include <ai/application/planning/FollowUpPlanService.hpp>
 
 #include <QFutureWatcher>
 #include <QObject>

@@ -1,4 +1,4 @@
-#include "ai/application/FollowUpComposerQuote.hpp"
+#include "ai/application/planning/FollowUpComposerQuote.hpp"
 
 #include "ai/application/conversations/ChatContextAssembler.hpp"
 #include "ai/application/IWorkflowRunner.hpp"

@@ -5,8 +5,8 @@
 
 #include "FollowUpRequestTestSupport.hpp"
 
-#include "ai/application/FollowUpComposerProcessor.hpp"
-#include "ai/application/FollowUpPlanService.hpp"
+#include "ai/application/planning/FollowUpComposerProcessor.hpp"
+#include "ai/application/planning/FollowUpPlanService.hpp"
 #include "ai/application/IProviderClient.hpp"
 #include "ai/application/InMemoryFollowUpPlanRepository.hpp"
 #include "ai/application/InMemoryRepositories.hpp"

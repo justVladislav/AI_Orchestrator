@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/ApplicationTypes.hpp"
-#include "ai/application/FollowUpComposerContext.hpp"
+#include "ai/application/planning/FollowUpComposerContext.hpp"
 #include "ai/application/OutcomeBrief.hpp"
 #include "ai/application/context/ProjectContextSnapshot.hpp"
 #include "ai/common/Result.hpp"

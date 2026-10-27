@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/FollowUpComposerContext.hpp"
+#include "ai/application/planning/FollowUpComposerContext.hpp"
 #include "ai/common/Result.hpp"
 
 #include <filesystem>

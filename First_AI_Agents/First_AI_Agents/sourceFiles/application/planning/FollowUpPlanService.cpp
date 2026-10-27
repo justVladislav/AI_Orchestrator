@@ -1,4 +1,4 @@
-#include "ai/application/FollowUpPlanService.hpp"
+#include "ai/application/planning/FollowUpPlanService.hpp"
 
 #include "ai/application/IWorkflowRunner.hpp"
 #include "ai/application/IdGenerator.hpp"

@@ -1,7 +1,7 @@
 #include "ai/backend/StartupRecovery.hpp"
 
 #include "ai/application/comparison/ComparisonService.hpp"
-#include "ai/application/FollowUpComposerProcessor.hpp"
+#include "ai/application/planning/FollowUpComposerProcessor.hpp"
 #include "ai/application/IAgentToolAuditRepository.hpp"
 #include "ai/application/IAgentToolSessionRepository.hpp"
 #include "ai/application/ManifestInterruptedTaskReconciler.hpp"

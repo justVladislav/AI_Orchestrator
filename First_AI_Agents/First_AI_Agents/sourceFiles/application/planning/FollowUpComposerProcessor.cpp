@@ -1,4 +1,4 @@
-#include "ai/application/FollowUpComposerProcessor.hpp"
+#include "ai/application/planning/FollowUpComposerProcessor.hpp"
 
 #include "ai/application/CacheDurationAccounting.hpp"
 #include "ai/application/CostCalculation.hpp"
