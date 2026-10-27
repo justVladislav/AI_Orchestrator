@@ -1683,19 +1683,27 @@ void testLegacyConversionRecordQmlOnlyRendersTheStoredAudit()
         && has(projections, "function conversionLabel(marker)"));
 }
 
+std::string readManifestPresentationQml()
+{
+    const auto directory = std::filesystem::path(AI_ORCHESTRATOR_QML_SOURCE_DIR)
+        / "pages" / "Runs" / "Runs_Objects";
+    std::ostringstream source;
+    for (const char* file : {"ManifestPanel.qml", "ManifestEnvironmentSection.qml",
+                             "ManifestRosterSection.qml", "ManifestTaskCard.qml"}) {
+        std::ifstream stream(directory / file, std::ios::binary);
+        assert(stream.is_open() && "Could not open a deployed Manifest presentation component");
+        source << stream.rdbuf() << '\n';
+    }
+    return source.str();
+}
+
 // AG-17.6: static proof that the shipped QML presents the roster as a pool of available
 // workers and never styles an unused worker as a problem.
 void testManifestPanelQmlPresentsUnusedWorkersWithoutWarning()
 {
-    const std::filesystem::path panelPath = std::filesystem::path(AI_ORCHESTRATOR_QML_SOURCE_DIR)
-        / "pages" / "Runs" / "Runs_Objects" / "ManifestPanel.qml";
-    std::ifstream stream(panelPath, std::ios::binary);
-    assert(stream.is_open() && "Could not open ManifestPanel.qml for the roster presentation contract");
-    std::ostringstream buffer;
-    buffer << stream.rdbuf();
-    const std::string qml = buffer.str();
+    const std::string qml = readManifestPresentationQml();
     assert(qml.find("Available workers") != std::string::npos);
-    assert(qml.find("qsTr(\"Unused\")") != std::string::npos);
+    assert(qml.find("qsTranslate(\"ManifestPanel\", \"Unused\")") != std::string::npos);
     // The participation text is coloured only success (assigned) or muted: a worker
     // without a task is never rendered with the warning or error colour.
     const auto text = qml.find("objectName: \"rosterParticipationText\"");
@@ -1713,27 +1721,21 @@ void testManifestPanelQmlPresentsUnusedWorkersWithoutWarning()
 // colour reserved for that debt block.
 void testManifestPanelQmlWordsPriceStatesAndNeverComputesCost()
 {
-    const std::filesystem::path panelPath = std::filesystem::path(AI_ORCHESTRATOR_QML_SOURCE_DIR)
-        / "pages" / "Runs" / "Runs_Objects" / "ManifestPanel.qml";
-    std::ifstream stream(panelPath, std::ios::binary);
-    assert(stream.is_open() && "Could not open ManifestPanel.qml for the usage presentation contract");
-    std::ostringstream buffer;
-    buffer << stream.rdbuf();
-    const std::string qml = buffer.str();
+    const std::string qml = readManifestPresentationQml();
 
     const auto functionStart = qml.find("function usageSummary(usage)");
     assert(functionStart != std::string::npos);
-    const auto functionEnd = qml.find("ColumnLayout {", functionStart);
+    const auto functionEnd = qml.find("\n    }", functionStart);
     assert(functionEnd != std::string::npos);
     const std::string summary = qml.substr(functionStart, functionEnd - functionStart);
     assert(summary.find("usage.priceState === \"none\"") != std::string::npos
         && summary.find("usage.priceState === \"known\"") != std::string::npos
         && summary.find("usage.priceState === \"partial\"") != std::string::npos);
-    assert(summary.find("qsTr(\"price unknown\")") != std::string::npos
+    assert(summary.find("qsTranslate(\"ManifestPanel\", \"price unknown\")") != std::string::npos
         && "An unknown price must be worded, not rendered as an amount");
     // costText is only used by the known and partial branches; the unknown branch is the
     // final else and never touches it.
-    const auto unknownBranch = summary.find("else cost = qsTr(\"price unknown\")");
+    const auto unknownBranch = summary.find("else cost = qsTranslate(\"ManifestPanel\", \"price unknown\")");
     assert(unknownBranch != std::string::npos);
     const auto unknownLineEnd = summary.find('\n', unknownBranch);
     assert(summary.substr(unknownBranch, unknownLineEnd - unknownBranch).find("costText")
@@ -1746,7 +1748,7 @@ void testManifestPanelQmlWordsPriceStatesAndNeverComputesCost()
     // A partial amount is worded as a lower bound ("at least ...").
     const auto partialBranch = summary.find("usage.priceState === \"partial\"");
     assert(partialBranch != std::string::npos
-        && summary.find("qsTr(\"at least %1", partialBranch) != std::string::npos);
+        && summary.find("qsTranslate(\"ManifestPanel\", \"at least %1", partialBranch) != std::string::npos);
 
     // The warning colour appears in the incomplete-attribution line, never in the per-member
     // usage line.
@@ -1789,13 +1791,7 @@ void testManifestPanelQmlWordsPriceStatesAndNeverComputesCost()
 // leftover string in the QML itself would be caught too.
 void testManifestPanelQmlNeverLabelsRetryAsCreateSetupRun()
 {
-    const std::filesystem::path qmlPath = std::filesystem::path(AI_ORCHESTRATOR_QML_SOURCE_DIR)
-        / "pages" / "Runs" / "Runs_Objects" / "ManifestPanel.qml";
-    std::ifstream stream(qmlPath, std::ios::binary);
-    assert(stream.is_open() && "Could not open ManifestPanel.qml for the naming-proof test");
-    std::ostringstream buffer;
-    buffer << stream.rdbuf();
-    const std::string content = buffer.str();
+    const std::string content = readManifestPresentationQml();
 
     assert(content.find("Create setup Run") == std::string::npos
         && "ManifestPanel.qml must never label the retry action \"Create setup Run\" - it is a "

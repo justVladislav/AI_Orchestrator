@@ -79,6 +79,9 @@ qt_add_qml_module(UI_AI_Orchestrator_Content
         pages/Runs/Runs_Objects/LegacyConversionRecordPanel.qml
         pages/Runs/Runs_Objects/AgentSessionPanel.qml
         pages/Runs/Runs_Objects/ManifestPanel.qml
+        pages/Runs/Runs_Objects/ManifestEnvironmentSection.qml
+        pages/Runs/Runs_Objects/ManifestRosterSection.qml
+        pages/Runs/Runs_Objects/ManifestTaskCard.qml
         pages/Runs/Runs_Objects/ManualHandoffPanel.qml
         pages/Runs/Runs_Objects/ManualHandoffCandidateChanges.qml
         pages/Runs/Runs_Objects/ManualHandoffAttemptHistory.qml
