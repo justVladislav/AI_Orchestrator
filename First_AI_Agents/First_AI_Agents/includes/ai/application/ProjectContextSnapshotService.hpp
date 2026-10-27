@@ -2,7 +2,7 @@
 
 #include "ai/application/IManifestWorkLedgerRepository.hpp"
 #include "ai/application/IProjectMemoryRepository.hpp"
-#include "ai/application/IProjectRepository.hpp"
+#include "ai/application/projects/IProjectRepository.hpp"
 #include "ai/application/IRunRepository.hpp"
 #include "ai/application/ManifestVerificationManualHandoffResolution.hpp"
 #include "ai/application/ProjectContextSnapshot.hpp"

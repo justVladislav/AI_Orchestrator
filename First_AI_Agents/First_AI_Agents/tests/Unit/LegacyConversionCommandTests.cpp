@@ -9,7 +9,7 @@
 #include "ai/application/LegacyRosterAdapter.hpp"
 #include "ai/application/MockWorkflowRunner.hpp"
 #include "ai/application/OrchestrationService.hpp"
-#include "ai/application/ProjectService.hpp"
+#include "ai/application/projects/ProjectService.hpp"
 #include "ai/application/catalog/ProviderCatalogService.hpp"
 #include "ai/application/WorkflowRouter.hpp"
 

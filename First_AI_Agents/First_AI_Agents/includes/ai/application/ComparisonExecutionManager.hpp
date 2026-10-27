@@ -2,7 +2,7 @@
 
 #include "ai/application/ComparisonQualityEvaluator.hpp"
 #include "ai/application/ComparisonService.hpp"
-#include "ai/application/IProjectRepository.hpp"
+#include "ai/application/projects/IProjectRepository.hpp"
 #include "ai/application/IProviderClient.hpp"
 
 #include <condition_variable>

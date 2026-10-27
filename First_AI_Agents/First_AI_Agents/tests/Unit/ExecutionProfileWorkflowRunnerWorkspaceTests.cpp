@@ -19,7 +19,7 @@
 #include "ai/application/MockWorkflowRunner.hpp"
 #include "ai/application/ModelExecutionService.hpp"
 #include "ai/application/OrchestrationService.hpp"
-#include "ai/application/ProjectService.hpp"
+#include "ai/application/projects/ProjectService.hpp"
 #include "ai/application/catalog/ProviderCatalogService.hpp"
 #include "ai/application/RunPathClaimRegistry.hpp"
 #include "ai/application/WorkflowRouter.hpp"

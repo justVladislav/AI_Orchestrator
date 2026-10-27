@@ -2,7 +2,7 @@
 
 #include "ai/application/IProjectMemoryCompactionRepository.hpp"
 #include "ai/application/IProjectMemoryRepository.hpp"
-#include "ai/application/IProjectRepository.hpp"
+#include "ai/application/projects/IProjectRepository.hpp"
 #include "ai/application/IProviderClient.hpp"
 #include "ai/application/catalog/IProviderRepository.hpp"
 #include "ai/application/catalog/IModelRepository.hpp"

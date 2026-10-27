@@ -2,7 +2,7 @@
 
 #include "ai/application/ChatTypes.hpp"
 #include "ai/application/IChatRepository.hpp"
-#include "ai/application/IProjectRepository.hpp"
+#include "ai/application/projects/IProjectRepository.hpp"
 #include "ai/application/IRunDraftRepository.hpp"
 #include "ai/application/IRunSourceLookup.hpp"
 #include "ai/application/NextRunPlan.hpp"

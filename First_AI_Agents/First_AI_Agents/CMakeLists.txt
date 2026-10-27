@@ -112,8 +112,8 @@ set(APPLICATION_SOURCES
     sourceFiles/application/Sha256.cpp
     sourceFiles/application/IdGenerator.cpp
     sourceFiles/application/InMemoryRepositories.cpp
-    sourceFiles/application/ProjectService.cpp
-    sourceFiles/application/TaskService.cpp
+    sourceFiles/application/projects/ProjectService.cpp
+    sourceFiles/application/projects/TaskService.cpp
     sourceFiles/application/MockWorkflowRunner.cpp
     sourceFiles/application/RunStageSettlement.cpp
     sourceFiles/application/RunManager.cpp

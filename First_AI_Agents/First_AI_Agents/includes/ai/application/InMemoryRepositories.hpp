@@ -8,7 +8,7 @@
 #include "ai/application/catalog/IExecutionProfileRepository.hpp"
 #include "ai/application/catalog/IModelRepository.hpp"
 #include "ai/application/IModelExecutionRepository.hpp"
-#include "ai/application/IProjectRepository.hpp"
+#include "ai/application/projects/IProjectRepository.hpp"
 #include "ai/application/catalog/IProviderRepository.hpp"
 #include "ai/application/IRunDraftRepository.hpp"
 #include "ai/application/IRunRepository.hpp"

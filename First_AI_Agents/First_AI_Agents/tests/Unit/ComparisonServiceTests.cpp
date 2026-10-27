@@ -3,7 +3,7 @@
 #include "ai/application/ComparisonExecutionManager.hpp"
 #include "ai/application/InMemoryComparisonSessionRepository.hpp"
 #include "ai/application/InMemoryRepositories.hpp"
-#include "ai/application/ProjectService.hpp"
+#include "ai/application/projects/ProjectService.hpp"
 #include "ai/application/catalog/ProviderCatalogService.hpp"
 
 #include <cassert>

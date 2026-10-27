@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/IProjectRepository.hpp"
+#include "ai/application/projects/IProjectRepository.hpp"
 #include "ai/application/IRunRepository.hpp"
 #include "ai/application/IWorkflowResolver.hpp"
 #include "ai/application/IWorkflowRunner.hpp"

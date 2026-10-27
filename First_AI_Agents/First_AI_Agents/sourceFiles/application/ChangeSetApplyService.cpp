@@ -7,7 +7,7 @@
 #include "ai/application/IChangeApprovalRepository.hpp"
 #include "ai/application/IChangeProposalRepository.hpp"
 #include "ai/application/IChangeProposalStore.hpp"
-#include "ai/application/IProjectRepository.hpp"
+#include "ai/application/projects/IProjectRepository.hpp"
 #include "ai/application/IRunRepository.hpp"
 #include "ai/application/ManifestApplyVerificationGate.hpp"
 #include "ai/application/ManifestWorkLedgerService.hpp"

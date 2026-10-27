@@ -1,4 +1,4 @@
-#include "ai/application/ProjectService.hpp"
+#include "ai/application/projects/ProjectService.hpp"
 
 #include "ai/application/IdGenerator.hpp"
 

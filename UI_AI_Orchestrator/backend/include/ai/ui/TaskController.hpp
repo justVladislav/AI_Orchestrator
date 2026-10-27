@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ai/application/TaskService.hpp>
+#include <ai/application/projects/TaskService.hpp>
 #include <ai/ui/TaskListModel.hpp>
 
 #include <QAbstractItemModel>

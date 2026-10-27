@@ -2,7 +2,7 @@
 
 #include "ai/application/ComparisonTypes.hpp"
 #include "ai/application/IComparisonSessionRepository.hpp"
-#include "ai/application/IProjectRepository.hpp"
+#include "ai/application/projects/IProjectRepository.hpp"
 #include "ai/application/ModelExecutionService.hpp"
 #include "ai/application/catalog/ProviderCatalogService.hpp"
 

@@ -9,7 +9,7 @@
 #include "ai/application/OrchestrationService.hpp"
 #include "ai/application/ProjectMemoryCompactionService.hpp"
 #include "ai/application/ProjectMemoryService.hpp"
-#include "ai/application/ProjectService.hpp"
+#include "ai/application/projects/ProjectService.hpp"
 #include "ai/application/RunManager.hpp"
 
 #include "RecordingOutcomeBriefTrigger.hpp"
