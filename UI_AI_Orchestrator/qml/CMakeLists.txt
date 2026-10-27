@@ -64,6 +64,11 @@ qt_add_qml_module(UI_AI_Orchestrator_Content
         pages/Runs/Runs_Objects/RunComboBox.qml
         pages/Runs/Runs_Objects/RunCalendarView.qml
         pages/Runs/Runs_Objects/RunDetailsPanel.qml
+        pages/Runs/Runs_Objects/RunProviderBudgetCard.qml
+        pages/Runs/Runs_Objects/RunContractsCard.qml
+        pages/Runs/Runs_Objects/RunPlannerOutcomeCard.qml
+        pages/Runs/Runs_Objects/RunVerificationCard.qml
+        pages/Runs/Runs_Objects/RunWorkspaceProvenanceCard.qml
         pages/Runs/Runs_Objects/RunListPanel.qml
         pages/Runs/Runs_Objects/RunMetricCard.qml
         pages/Runs/Runs_Objects/RunScrollBar.qml
