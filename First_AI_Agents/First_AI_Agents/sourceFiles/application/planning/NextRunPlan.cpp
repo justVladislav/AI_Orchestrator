@@ -1,4 +1,4 @@
-#include "ai/application/NextRunPlan.hpp"
+#include "ai/application/planning/NextRunPlan.hpp"
 
 #include "ai/application/context/ProjectContextSnapshot.hpp"
 #include "ai/application/Sha256.hpp"

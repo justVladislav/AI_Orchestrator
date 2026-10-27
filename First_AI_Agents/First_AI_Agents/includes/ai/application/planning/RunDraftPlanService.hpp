@@ -3,10 +3,10 @@
 #include "ai/application/conversations/ChatTypes.hpp"
 #include "ai/application/conversations/IChatRepository.hpp"
 #include "ai/application/projects/IProjectRepository.hpp"
-#include "ai/application/IRunDraftRepository.hpp"
+#include "ai/application/planning/IRunDraftRepository.hpp"
 #include "ai/application/IRunSourceLookup.hpp"
-#include "ai/application/NextRunPlan.hpp"
-#include "ai/application/RunDraftTypes.hpp"
+#include "ai/application/planning/NextRunPlan.hpp"
+#include "ai/application/planning/RunDraftTypes.hpp"
 #include "ai/common/Result.hpp"
 
 #include <chrono>

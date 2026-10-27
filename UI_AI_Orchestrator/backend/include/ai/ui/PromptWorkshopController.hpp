@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ai/application/RunDraftPlanService.hpp>
+#include <ai/application/planning/RunDraftPlanService.hpp>
 
 #include <QObject>
 #include <QString>

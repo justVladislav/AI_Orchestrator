@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/FollowUpPlanRequest.hpp"
-#include "ai/application/RunDraftTypes.hpp"
+#include "ai/application/planning/RunDraftTypes.hpp"
 #include "ai/common/Result.hpp"
 
 #include <chrono>

@@ -127,7 +127,7 @@ set(APPLICATION_SOURCES
     sourceFiles/application/ProviderRequestQuote.cpp
     sourceFiles/application/catalog/ExecutionProfileTypes.cpp
     sourceFiles/application/catalog/ExecutionProfileService.cpp
-    sourceFiles/application/RunDraftService.cpp
+    sourceFiles/application/planning/RunDraftService.cpp
     sourceFiles/application/ExecutionAssignmentValidation.cpp
     sourceFiles/application/WorkflowRouter.cpp
     sourceFiles/application/ExecutionProfileWorkflowRunner.cpp
@@ -147,7 +147,7 @@ set(APPLICATION_SOURCES
     sourceFiles/application/context/ProjectContextSnapshot.cpp
     sourceFiles/application/context/ProjectContextSnapshotService.cpp
     sourceFiles/application/RunInterfaceContract.cpp
-    sourceFiles/application/NextRunPlan.cpp
+    sourceFiles/application/planning/NextRunPlan.cpp
     sourceFiles/application/FollowUpPlan.cpp
     sourceFiles/application/FollowUpComposerContext.cpp
     sourceFiles/application/FollowUpComposerQuote.cpp
@@ -166,8 +166,8 @@ set(APPLICATION_SOURCES
     sourceFiles/application/OutcomeBriefSources.cpp
     sourceFiles/application/OutcomeBriefReconciler.cpp
     sourceFiles/application/OutcomeBriefReadModelService.cpp
-    sourceFiles/application/RunDraftGroup.cpp
-    sourceFiles/application/RunDraftPlanService.cpp
+    sourceFiles/application/planning/RunDraftGroup.cpp
+    sourceFiles/application/planning/RunDraftPlanService.cpp
     sourceFiles/application/ChangeProposalTypes.cpp
     sourceFiles/application/ProposalReviewService.cpp
     sourceFiles/application/ManifestProposalContentHash.cpp

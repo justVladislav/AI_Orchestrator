@@ -5,7 +5,7 @@
 #include "ai/application/conversations/ChatProjectContext.hpp"
 #include "ai/application/FilesystemPathUtils.hpp"
 #include "ai/application/FollowUpPlanAdvisories.hpp"
-#include "ai/application/NextRunPlan.hpp"
+#include "ai/application/planning/NextRunPlan.hpp"
 #include "ai/application/RunInterfaceContract.hpp"
 #include "ai/application/Sha256.hpp"
 #include "ai/application/WorkspaceReadPolicy.hpp"

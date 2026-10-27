@@ -6,7 +6,7 @@
 #include "ai/application/catalog/IModelRepository.hpp"
 #include "ai/application/IOutcomeBriefRepository.hpp"
 #include "ai/application/catalog/IProviderRepository.hpp"
-#include "ai/application/IRunDraftRepository.hpp"
+#include "ai/application/planning/IRunDraftRepository.hpp"
 #include "ai/application/IRunSourceLookup.hpp"
 #include "ai/common/Result.hpp"
 

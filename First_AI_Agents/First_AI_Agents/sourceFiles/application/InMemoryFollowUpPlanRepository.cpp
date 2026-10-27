@@ -1,6 +1,6 @@
 #include "ai/application/InMemoryFollowUpPlanRepository.hpp"
 
-#include "ai/application/RunDraftGroup.hpp"
+#include "ai/application/planning/RunDraftGroup.hpp"
 
 #include <algorithm>
 

@@ -4,7 +4,7 @@
 #include "SqliteRunDraftGroupStorage.hpp"
 
 #include "ai/application/IFollowUpPlanRequestRepository.hpp"
-#include "ai/application/RunDraftGroup.hpp"
+#include "ai/application/planning/RunDraftGroup.hpp"
 
 #include <sqlite3.h>
 #include <nlohmann/json.hpp>

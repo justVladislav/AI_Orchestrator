@@ -1,7 +1,7 @@
-#include "ai/application/RunDraftGroup.hpp"
+#include "ai/application/planning/RunDraftGroup.hpp"
 
 #include "ai/application/IWorkflowRunner.hpp"
-#include "ai/application/NextRunPlan.hpp"
+#include "ai/application/planning/NextRunPlan.hpp"
 #include "ai/application/RunInterfaceContract.hpp"
 
 #include <algorithm>

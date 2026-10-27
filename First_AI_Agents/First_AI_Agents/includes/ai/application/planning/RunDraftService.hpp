@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/IRunDraftRepository.hpp"
+#include "ai/application/planning/IRunDraftRepository.hpp"
 
 namespace ai::application {
 

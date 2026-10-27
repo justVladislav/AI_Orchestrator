@@ -9,7 +9,7 @@
 #include "ai/application/ExecutionAcceptanceContract.hpp"
 #include "ai/application/CacheDurationAccounting.hpp"
 #include "ai/application/conversations/ChatProjectContext.hpp"
-#include "ai/application/RunDraftGroup.hpp"
+#include "ai/application/planning/RunDraftGroup.hpp"
 #include "ai/application/WorkspaceBaselineProvenance.hpp"
 
 // Native SQLite C API only. This backend must build and link without the Qt

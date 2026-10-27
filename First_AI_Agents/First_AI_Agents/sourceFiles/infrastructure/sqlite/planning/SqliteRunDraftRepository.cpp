@@ -4,8 +4,8 @@
 #include "../roster/SqliteRosterMapping.hpp"
 #include "SqliteRunDraftGroupStorage.hpp"
 
-#include "ai/application/RunDraftGroup.hpp"
-#include "ai/application/RunDraftTypes.hpp"
+#include "ai/application/planning/RunDraftGroup.hpp"
+#include "ai/application/planning/RunDraftTypes.hpp"
 #include "ai/application/RunInterfaceContract.hpp"
 
 #include <sqlite3.h>

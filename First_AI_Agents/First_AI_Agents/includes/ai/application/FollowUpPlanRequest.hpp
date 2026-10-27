@@ -3,8 +3,8 @@
 #include "ai/application/FollowUpComposerContext.hpp"
 #include "ai/application/FollowUpComposerQuote.hpp"
 #include "ai/application/FollowUpPlan.hpp"
-#include "ai/application/NextRunPlan.hpp"
-#include "ai/application/RunDraftTypes.hpp"
+#include "ai/application/planning/NextRunPlan.hpp"
+#include "ai/application/planning/RunDraftTypes.hpp"
 #include "ai/common/Result.hpp"
 
 #include <chrono>

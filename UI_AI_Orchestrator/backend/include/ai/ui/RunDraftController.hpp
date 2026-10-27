@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ai/application/RunDraftService.hpp>
+#include <ai/application/planning/RunDraftService.hpp>
 #include <ai/ui/RunDraftListModel.hpp>
 
 #include <QAbstractItemModel>

@@ -1,6 +1,6 @@
 #include <ai/ui/PromptWorkshopController.hpp>
 
-#include <ai/application/RunDraftGroup.hpp>
+#include <ai/application/planning/RunDraftGroup.hpp>
 #include <ai/ui/NextRunPlanVariant.hpp>
 #include <ai/ui/RunContractVariant.hpp>
 

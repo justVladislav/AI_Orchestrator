@@ -1,8 +1,8 @@
-#include "ai/application/RunDraftPlanService.hpp"
+#include "ai/application/planning/RunDraftPlanService.hpp"
 
 #include "ai/application/IWorkflowRunner.hpp"
 #include "ai/application/IdGenerator.hpp"
-#include "ai/application/RunDraftGroup.hpp"
+#include "ai/application/planning/RunDraftGroup.hpp"
 #include "ai/application/Sha256.hpp"
 
 #include <algorithm>

@@ -7,7 +7,7 @@
 #include "ai/application/IFollowUpSourceReader.hpp"
 #include "ai/application/catalog/IModelRepository.hpp"
 #include "ai/application/catalog/IProviderRepository.hpp"
-#include "ai/application/IRunDraftRepository.hpp"
+#include "ai/application/planning/IRunDraftRepository.hpp"
 
 #include <chrono>
 #include <functional>
