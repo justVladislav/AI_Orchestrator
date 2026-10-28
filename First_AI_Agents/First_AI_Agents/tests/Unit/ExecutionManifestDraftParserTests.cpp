@@ -1,5 +1,5 @@
-#include "ai/application/ExecutionManifestDraftParser.hpp"
-#include "ai/application/ExecutionManifestDraftTypes.hpp"
+#include "ai/application/execution/ExecutionManifestDraftParser.hpp"
+#include "ai/application/execution/ExecutionManifestDraftTypes.hpp"
 #include "ai/application/ManifestRouting.hpp"
 #include "ai/application/Sha256.hpp"
 

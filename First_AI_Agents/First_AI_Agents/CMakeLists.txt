@@ -63,15 +63,15 @@ set(APPLICATION_SOURCES
     sourceFiles/application/verification/ProjectSetupReadiness.cpp
     sourceFiles/application/verification/ProjectReadinessService.cpp
     sourceFiles/application/ExecutionAcceptanceContract.cpp
-    sourceFiles/application/ManifestJsonParsingSupport.cpp
-    sourceFiles/application/ExecutionManifestTypes.cpp
-    sourceFiles/application/ExecutionManifestParser.cpp
-    sourceFiles/application/ExecutionManifestDraftTypes.cpp
-    sourceFiles/application/ExecutionManifestDraftParser.cpp
-    sourceFiles/application/ExecutionManifestDraftCompiler.cpp
-    sourceFiles/application/ExecutionManifestDependencyGraph.cpp
-    sourceFiles/application/ExecutionManifestValidator.cpp
-    sourceFiles/application/ExecutionManifestService.cpp
+    sourceFiles/application/execution/ManifestJsonParsingSupport.cpp
+    sourceFiles/application/execution/ExecutionManifestTypes.cpp
+    sourceFiles/application/execution/ExecutionManifestParser.cpp
+    sourceFiles/application/execution/ExecutionManifestDraftTypes.cpp
+    sourceFiles/application/execution/ExecutionManifestDraftParser.cpp
+    sourceFiles/application/execution/ExecutionManifestDraftCompiler.cpp
+    sourceFiles/application/execution/ExecutionManifestDependencyGraph.cpp
+    sourceFiles/application/execution/ExecutionManifestValidator.cpp
+    sourceFiles/application/execution/ExecutionManifestService.cpp
     sourceFiles/application/ExecutionManifestPlanner.cpp
     sourceFiles/application/ExecutionManifestPlannerTurnBudget.cpp
     sourceFiles/application/ExecutionManifestRepairControls.cpp
@@ -107,7 +107,7 @@ set(APPLICATION_SOURCES
     sourceFiles/application/InMemoryManifestWorkLedgerRepository.cpp
     sourceFiles/application/InMemoryRunWorkspaceScopeRepository.cpp
     sourceFiles/application/InMemoryVerificationEnvironmentRepository.cpp
-    sourceFiles/application/ExecutionManifestReadModelService.cpp
+    sourceFiles/application/execution/ExecutionManifestReadModelService.cpp
     sourceFiles/application/context/ContextSnapshot.cpp
     sourceFiles/application/Sha256.cpp
     sourceFiles/application/IdGenerator.cpp

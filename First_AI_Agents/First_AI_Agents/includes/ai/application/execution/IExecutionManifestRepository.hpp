@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/ExecutionManifestTypes.hpp"
+#include "ai/application/execution/ExecutionManifestTypes.hpp"
 #include "ai/common/Result.hpp"
 
 #include <optional>

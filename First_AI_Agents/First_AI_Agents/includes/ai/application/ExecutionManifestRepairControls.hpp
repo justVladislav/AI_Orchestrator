@@ -14,8 +14,8 @@
 // primary draft costs nothing: it grants no authority and the structural guard and the full
 // validator still judge the result.
 
-#include "ai/application/ExecutionManifestDraftTypes.hpp"
-#include "ai/application/ExecutionManifestTypes.hpp"
+#include "ai/application/execution/ExecutionManifestDraftTypes.hpp"
+#include "ai/application/execution/ExecutionManifestTypes.hpp"
 
 #include <string>
 #include <vector>

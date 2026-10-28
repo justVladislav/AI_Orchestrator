@@ -1,7 +1,7 @@
 #pragma once
 
-#include "ai/application/ExecutionManifestValidator.hpp"
-#include "ai/application/IExecutionManifestRepository.hpp"
+#include "ai/application/execution/ExecutionManifestValidator.hpp"
+#include "ai/application/execution/IExecutionManifestRepository.hpp"
 #include "ai/application/IRunRepository.hpp"
 
 namespace ai::application {

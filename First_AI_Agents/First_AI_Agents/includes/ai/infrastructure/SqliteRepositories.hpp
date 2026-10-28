@@ -13,7 +13,7 @@
 #include "ai/application/conversations/IChatRepository.hpp"
 #include "ai/application/comparison/IComparisonSessionRepository.hpp"
 #include "ai/application/catalog/IExecutionProfileRepository.hpp"
-#include "ai/application/IExecutionManifestRepository.hpp"
+#include "ai/application/execution/IExecutionManifestRepository.hpp"
 #include "ai/application/planning/IFollowUpPlanRequestRepository.hpp"
 #include "ai/application/IManifestTaskExecutionRepository.hpp"
 #include "ai/application/verification/IManifestVerificationBaselineNormalizationRepository.hpp"

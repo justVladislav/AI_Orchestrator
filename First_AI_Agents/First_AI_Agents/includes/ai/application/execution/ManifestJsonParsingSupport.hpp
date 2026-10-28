@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/ExecutionAcceptanceContract.hpp"
-#include "ai/application/ExecutionManifestTypes.hpp"
+#include "ai/application/execution/ExecutionManifestTypes.hpp"
 #include "ai/common/Result.hpp"
 
 #include <nlohmann/json.hpp>

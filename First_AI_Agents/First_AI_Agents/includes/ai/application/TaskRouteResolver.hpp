@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/ExecutionManifestTypes.hpp"
+#include "ai/application/execution/ExecutionManifestTypes.hpp"
 #include "ai/application/catalog/ExecutionProfileTypes.hpp"
 #include "ai/application/catalog/IModelRepository.hpp"
 #include "ai/application/catalog/IProviderRepository.hpp"

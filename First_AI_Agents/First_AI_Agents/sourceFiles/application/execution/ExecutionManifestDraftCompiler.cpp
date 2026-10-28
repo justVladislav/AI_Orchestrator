@@ -1,4 +1,4 @@
-#include "ai/application/ExecutionManifestDraftCompiler.hpp"
+#include "ai/application/execution/ExecutionManifestDraftCompiler.hpp"
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
 
 #include <cctype>

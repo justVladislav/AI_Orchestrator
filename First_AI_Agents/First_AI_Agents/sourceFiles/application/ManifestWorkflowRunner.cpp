@@ -2,7 +2,7 @@
 
 #include "ai/application/artifacts/ArtifactService.hpp"
 #include "ai/application/CostCalculation.hpp"
-#include "ai/application/ExecutionManifestDraftTypes.hpp"
+#include "ai/application/execution/ExecutionManifestDraftTypes.hpp"
 #include "ai/application/ExecutionManifestExecutionCapacity.hpp"
 #include "ai/application/ExecutionManifestPlannerTurnBudget.hpp"
 #include "ai/application/IdGenerator.hpp"

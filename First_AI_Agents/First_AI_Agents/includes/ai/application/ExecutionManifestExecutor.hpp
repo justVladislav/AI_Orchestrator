@@ -5,7 +5,7 @@
 #include "ai/application/ApplicationTypes.hpp"
 #include "ai/application/ExecutionAcceptanceContract.hpp"
 #include "ai/application/ExecutionManifestScheduler.hpp"
-#include "ai/application/ExecutionManifestTypes.hpp"
+#include "ai/application/execution/ExecutionManifestTypes.hpp"
 #include "ai/application/verification/ManifestProposalSetVerifier.hpp"
 #include "ai/application/TaskRouteResolver.hpp"
 #include "ai/application/verification/VerificationBootstrapTypes.hpp"

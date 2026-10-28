@@ -1,4 +1,4 @@
-#include "ai/application/ExecutionManifestReadModelService.hpp"
+#include "ai/application/execution/ExecutionManifestReadModelService.hpp"
 
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/ManifestRouting.hpp"

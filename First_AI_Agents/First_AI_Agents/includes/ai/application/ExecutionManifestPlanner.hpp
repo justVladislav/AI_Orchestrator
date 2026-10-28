@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/agents/AgentToolExecutionService.hpp"
-#include "ai/application/ExecutionManifestService.hpp"
+#include "ai/application/execution/ExecutionManifestService.hpp"
 #include "ai/application/ManifestRouting.hpp"
 #include "ai/application/ProviderExecutionBudget.hpp"
 #include "ai/application/verification/VerificationEnvironmentSnapshotTypes.hpp"

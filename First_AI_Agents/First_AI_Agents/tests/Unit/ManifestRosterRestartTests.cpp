@@ -12,7 +12,7 @@
 
 #include "ai/application/artifacts/ArtifactService.hpp"
 #include "ai/application/proposals/ChangeProposalService.hpp"
-#include "ai/application/ExecutionManifestReadModelService.hpp"
+#include "ai/application/execution/ExecutionManifestReadModelService.hpp"
 #include "ai/application/ExecutionAnalyticsService.hpp"
 #include "ai/application/LegacyRosterAdapter.hpp"
 #include "ai/application/ManifestInterruptedTaskReconciler.hpp"

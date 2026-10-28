@@ -11,7 +11,7 @@
 #include "ai/application/agents/AgentToolExecutionService.hpp"
 #include "ai/application/proposals/ChangeProposalService.hpp"
 #include "ai/application/ExecutionAssignmentValidation.hpp"
-#include "ai/application/ExecutionManifestService.hpp"
+#include "ai/application/execution/ExecutionManifestService.hpp"
 #include "ai/application/ExecutionProfileWorkflowRunner.hpp"
 #include "ai/application/workspace/FilesystemWorkspaceToolExecutor.hpp"
 #include "ai/application/InMemoryExecutionManifestRepository.hpp"

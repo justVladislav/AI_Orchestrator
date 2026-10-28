@@ -3,7 +3,7 @@
 #include "ai/backend/StartupRecovery.hpp"
 
 #include "ai/application/agents/AgentToolExecutionService.hpp"
-#include "ai/application/ExecutionManifestReadModelService.hpp"
+#include "ai/application/execution/ExecutionManifestReadModelService.hpp"
 #include "ai/application/ExecutionProfileWorkflowRunner.hpp"
 #include "ai/application/FilesystemFollowUpFileLoader.hpp"
 #include "ai/application/planning/FollowUpComposerProcessor.hpp"

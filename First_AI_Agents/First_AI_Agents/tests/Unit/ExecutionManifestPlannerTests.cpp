@@ -1,5 +1,5 @@
 #include "ai/application/ExecutionManifestPlanner.hpp"
-#include "ai/application/ExecutionManifestDraftParser.hpp"
+#include "ai/application/execution/ExecutionManifestDraftParser.hpp"
 #include "ai/application/ExecutionManifestExecutionCapacity.hpp"
 #include "ai/application/ExecutionManifestPlannerTurnBudget.hpp"
 #include "ai/application/ExecutionManifestRepairControls.hpp"

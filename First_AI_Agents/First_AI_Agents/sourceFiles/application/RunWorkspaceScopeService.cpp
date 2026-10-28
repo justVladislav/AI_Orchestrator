@@ -1,6 +1,6 @@
 #include "ai/application/RunWorkspaceScopeService.hpp"
 
-#include "ai/application/ExecutionManifestDependencyGraph.hpp"
+#include "ai/application/execution/ExecutionManifestDependencyGraph.hpp"
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/IdGenerator.hpp"
 

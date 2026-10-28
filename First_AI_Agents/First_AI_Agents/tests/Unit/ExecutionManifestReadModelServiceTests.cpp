@@ -6,9 +6,9 @@
 // deterministic, no-duplicate projection over already-durable Backend state
 // (frozen RunWorkspaceScope + expansions + ManifestTaskState +
 // change-proposal data), never something a UI layer could compute itself.
-#include "ai/application/ExecutionManifestReadModelService.hpp"
+#include "ai/application/execution/ExecutionManifestReadModelService.hpp"
 
-#include "ai/application/ExecutionManifestService.hpp"
+#include "ai/application/execution/ExecutionManifestService.hpp"
 #include "ai/application/InMemoryExecutionManifestRepository.hpp"
 #include "ai/application/InMemoryManifestTaskExecutionRepository.hpp"
 #include "ai/application/InMemoryManifestWorkLedgerRepository.hpp"

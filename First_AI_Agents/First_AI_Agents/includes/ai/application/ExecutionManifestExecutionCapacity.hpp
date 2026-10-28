@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/ExecutionManifestScheduler.hpp"
-#include "ai/application/ExecutionManifestTypes.hpp"
+#include "ai/application/execution/ExecutionManifestTypes.hpp"
 #include "ai/application/ProviderExecutionBudget.hpp"
 #include "ai/common/Result.hpp"
 

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "ai/application/ExecutionManifestDraftTypes.hpp"
-#include "ai/application/ExecutionManifestTypes.hpp"
+#include "ai/application/execution/ExecutionManifestDraftTypes.hpp"
+#include "ai/application/execution/ExecutionManifestTypes.hpp"
 #include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 
 #include <vector>

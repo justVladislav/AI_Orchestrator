@@ -35,7 +35,7 @@
 // the executor's scheduling authority to derived edges is explicitly out
 // of this package's scope.
 
-#include "ai/application/ExecutionManifestTypes.hpp"
+#include "ai/application/execution/ExecutionManifestTypes.hpp"
 
 #include <optional>
 #include <string>

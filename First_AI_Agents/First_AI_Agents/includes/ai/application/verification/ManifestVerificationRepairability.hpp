@@ -2,7 +2,7 @@
 
 #include "ai/application/proposals/ChangeProposalTypes.hpp"
 #include "ai/application/ExecutionAcceptanceContract.hpp"
-#include "ai/application/ExecutionManifestTypes.hpp"
+#include "ai/application/execution/ExecutionManifestTypes.hpp"
 #include "ai/application/ManifestWorkLedgerTypes.hpp"
 
 #include <string>

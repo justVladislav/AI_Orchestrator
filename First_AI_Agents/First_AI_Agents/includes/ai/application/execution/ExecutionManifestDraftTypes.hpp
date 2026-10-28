@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/ExecutionAcceptanceContract.hpp"
-#include "ai/application/ExecutionManifestTypes.hpp"
+#include "ai/application/execution/ExecutionManifestTypes.hpp"
 
 #include <cstdint>
 #include <filesystem>

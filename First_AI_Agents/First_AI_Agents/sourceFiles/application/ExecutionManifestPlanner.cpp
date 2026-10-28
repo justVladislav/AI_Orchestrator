@@ -3,9 +3,9 @@
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/RunWorkspaceScopeService.hpp"
 
-#include "ai/application/ExecutionManifestDraftCompiler.hpp"
+#include "ai/application/execution/ExecutionManifestDraftCompiler.hpp"
 #include "ai/application/ExecutionManifestExecutionCapacity.hpp"
-#include "ai/application/ExecutionManifestDraftParser.hpp"
+#include "ai/application/execution/ExecutionManifestDraftParser.hpp"
 #include "ai/application/ExecutionManifestPlannerTurnBudget.hpp"
 #include "ai/application/ExecutionManifestRepairControls.hpp"
 #include "ai/application/IdGenerator.hpp"

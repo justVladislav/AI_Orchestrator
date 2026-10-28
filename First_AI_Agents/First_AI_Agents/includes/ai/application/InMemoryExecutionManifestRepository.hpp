@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/IExecutionManifestRepository.hpp"
+#include "ai/application/execution/IExecutionManifestRepository.hpp"
 
 #include <mutex>
 #include <unordered_map>

@@ -3,7 +3,7 @@
 #include "ai/application/ExecutionManifestScheduler.hpp"
 #include "ai/application/proposals/IChangeApprovalRepository.hpp"
 #include "ai/application/proposals/IChangeProposalRepository.hpp"
-#include "ai/application/IExecutionManifestRepository.hpp"
+#include "ai/application/execution/IExecutionManifestRepository.hpp"
 #include "ai/application/IManifestTaskExecutionRepository.hpp"
 #include "ai/application/IManifestWorkLedgerRepository.hpp"
 #include "ai/application/proposals/IProposalReviewRepository.hpp"

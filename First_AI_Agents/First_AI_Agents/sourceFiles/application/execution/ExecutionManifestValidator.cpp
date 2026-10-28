@@ -1,6 +1,6 @@
-#include "ai/application/ExecutionManifestValidator.hpp"
+#include "ai/application/execution/ExecutionManifestValidator.hpp"
 
-#include "ai/application/ExecutionManifestDependencyGraph.hpp"
+#include "ai/application/execution/ExecutionManifestDependencyGraph.hpp"
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/verification/ManifestBootstrapValidator.hpp"
 #include "ai/application/verification/ManifestMandatoryVerificationPolicy.hpp"

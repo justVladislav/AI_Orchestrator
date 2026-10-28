@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/artifacts/IArtifactRepository.hpp"
-#include "ai/application/IExecutionManifestRepository.hpp"
+#include "ai/application/execution/IExecutionManifestRepository.hpp"
 #include "ai/application/IManifestTaskExecutionRepository.hpp"
 #include "ai/application/IManifestWorkLedgerRepository.hpp"
 #include "ai/application/IRunRepository.hpp"

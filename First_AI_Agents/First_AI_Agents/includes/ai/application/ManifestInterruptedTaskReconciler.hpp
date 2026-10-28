@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/IExecutionManifestRepository.hpp"
+#include "ai/application/execution/IExecutionManifestRepository.hpp"
 #include "ai/application/IManifestTaskExecutionRepository.hpp"
 #include "ai/application/IManifestWorkLedgerRepository.hpp"
 #include "ai/application/agents/IModelExecutionRepository.hpp"
