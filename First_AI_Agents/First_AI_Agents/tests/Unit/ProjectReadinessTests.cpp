@@ -64,6 +64,7 @@ struct FakeCmake final : IManifestVerificationCommandRunner {
     std::string configureOutput {"-- Configuring done\n"};
     bool configureCancelled {false};
     std::string binaryDir {"build/local"};
+    std::string cacheGenerator {"Ninja"};
     std::function<void()> onConfigure;
     fs::path root;
 
@@ -88,7 +89,8 @@ struct FakeCmake final : IManifestVerificationCommandRunner {
             outcome.boundedOutput = configureOutput;
             if (configureExit == 0) {
                 writeFile(root / binaryDir / "CMakeCache.txt",
-                    "CMAKE_CXX_COMPILER:FILEPATH=C:/VS/VC/Tools/MSVC/14.51/bin/Hostx64/x64/cl.exe\n");
+                    "CMAKE_GENERATOR:INTERNAL=" + cacheGenerator
+                        + "\nCMAKE_CXX_COMPILER:FILEPATH=C:/VS/VC/Tools/MSVC/14.51/bin/Hostx64/x64/cl.exe\n");
                 // The configure writes its own cmake files into the build tree; they must never count as inputs.
                 writeFile(root / binaryDir / "cmake_install.cmake", "# generated " + std::to_string(calls.size()));
                 writeFile(root / binaryDir / "CMakeFiles" / "generated.cmake", "# generated " + std::to_string(calls.size()));
@@ -413,6 +415,74 @@ void testAFailureIsRecordedWithItsReasonAndRecoveryWorks()
     require(harness.repository.find("p1").value()->state == ProjectReadinessState::Ready, "...and recorded ready");
 }
 
+void testAChangedGeneratorInvalidatesReadyAndPersistsTheSpecificRefusal()
+{
+    TestDirectory base("generator-change");
+    const fs::path project = base.path / "p";
+    makeProject(project);
+    Harness harness;
+    FakeCmake cmake;
+    auto service = harness.service();
+    require(ensure(service, cmake, "p1", project).ready, "The initial Ninja setup is ready");
+    const auto configures = cmake.configureCalls();
+    auto legacyRecord = *harness.repository.find("p1").value();
+
+    std::string presets = kPreset;
+    presets.replace(presets.find("Ninja"), std::string("Ninja").size(), "Visual Studio 18 2026");
+    writeFile(project / "CMakePresets.json", presets);
+    require(!service.assess("p1", project).value().fresh, "Changing the generator invalidates the old ready record");
+    const auto failed = ensure(service, cmake, "p1", project);
+    require(!failed.ready && failed.failureCode == kProjectSetupGeneratorUnsupported
+            && cmake.configureCalls() == configures,
+        "The changed generator is refused before another configure");
+    const auto record = harness.repository.find("p1").value();
+    require(record.has_value() && record->state == ProjectReadinessState::Failed
+            && record->failureCode == kProjectSetupGeneratorUnsupported
+            && record->failureMessage.find("Visual Studio 18 2026") != std::string::npos,
+        "The specific generator refusal is persisted for the project");
+
+    // Simulate a Ready record accepted by the previous version, with a matching current fingerprint and intact build tree.
+    legacyRecord.inputsFingerprint = ProjectReadinessService::fingerprintFor(
+        ProjectReadinessService::computeInputsFingerprint(project).value(), {"local", "local-build"});
+    require(harness.repository.upsert(legacyRecord).success(), "The legacy ready record is stored");
+    const auto legacy = ensure(service, cmake, "p1", project);
+    require(!legacy.ready && legacy.failureCode == kProjectSetupGeneratorUnsupported
+            && cmake.configureCalls() == configures,
+        "A matching legacy Ready record cannot bypass generator validation");
+
+    writeFile(project / "CMakePresets.json", kPreset);
+    require(ensure(service, cmake, "p1", project).ready && cmake.configureCalls() == configures + 1,
+        "Restoring Ninja permits a new successful configure");
+}
+
+void testAnImplicitGeneratorCanReuseReadyButCannotHideAnUnsupportedCache()
+{
+    TestDirectory base("implicit-generator");
+    const fs::path project = base.path / "p";
+    makeProject(project);
+    writeFile(project / "CMakePresets.json", R"json({
+      "version":3,"configurePresets":[{"name":"local","binaryDir":"${sourceDir}/build/local"}],
+      "buildPresets":[{"name":"local-build","configurePreset":"local"}]
+    })json");
+    Harness harness;
+    FakeCmake cmake;
+    auto service = harness.service();
+    require(ensure(service, cmake, "p1", project).ready, "CMake's confirmed implicit Ninja setup is ready");
+    const auto configures = cmake.configureCalls();
+    require(ensure(service, cmake, "p1", project).ready && cmake.configureCalls() == configures,
+        "The unchanged supported setup is reused without requiring an explicit generator or another configure");
+
+    cmake.cacheGenerator = "Visual Studio 18 2026";
+    writeFile(project / "build/local/CMakeCache.txt", "CMAKE_GENERATOR:INTERNAL=" + cmake.cacheGenerator + "\n");
+    require(!service.assess("p1", project).value().fresh,
+        "An actual unsupported cache invalidates Ready even though the user's preset bytes did not change");
+    const auto refused = ensure(service, cmake, "p1", project);
+    require(!refused.ready && refused.failureCode == kProjectSetupGeneratorUnsupported,
+        "A re-check reports CMake's actual unsupported generator");
+    require(harness.repository.find("p1").value()->failureCode == kProjectSetupGeneratorUnsupported,
+        "The actual generator refusal is persisted");
+}
+
 void testSeveralPairsWaitForTheUsersChoiceAndForceRecheckRerunsAFreshSetup()
 {
     TestDirectory base("pairs");
@@ -583,6 +653,8 @@ int main()
         testAFileEditedWhileTheCheckRanIsNeverRecordedAsReady();
         testACancelledCheckRecordsNothing();
         testAFailureIsRecordedWithItsReasonAndRecoveryWorks();
+        testAChangedGeneratorInvalidatesReadyAndPersistsTheSpecificRefusal();
+        testAnImplicitGeneratorCanReuseReadyButCannotHideAnUnsupportedCache();
         testSeveralPairsWaitForTheUsersChoiceAndForceRecheckRerunsAFreshSetup();
         testSqliteRecordSurvivesRestartMigratesAndRefusesAnUnprovenReady();
     } catch (const std::exception& exception) {

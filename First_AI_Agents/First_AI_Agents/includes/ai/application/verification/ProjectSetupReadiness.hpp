@@ -17,7 +17,7 @@ namespace ai::application {
 // AG-18.4B-R1: does this project have a configured, buildable verification setup - proven, not presumed?
 //
 // The check extends the existing preset discovery and the existing configure / target probes; it is not a second pipeline.
-// "Ready" means exactly: the selected configure preset exists, the toolchain for it is MSVC x64 and could be prepared, a real
+// "Ready" means exactly: the selected configure preset exists, its MSVC x64 toolchain could be prepared, a real
 // `cmake --preset` configure exited 0, and the selected build preset then reported its targets. A found preset name, a
 // successful listing, or a completed Run alone prove none of that.
 //
@@ -26,6 +26,8 @@ namespace ai::application {
 // persistence is the caller's (ProjectReadinessService).
 inline constexpr const char* kProjectSetupPresetNotFound = "project_setup.preset_not_found";
 inline constexpr const char* kProjectSetupSelectionRequired = "project_setup.preset_selection_required";
+inline constexpr const char* kProjectSetupGeneratorUnsupported = "project_setup.generator_unsupported";
+inline constexpr const char* kProjectSetupGeneratorUnconfirmed = "project_setup.generator_unconfirmed";
 inline constexpr const char* kProjectSetupToolchainUnsupported = "project_setup.toolchain_unsupported";
 inline constexpr const char* kProjectSetupToolchainUnavailable = "project_setup.toolchain_unavailable";
 inline constexpr const char* kProjectSetupBuildDirectoryUnresolvable = "project_setup.build_directory_unresolvable";
@@ -80,13 +82,23 @@ public:
 
     // ---- pure / file-only pieces (public so each is tested on its own) ----
 
-    // The pair to check. `unsupportedReason` names why a configure preset cannot be used (MinGW, ARM, 32-bit); it is asked only
+    // The pair to check. `unsupportedReason` gives the typed reason a configure preset cannot be used; it is asked only
     // for pairs that exist. Errors carry the project_setup.* code and, for a refusal that needs the user, the candidates.
     [[nodiscard]] static common::Result<ProjectSetupSelection> chooseSelection(
         const VerificationEnvironmentSnapshot& catalog,
         const std::optional<ProjectSetupSelection>& saved,
-        const std::function<std::optional<std::string>(const std::string& configurePreset)>& unsupportedReason,
+        const std::function<std::optional<common::Error>(const std::string& configurePreset)>& unsupportedReason,
         std::vector<ProjectSetupSelection>* candidates);
+
+    // Early refusal only when the preset's generator is known (direct or inherited) and unsupported. An omitted or unresolved
+    // generator is left to CMake; it is confirmed from the resulting build cache after configure, never forced into the preset.
+    // Uses the same bounded, project-contained include/inheritance reader as the toolchain rule below.
+    [[nodiscard]] static std::optional<std::string> unsupportedGeneratorReason(
+        const std::filesystem::path& projectRoot, const std::string& configurePreset);
+
+    // Confirms CMake's actual generator after configure (or before reusing a Ready record). A missing/invalid cache is not
+    // evidence for a default generator; generator_unconfirmed differs from an actual unsupported generator.
+    [[nodiscard]] static common::Result<void> validateConfiguredGenerator(const std::filesystem::path& cacheFile);
 
     // Why the selected configure preset is not an MSVC x64 setup, read from the preset files at `projectRoot` (generator,
     // architecture, toolchain file, compiler and Qt-prefix cache variables; `inherits` and `include` are followed, bounded and

@@ -451,7 +451,8 @@ bool configuredBuildTreeExists(
 VerificationEnvironmentSnapshot discoverProfilesAndPresets(
     const fs::path& root,
     IManifestVerificationCommandRunner& commandRunner,
-    std::stop_token stopToken)
+    std::stop_token stopToken,
+    bool probeExistingTargets = true)
 {
     VerificationEnvironmentSnapshot snapshot;
 
@@ -563,7 +564,7 @@ VerificationEnvironmentSnapshot discoverProfilesAndPresets(
                     descriptor.allowedTargetsConfirmed && !declaredTargetsTruncated;
             } else if (linkedProfileIndex.has_value()) {
                 const auto& profile = snapshot.profiles[*linkedProfileIndex];
-                if (targetProbeCount < kVerificationEnvironmentMaxTargetProbes
+                if (probeExistingTargets && targetProbeCount < kVerificationEnvironmentMaxTargetProbes
                     && !stopToken.stop_requested()
                     && configuredBuildTreeExists(root, profile.resolvedBinaryDir)) {
                     ++targetProbeCount;
@@ -611,9 +612,10 @@ VerificationEnvironmentSnapshot discoverProfilesAndPresets(
 namespace detail {
 
 VerificationEnvironmentSnapshot probePresetCatalog(
-    const fs::path& root, IManifestVerificationCommandRunner& commandRunner, std::stop_token stopToken)
+    const fs::path& root, IManifestVerificationCommandRunner& commandRunner, std::stop_token stopToken,
+    bool probeExistingTargets)
 {
-    return discoverProfilesAndPresets(root, commandRunner, stopToken);
+    return discoverProfilesAndPresets(root, commandRunner, stopToken, probeExistingTargets);
 }
 
 ConfiguredTargetsProbe probeConfiguredTargets(
