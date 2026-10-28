@@ -1,5 +1,5 @@
-#include "ai/application/ProviderExecutionBudget.hpp"
-#include "ai/application/CacheDurationAccounting.hpp"
+#include "ai/application/budget/ProviderExecutionBudget.hpp"
+#include "ai/application/budget/CacheDurationAccounting.hpp"
 
 #include <algorithm>
 #include <limits>

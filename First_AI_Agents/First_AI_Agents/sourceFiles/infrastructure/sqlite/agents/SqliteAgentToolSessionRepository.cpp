@@ -7,7 +7,7 @@
 #include "../planning/SqliteRunDraftGroupStorage.hpp"
 
 #include "ai/application/execution/ExecutionAcceptanceContract.hpp"
-#include "ai/application/CacheDurationAccounting.hpp"
+#include "ai/application/budget/CacheDurationAccounting.hpp"
 #include "ai/application/conversations/ChatProjectContext.hpp"
 #include "ai/application/planning/RunDraftGroup.hpp"
 #include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"

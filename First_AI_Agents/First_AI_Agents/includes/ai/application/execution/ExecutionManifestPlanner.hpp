@@ -3,7 +3,7 @@
 #include "ai/application/agents/AgentToolExecutionService.hpp"
 #include "ai/application/execution/ExecutionManifestService.hpp"
 #include "ai/application/execution/ManifestRouting.hpp"
-#include "ai/application/ProviderExecutionBudget.hpp"
+#include "ai/application/budget/ProviderExecutionBudget.hpp"
 #include "ai/application/verification/VerificationEnvironmentSnapshotTypes.hpp"
 #include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 #include "ai/common/Result.hpp"

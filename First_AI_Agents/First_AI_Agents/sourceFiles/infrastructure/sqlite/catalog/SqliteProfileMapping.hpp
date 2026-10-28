@@ -4,7 +4,7 @@
 // still lives in the aggregate: the provider budget override JSON and the narrow
 // (stage, provider, model, timeout) assignment row of execution_profile_assignments.
 #include "ai/application/catalog/ExecutionProfileTypes.hpp"
-#include "ai/application/ProviderExecutionBudget.hpp"
+#include "ai/application/budget/ProviderExecutionBudget.hpp"
 #include "ai/common/Result.hpp"
 
 #include <sqlite3.h>

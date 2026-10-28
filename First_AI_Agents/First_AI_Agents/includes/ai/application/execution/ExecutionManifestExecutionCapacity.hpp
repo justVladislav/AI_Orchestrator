@@ -2,7 +2,7 @@
 
 #include "ai/application/execution/ExecutionManifestScheduler.hpp"
 #include "ai/application/execution/ExecutionManifestTypes.hpp"
-#include "ai/application/ProviderExecutionBudget.hpp"
+#include "ai/application/budget/ProviderExecutionBudget.hpp"
 #include "ai/common/Result.hpp"
 
 #include <cstdint>

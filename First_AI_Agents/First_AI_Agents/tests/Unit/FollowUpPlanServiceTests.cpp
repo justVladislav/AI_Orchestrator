@@ -3,7 +3,7 @@
 
 #include "FollowUpServiceTestSupport.hpp"
 
-#include "ai/application/CostCalculation.hpp"
+#include "ai/application/budget/CostCalculation.hpp"
 
 #include <fstream>
 #include <functional>

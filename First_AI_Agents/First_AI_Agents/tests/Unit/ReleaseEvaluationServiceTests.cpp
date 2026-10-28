@@ -1,4 +1,4 @@
-#include "ai/application/ReleaseEvaluationService.hpp"
+#include "ai/application/analytics/ReleaseEvaluationService.hpp"
 
 #include <cassert>
 #include <chrono>

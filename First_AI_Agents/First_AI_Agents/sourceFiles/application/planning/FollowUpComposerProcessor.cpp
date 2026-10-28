@@ -1,7 +1,7 @@
 #include "ai/application/planning/FollowUpComposerProcessor.hpp"
 
-#include "ai/application/CacheDurationAccounting.hpp"
-#include "ai/application/CostCalculation.hpp"
+#include "ai/application/budget/CacheDurationAccounting.hpp"
+#include "ai/application/budget/CostCalculation.hpp"
 #include "ai/application/planning/FollowUpPlanAdvisories.hpp"
 #include "ai/application/context/ProjectContextSnapshot.hpp"
 #include "ai/application/Sha256.hpp"

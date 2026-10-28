@@ -1,5 +1,5 @@
-#include "ai/application/CostCalculation.hpp"
-#include "ai/application/CacheDurationAccounting.hpp"
+#include "ai/application/budget/CostCalculation.hpp"
+#include "ai/application/budget/CacheDurationAccounting.hpp"
 
 #include <algorithm>
 

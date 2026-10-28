@@ -1,6 +1,6 @@
 #include "ai/application/execution/ExecutionManifestExecutor.hpp"
 
-#include "ai/application/CostCalculation.hpp"
+#include "ai/application/budget/CostCalculation.hpp"
 #include "ai/application/execution/ExecutionManifestExecutionCapacity.hpp"
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/verification/ManifestVerificationProfileBinder.hpp"

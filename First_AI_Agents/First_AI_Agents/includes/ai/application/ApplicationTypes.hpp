@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/catalog/ExecutionProfileTypes.hpp"
-#include "ai/application/ProviderExecutionBudget.hpp"
+#include "ai/application/budget/ProviderExecutionBudget.hpp"
 #include "ai/application/execution/RunInterfaceContract.hpp"
 #include "ai/models/TokenUsage.hpp"
 

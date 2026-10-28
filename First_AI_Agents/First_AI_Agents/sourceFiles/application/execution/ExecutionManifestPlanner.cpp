@@ -1,5 +1,5 @@
 #include "ai/application/execution/ExecutionManifestPlanner.hpp"
-#include "ai/application/CostCalculation.hpp"
+#include "ai/application/budget/CostCalculation.hpp"
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/execution/RunWorkspaceScopeService.hpp"
 

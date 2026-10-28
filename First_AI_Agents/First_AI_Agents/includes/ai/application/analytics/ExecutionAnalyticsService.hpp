@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/ExecutionAnalyticsTypes.hpp"
+#include "ai/application/analytics/ExecutionAnalyticsTypes.hpp"
 #include "ai/application/catalog/IModelRepository.hpp"
 #include "ai/application/agents/IModelExecutionRepository.hpp"
 

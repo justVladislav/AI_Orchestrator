@@ -1,4 +1,4 @@
-#include "ai/application/CostCalculation.hpp"
+#include "ai/application/budget/CostCalculation.hpp"
 #include "ai/providers/OpenAIResponseParser.hpp"
 
 #include <nlohmann/json.hpp>

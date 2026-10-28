@@ -1,6 +1,6 @@
-#include "ai/application/ProviderRequestQuote.hpp"
+#include "ai/application/budget/ProviderRequestQuote.hpp"
 
-#include "ai/application/CacheDurationAccounting.hpp"
+#include "ai/application/budget/CacheDurationAccounting.hpp"
 #include "ai/application/Sha256.hpp"
 
 #include <nlohmann/json.hpp>

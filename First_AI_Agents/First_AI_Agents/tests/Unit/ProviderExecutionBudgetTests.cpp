@@ -1,4 +1,4 @@
-#include "ai/application/ProviderExecutionBudget.hpp"
+#include "ai/application/budget/ProviderExecutionBudget.hpp"
 #include "ai/application/execution/RunEvent.hpp"
 
 #include <cassert>

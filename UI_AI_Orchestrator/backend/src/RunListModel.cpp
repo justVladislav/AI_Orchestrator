@@ -1,6 +1,6 @@
 #include <ai/ui/RunListModel.hpp>
 
-#include <ai/application/CostCalculation.hpp>
+#include <ai/application/budget/CostCalculation.hpp>
 #include <ai/ui/RunContractVariant.hpp>
 
 #include <QDateTime>

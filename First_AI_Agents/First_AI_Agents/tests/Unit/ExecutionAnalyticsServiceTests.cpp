@@ -1,4 +1,4 @@
-#include "ai/application/ExecutionAnalyticsService.hpp"
+#include "ai/application/analytics/ExecutionAnalyticsService.hpp"
 #include "ai/application/InMemoryRepositories.hpp"
 
 #include <chrono>

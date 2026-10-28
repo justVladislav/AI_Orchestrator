@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/catalog/ProviderCatalogTypes.hpp"
-#include "ai/application/ProviderExecutionBudget.hpp"
+#include "ai/application/budget/ProviderExecutionBudget.hpp"
 
 #include <chrono>
 #include <cstdint>

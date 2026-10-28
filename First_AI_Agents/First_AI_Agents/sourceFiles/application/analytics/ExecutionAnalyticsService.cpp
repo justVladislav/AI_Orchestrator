@@ -1,6 +1,6 @@
-#include "ai/application/ExecutionAnalyticsService.hpp"
+#include "ai/application/analytics/ExecutionAnalyticsService.hpp"
 
-#include "ai/application/CostCalculation.hpp"
+#include "ai/application/budget/CostCalculation.hpp"
 
 #include <algorithm>
 #include <iterator>

@@ -2,7 +2,7 @@
 
 #include "ai/application/artifacts/ArtifactService.hpp"
 #include "ai/application/context/ContextSnapshot.hpp"
-#include "ai/application/CostCalculation.hpp"
+#include "ai/application/budget/CostCalculation.hpp"
 #include "ai/application/execution/ExecutionManifestParser.hpp"
 #include "ai/application/execution/ExecutionManifestService.hpp"
 #include "ai/application/execution/ExecutionManifestValidator.hpp"

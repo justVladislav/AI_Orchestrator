@@ -1,7 +1,7 @@
 #include "ai/application/InMemoryRepositories.hpp"
 
 #include "ai/application/artifacts/ArtifactPathPolicy.hpp"
-#include "ai/application/CacheDurationAccounting.hpp"
+#include "ai/application/budget/CacheDurationAccounting.hpp"
 #include "ai/application/planning/RunDraftGroup.hpp"
 #include "ai/application/Sha256.hpp"
 

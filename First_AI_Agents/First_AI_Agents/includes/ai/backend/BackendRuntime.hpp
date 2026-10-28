@@ -21,7 +21,7 @@
 #include "ai/application/planning/FollowUpPlanService.hpp"
 #include "ai/application/planning/RunDraftPlanService.hpp"
 #include "ai/application/planning/RunDraftService.hpp"
-#include "ai/application/ExecutionAnalyticsService.hpp"
+#include "ai/application/analytics/ExecutionAnalyticsService.hpp"
 #include "ai/application/ICredentialStore.hpp"
 #include "ai/application/execution/OrchestrationService.hpp"
 #include "ai/application/verification/VerificationBootstrapRetryService.hpp"

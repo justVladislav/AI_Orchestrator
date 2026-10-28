@@ -1,6 +1,6 @@
 #include "ai/application/execution/RunManager.hpp"
 
-#include "ai/application/CostCalculation.hpp"
+#include "ai/application/budget/CostCalculation.hpp"
 #include "ai/application/planning/IOutcomeBriefTrigger.hpp"
 
 #include "ai/application/IdGenerator.hpp"

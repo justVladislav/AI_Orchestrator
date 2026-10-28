@@ -1,7 +1,7 @@
 #include <ai/application/proposals/ChangeProposalService.hpp>
 #include <ai/application/proposals/ChangeProposalTypes.hpp>
 #include <ai/application/execution/ExecutionAcceptanceContract.hpp>
-#include <ai/application/ExecutionAnalyticsService.hpp>
+#include <ai/application/analytics/ExecutionAnalyticsService.hpp>
 #include <ai/application/execution/ExecutionManifestReadModelService.hpp>
 #include <ai/application/catalog/ProviderCatalogService.hpp>
 #include <ai/application/execution/IManifestWorkLedgerRepository.hpp>

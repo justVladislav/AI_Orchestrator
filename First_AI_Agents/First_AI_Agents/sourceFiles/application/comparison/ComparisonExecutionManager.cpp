@@ -1,6 +1,6 @@
 #include "ai/application/comparison/ComparisonExecutionManager.hpp"
 
-#include "ai/application/CostCalculation.hpp"
+#include "ai/application/budget/CostCalculation.hpp"
 
 #include <algorithm>
 #include <chrono>

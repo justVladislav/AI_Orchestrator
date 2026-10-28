@@ -1,7 +1,7 @@
 #include "ai/application/execution/ManifestWorkflowRunner.hpp"
 
 #include "ai/application/artifacts/ArtifactService.hpp"
-#include "ai/application/CostCalculation.hpp"
+#include "ai/application/budget/CostCalculation.hpp"
 #include "ai/application/execution/ExecutionManifestDraftTypes.hpp"
 #include "ai/application/execution/ExecutionManifestExecutionCapacity.hpp"
 #include "ai/application/execution/ExecutionManifestPlannerTurnBudget.hpp"

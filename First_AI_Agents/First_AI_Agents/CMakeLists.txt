@@ -121,10 +121,10 @@ set(APPLICATION_SOURCES
     sourceFiles/application/WorkspaceContextService.cpp
     sourceFiles/application/catalog/ProviderCatalogTypes.cpp
     sourceFiles/application/catalog/ProviderCatalogService.cpp
-    sourceFiles/application/ProviderExecutionBudget.cpp
-    sourceFiles/application/CostCalculation.cpp
-    sourceFiles/application/CacheDurationAccounting.cpp
-    sourceFiles/application/ProviderRequestQuote.cpp
+    sourceFiles/application/budget/ProviderExecutionBudget.cpp
+    sourceFiles/application/budget/CostCalculation.cpp
+    sourceFiles/application/budget/CacheDurationAccounting.cpp
+    sourceFiles/application/budget/ProviderRequestQuote.cpp
     sourceFiles/application/catalog/ExecutionProfileTypes.cpp
     sourceFiles/application/catalog/ExecutionProfileService.cpp
     sourceFiles/application/planning/RunDraftService.cpp
@@ -199,14 +199,14 @@ set(APPLICATION_SOURCES
     sourceFiles/application/agents/ModelExecutionTypes.cpp
     sourceFiles/application/InMemoryModelExecutionRepository.cpp
     sourceFiles/application/agents/ModelExecutionService.cpp
-    sourceFiles/application/ExecutionAnalyticsService.cpp
+    sourceFiles/application/analytics/ExecutionAnalyticsService.cpp
     sourceFiles/application/comparison/ComparisonTypes.cpp
     sourceFiles/application/InMemoryComparisonSessionRepository.cpp
     sourceFiles/application/comparison/ComparisonService.cpp
     sourceFiles/application/comparison/ComparisonReadModelService.cpp
     sourceFiles/application/comparison/ComparisonQualityEvaluator.cpp
     sourceFiles/application/comparison/ComparisonExecutionManager.cpp
-    sourceFiles/application/ReleaseEvaluationService.cpp
+    sourceFiles/application/analytics/ReleaseEvaluationService.cpp
 )
 
 function(ai_orchestrator_configure_target target_name)

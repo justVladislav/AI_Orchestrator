@@ -2,7 +2,7 @@
 
 #include "ai/application/planning/FollowUpComposerContext.hpp"
 #include "ai/application/catalog/ProviderCatalogTypes.hpp"
-#include "ai/application/ProviderRequestQuote.hpp"
+#include "ai/application/budget/ProviderRequestQuote.hpp"
 #include "ai/common/Result.hpp"
 #include "ai/models/PromptCachePolicy.hpp"
 
