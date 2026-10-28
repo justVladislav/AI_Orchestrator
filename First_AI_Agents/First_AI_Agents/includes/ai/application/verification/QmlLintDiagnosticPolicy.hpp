@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/ExecutionAcceptanceContract.hpp"
+#include "ai/application/execution/ExecutionAcceptanceContract.hpp"
 
 #include <cstddef>
 #include <optional>

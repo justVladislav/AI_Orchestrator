@@ -1,7 +1,7 @@
-#include "ai/application/LegacyConversionRecord.hpp"
+#include "ai/application/execution/LegacyConversionRecord.hpp"
 
 #include "ai/application/IWorkflowRunner.hpp"
-#include "ai/application/ManifestRouting.hpp"
+#include "ai/application/execution/ManifestRouting.hpp"
 
 #include <nlohmann/json.hpp>
 

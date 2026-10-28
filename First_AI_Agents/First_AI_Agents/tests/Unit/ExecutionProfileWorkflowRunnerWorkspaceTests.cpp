@@ -10,7 +10,7 @@
 // self-contained handoff rather than the Architect's full project context.
 #include "ai/application/agents/AgentToolExecutionService.hpp"
 #include "ai/application/proposals/ChangeProposalService.hpp"
-#include "ai/application/ExecutionAssignmentValidation.hpp"
+#include "ai/application/execution/ExecutionAssignmentValidation.hpp"
 #include "ai/application/execution/ExecutionManifestService.hpp"
 #include "ai/application/ExecutionProfileWorkflowRunner.hpp"
 #include "ai/application/workspace/FilesystemWorkspaceToolExecutor.hpp"

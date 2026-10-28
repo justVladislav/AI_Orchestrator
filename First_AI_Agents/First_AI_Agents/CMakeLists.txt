@@ -62,7 +62,7 @@ set(APPLICATION_SOURCES
     sourceFiles/application/verification/VerificationToolchain.cpp
     sourceFiles/application/verification/ProjectSetupReadiness.cpp
     sourceFiles/application/verification/ProjectReadinessService.cpp
-    sourceFiles/application/ExecutionAcceptanceContract.cpp
+    sourceFiles/application/execution/ExecutionAcceptanceContract.cpp
     sourceFiles/application/execution/ManifestJsonParsingSupport.cpp
     sourceFiles/application/execution/ExecutionManifestTypes.cpp
     sourceFiles/application/execution/ExecutionManifestParser.cpp
@@ -72,14 +72,14 @@ set(APPLICATION_SOURCES
     sourceFiles/application/execution/ExecutionManifestDependencyGraph.cpp
     sourceFiles/application/execution/ExecutionManifestValidator.cpp
     sourceFiles/application/execution/ExecutionManifestService.cpp
-    sourceFiles/application/ExecutionManifestPlanner.cpp
-    sourceFiles/application/ExecutionManifestPlannerTurnBudget.cpp
-    sourceFiles/application/ExecutionManifestRepairControls.cpp
-    sourceFiles/application/ExecutionManifestExecutionCapacity.cpp
-    sourceFiles/application/ExecutionManifestScheduler.cpp
-    sourceFiles/application/ExecutionManifestExecutor.cpp
+    sourceFiles/application/execution/ExecutionManifestPlanner.cpp
+    sourceFiles/application/execution/ExecutionManifestPlannerTurnBudget.cpp
+    sourceFiles/application/execution/ExecutionManifestRepairControls.cpp
+    sourceFiles/application/execution/ExecutionManifestExecutionCapacity.cpp
+    sourceFiles/application/execution/ExecutionManifestScheduler.cpp
+    sourceFiles/application/execution/ExecutionManifestExecutor.cpp
     sourceFiles/application/verification/ManifestVerificationRepairability.cpp
-    sourceFiles/application/ManifestWorkflowRunner.cpp
+    sourceFiles/application/execution/ManifestWorkflowRunner.cpp
     sourceFiles/application/ManifestWorkLedgerTypes.cpp
     sourceFiles/application/ManifestWorkLedgerService.cpp
     sourceFiles/application/ManifestInterruptedTaskReconciler.cpp
@@ -128,11 +128,11 @@ set(APPLICATION_SOURCES
     sourceFiles/application/catalog/ExecutionProfileTypes.cpp
     sourceFiles/application/catalog/ExecutionProfileService.cpp
     sourceFiles/application/planning/RunDraftService.cpp
-    sourceFiles/application/ExecutionAssignmentValidation.cpp
+    sourceFiles/application/execution/ExecutionAssignmentValidation.cpp
     sourceFiles/application/WorkflowRouter.cpp
     sourceFiles/application/ExecutionProfileWorkflowRunner.cpp
     sourceFiles/application/agents/AgentToolTurnLoopRunner.cpp
-    sourceFiles/application/ManifestWorkerNoChanges.cpp
+    sourceFiles/application/execution/ManifestWorkerNoChanges.cpp
     sourceFiles/application/verification/ManifestProposalOverlay.cpp
     sourceFiles/application/verification/ManifestProposalSetVerifier.cpp
     sourceFiles/application/verification/QmlLintDiagnosticPolicy.cpp
@@ -174,11 +174,11 @@ set(APPLICATION_SOURCES
     sourceFiles/application/verification/ManifestVerificationManualHandoffApplyAuthority.cpp
     sourceFiles/application/verification/ManifestApplyVerificationGate.cpp
     sourceFiles/application/verification/ManifestMandatoryVerificationPolicy.cpp
-    sourceFiles/application/ManifestRouting.cpp
-    sourceFiles/application/TaskRouteResolver.cpp
-    sourceFiles/application/LegacyRosterAdapter.cpp
-    sourceFiles/application/LegacyConversionRecord.cpp
-    sourceFiles/application/ManifestMemberUsage.cpp
+    sourceFiles/application/execution/ManifestRouting.cpp
+    sourceFiles/application/execution/TaskRouteResolver.cpp
+    sourceFiles/application/execution/LegacyRosterAdapter.cpp
+    sourceFiles/application/execution/LegacyConversionRecord.cpp
+    sourceFiles/application/execution/ManifestMemberUsage.cpp
     sourceFiles/application/verification/ManifestVerificationProfileBinder.cpp
     sourceFiles/application/verification/VerificationBootstrapTypes.cpp
     sourceFiles/application/InMemoryVerificationBootstrapRepository.cpp

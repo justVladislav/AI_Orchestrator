@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/ApplicationTypes.hpp"
-#include "ai/application/LegacyRosterAdapter.hpp"
+#include "ai/application/execution/LegacyRosterAdapter.hpp"
 #include "ai/common/Result.hpp"
 
 #include <chrono>

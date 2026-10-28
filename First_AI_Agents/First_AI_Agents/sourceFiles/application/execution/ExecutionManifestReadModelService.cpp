@@ -1,9 +1,9 @@
 #include "ai/application/execution/ExecutionManifestReadModelService.hpp"
 
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
-#include "ai/application/ManifestRouting.hpp"
+#include "ai/application/execution/ManifestRouting.hpp"
 #include "ai/application/verification/QmlLintDiagnosticPolicy.hpp"
-#include "ai/application/TaskRouteResolver.hpp"
+#include "ai/application/execution/TaskRouteResolver.hpp"
 
 #include <algorithm>
 #include <unordered_map>

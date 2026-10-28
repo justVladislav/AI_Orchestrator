@@ -1,16 +1,16 @@
-#include "ai/application/ExecutionManifestPlanner.hpp"
+#include "ai/application/execution/ExecutionManifestPlanner.hpp"
 #include "ai/application/CostCalculation.hpp"
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/RunWorkspaceScopeService.hpp"
 
 #include "ai/application/execution/ExecutionManifestDraftCompiler.hpp"
-#include "ai/application/ExecutionManifestExecutionCapacity.hpp"
+#include "ai/application/execution/ExecutionManifestExecutionCapacity.hpp"
 #include "ai/application/execution/ExecutionManifestDraftParser.hpp"
-#include "ai/application/ExecutionManifestPlannerTurnBudget.hpp"
-#include "ai/application/ExecutionManifestRepairControls.hpp"
+#include "ai/application/execution/ExecutionManifestPlannerTurnBudget.hpp"
+#include "ai/application/execution/ExecutionManifestRepairControls.hpp"
 #include "ai/application/IdGenerator.hpp"
 #include "ai/application/verification/ManifestMandatoryVerificationPolicy.hpp"
-#include "ai/application/ManifestRouting.hpp"
+#include "ai/application/execution/ManifestRouting.hpp"
 #include "ai/application/verification/ManifestVerificationProfileBinder.hpp"
 
 #include <nlohmann/json.hpp>

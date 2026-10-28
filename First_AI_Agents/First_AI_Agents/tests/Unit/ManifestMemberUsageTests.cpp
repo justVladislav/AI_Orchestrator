@@ -7,8 +7,8 @@
 // they check. The writer-side golden - the rows the real runner and executor produce - is
 // asserted in ManifestWorkflowRunnerTests.
 #include "ai/application/InMemoryRepositories.hpp"
-#include "ai/application/ManifestMemberUsage.hpp"
-#include "ai/application/ManifestRouting.hpp"
+#include "ai/application/execution/ManifestMemberUsage.hpp"
+#include "ai/application/execution/ManifestRouting.hpp"
 #include "ai/application/agents/ModelExecutionService.hpp"
 
 #include <algorithm>

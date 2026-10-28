@@ -5,7 +5,7 @@
 // no real provider HTTP calls.
 #include "ai/application/proposals/ChangeProposalService.hpp"
 #include "ai/application/proposals/ChangeSetApplyService.hpp"
-#include "ai/application/ExecutionAcceptanceContract.hpp"
+#include "ai/application/execution/ExecutionAcceptanceContract.hpp"
 #include "ai/application/proposals/IChangeApprovalRepository.hpp"
 #include "ai/application/proposals/IChangeProposalRepository.hpp"
 #include "ai/application/InMemoryManifestWorkLedgerRepository.hpp"

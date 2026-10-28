@@ -1,4 +1,4 @@
-#include "ai/application/ExecutionAcceptanceContract.hpp"
+#include "ai/application/execution/ExecutionAcceptanceContract.hpp"
 
 #include "ai/application/verification/QmlLintDiagnosticPolicy.hpp"
 

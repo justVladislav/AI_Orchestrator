@@ -1,7 +1,7 @@
 #pragma once
 
-#include "ai/application/ExecutionManifestScheduler.hpp"
-#include "ai/application/ManifestWorkerNoChanges.hpp"
+#include "ai/application/execution/ExecutionManifestScheduler.hpp"
+#include "ai/application/execution/ManifestWorkerNoChanges.hpp"
 #include "ai/common/Result.hpp"
 
 #include <chrono>

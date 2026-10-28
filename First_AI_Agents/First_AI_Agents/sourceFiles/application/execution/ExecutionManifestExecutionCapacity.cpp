@@ -1,7 +1,7 @@
-#include "ai/application/ExecutionManifestExecutionCapacity.hpp"
+#include "ai/application/execution/ExecutionManifestExecutionCapacity.hpp"
 
 #include "ai/application/agents/AgentToolTurnLoopRunner.hpp"
-#include "ai/application/ExecutionManifestPlannerTurnBudget.hpp"
+#include "ai/application/execution/ExecutionManifestPlannerTurnBudget.hpp"
 
 #include <algorithm>
 #include <cctype>

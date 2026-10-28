@@ -1,6 +1,6 @@
 #include <ai/application/proposals/ChangeProposalService.hpp>
 #include <ai/application/proposals/ChangeProposalTypes.hpp>
-#include <ai/application/ExecutionAcceptanceContract.hpp>
+#include <ai/application/execution/ExecutionAcceptanceContract.hpp>
 #include <ai/application/ExecutionAnalyticsService.hpp>
 #include <ai/application/execution/ExecutionManifestReadModelService.hpp>
 #include <ai/application/catalog/ProviderCatalogService.hpp>
@@ -15,7 +15,7 @@
 #include <ai/application/IWorkflowRunner.hpp>
 #include <ai/application/verification/ManifestApplyVerificationGate.hpp>
 #include <ai/application/verification/ManifestProposalContentHash.hpp>
-#include <ai/application/ManifestRouting.hpp>
+#include <ai/application/execution/ManifestRouting.hpp>
 #include <ai/application/verification/ManifestProposalOverlay.hpp>
 #include <ai/application/ManifestWorkLedgerTypes.hpp>
 #include <ai/application/MockWorkflowRunner.hpp>

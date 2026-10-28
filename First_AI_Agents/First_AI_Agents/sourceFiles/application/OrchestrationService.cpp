@@ -1,7 +1,7 @@
 #include "ai/application/OrchestrationService.hpp"
 
 #include "ai/application/IWorkflowRunner.hpp"
-#include "ai/application/LegacyRosterAdapter.hpp"
+#include "ai/application/execution/LegacyRosterAdapter.hpp"
 #include "ai/application/RunStageSettlement.hpp"
 
 #include <algorithm>

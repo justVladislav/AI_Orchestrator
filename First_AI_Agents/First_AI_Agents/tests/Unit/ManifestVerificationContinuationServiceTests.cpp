@@ -10,7 +10,7 @@
 #include "ai/application/verification/ManifestVerificationContinuationReadModelService.hpp"
 #include "ai/application/verification/ManifestVerificationContinuationRepairService.hpp"
 #include "ai/application/verification/ManifestMandatoryVerificationPolicy.hpp"
-#include "ai/application/ManifestRouting.hpp"
+#include "ai/application/execution/ManifestRouting.hpp"
 #include "ai/application/verification/ManifestVerificationManualHandoffService.hpp"
 #include "ai/application/InMemoryManifestVerificationManualHandoffRepository.hpp"
 #include "RecordingOutcomeBriefTrigger.hpp"

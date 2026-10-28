@@ -4,7 +4,7 @@
 #include "ai/application/agents/AgentToolTurnLoopRunner.hpp"
 #include "ai/application/execution/ExecutionManifestTypes.hpp"
 #include "ai/application/execution/ExecutionManifestValidator.hpp"
-#include "ai/application/ManifestRouting.hpp"
+#include "ai/application/execution/ManifestRouting.hpp"
 
 #include <algorithm>
 #include <functional>

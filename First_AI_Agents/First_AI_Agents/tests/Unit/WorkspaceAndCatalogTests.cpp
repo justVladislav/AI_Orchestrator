@@ -4,7 +4,7 @@
 // filesystem - SqliteRepositoryTests.cpp/BackendRuntimeTests.cpp cover the
 // same business rules again against the real persistence adapters and
 // through BackendRuntime's storage.unavailable controlled-failure path.
-#include "ai/application/ExecutionAssignmentValidation.hpp"
+#include "ai/application/execution/ExecutionAssignmentValidation.hpp"
 #include "ai/application/catalog/ExecutionProfileService.hpp"
 #include "ai/application/InMemoryRepositories.hpp"
 #include "ai/application/IWorkflowRunner.hpp"

@@ -1,7 +1,7 @@
-#include "ai/application/ExecutionManifestExecutor.hpp"
+#include "ai/application/execution/ExecutionManifestExecutor.hpp"
 
 #include "ai/application/CostCalculation.hpp"
-#include "ai/application/ExecutionManifestExecutionCapacity.hpp"
+#include "ai/application/execution/ExecutionManifestExecutionCapacity.hpp"
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/verification/ManifestVerificationProfileBinder.hpp"
 #include "ai/application/verification/ManifestVerificationRepairability.hpp"

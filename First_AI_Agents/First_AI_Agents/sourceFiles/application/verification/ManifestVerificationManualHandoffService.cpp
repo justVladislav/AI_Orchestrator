@@ -2,7 +2,7 @@
 
 #include "ai/application/planning/IOutcomeBriefTrigger.hpp"
 
-#include "ai/application/ExecutionAcceptanceContract.hpp"
+#include "ai/application/execution/ExecutionAcceptanceContract.hpp"
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/IWorkflowRunner.hpp"
 #include "ai/application/IdGenerator.hpp"

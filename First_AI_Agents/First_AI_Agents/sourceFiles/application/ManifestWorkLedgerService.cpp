@@ -1,11 +1,11 @@
 #include "ai/application/ManifestWorkLedgerService.hpp"
 
 #include "ai/application/artifacts/ArtifactService.hpp"
-#include "ai/application/ExecutionManifestPlanner.hpp"
+#include "ai/application/execution/ExecutionManifestPlanner.hpp"
 #include "ai/application/IWorkflowRunner.hpp"
 #include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"
 #include "ai/application/verification/ManifestVerificationManualHandoffTypes.hpp"
-#include "ai/application/ManifestWorkerNoChanges.hpp"
+#include "ai/application/execution/ManifestWorkerNoChanges.hpp"
 #include "ai/application/verification/QmlLintDiagnosticPolicy.hpp"
 #include "ai/application/Sha256.hpp"
 #include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"

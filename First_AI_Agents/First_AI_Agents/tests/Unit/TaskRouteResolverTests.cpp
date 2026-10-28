@@ -5,8 +5,8 @@
 // provider, no SQLite.
 #include "ai/application/agents/AgentToolTurnLoopRunner.hpp"
 #include "ai/application/InMemoryRepositories.hpp"
-#include "ai/application/ManifestRouting.hpp"
-#include "ai/application/TaskRouteResolver.hpp"
+#include "ai/application/execution/ManifestRouting.hpp"
+#include "ai/application/execution/TaskRouteResolver.hpp"
 
 #include <functional>
 #include <iostream>

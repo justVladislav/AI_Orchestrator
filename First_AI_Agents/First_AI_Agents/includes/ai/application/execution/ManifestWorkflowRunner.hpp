@@ -2,9 +2,9 @@
 
 #include "ai/application/agents/AgentToolExecutionService.hpp"
 #include "ai/application/proposals/ChangeProposalService.hpp"
-#include "ai/application/ExecutionManifestExecutionCapacity.hpp"
-#include "ai/application/ExecutionManifestExecutor.hpp"
-#include "ai/application/ExecutionManifestPlanner.hpp"
+#include "ai/application/execution/ExecutionManifestExecutionCapacity.hpp"
+#include "ai/application/execution/ExecutionManifestExecutor.hpp"
+#include "ai/application/execution/ExecutionManifestPlanner.hpp"
 #include "ai/application/execution/ExecutionManifestService.hpp"
 #include "ai/application/verification/ManifestVerificationEnvironmentPreflight.hpp"
 #include "ai/application/IManifestTaskExecutionRepository.hpp"

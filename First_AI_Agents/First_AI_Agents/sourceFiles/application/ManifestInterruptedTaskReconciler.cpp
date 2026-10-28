@@ -1,10 +1,10 @@
 #include "ai/application/ManifestInterruptedTaskReconciler.hpp"
 
 #include "ai/application/IWorkflowRunner.hpp"
-#include "ai/application/ManifestRouting.hpp"
+#include "ai/application/execution/ManifestRouting.hpp"
 #include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"
 #include "ai/application/agents/ModelExecutionTypes.hpp"
-#include "ai/application/TaskRouteResolver.hpp"
+#include "ai/application/execution/TaskRouteResolver.hpp"
 
 #include <algorithm>
 #include <cstdint>

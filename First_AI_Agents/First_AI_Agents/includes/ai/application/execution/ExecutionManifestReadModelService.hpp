@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/ExecutionAcceptanceContract.hpp"
+#include "ai/application/execution/ExecutionAcceptanceContract.hpp"
 #include "ai/application/execution/ExecutionManifestService.hpp"
 #include "ai/application/proposals/IChangeProposalRepository.hpp"
 #include "ai/application/IManifestTaskExecutionRepository.hpp"
@@ -11,7 +11,7 @@
 #include "ai/application/catalog/IModelRepository.hpp"
 #include "ai/application/catalog/IProviderRepository.hpp"
 #include "ai/application/verification/IVerificationEnvironmentRepository.hpp"
-#include "ai/application/ManifestMemberUsage.hpp"
+#include "ai/application/execution/ManifestMemberUsage.hpp"
 
 #include <optional>
 #include <string>

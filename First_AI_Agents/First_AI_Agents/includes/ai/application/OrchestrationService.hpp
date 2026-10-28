@@ -1,7 +1,7 @@
 #pragma once
 
-#include "ai/application/LegacyConversionRecord.hpp"
-#include "ai/application/LegacyRosterAdapter.hpp"
+#include "ai/application/execution/LegacyConversionRecord.hpp"
+#include "ai/application/execution/LegacyRosterAdapter.hpp"
 #include "ai/application/RunManager.hpp"
 
 #include <filesystem>

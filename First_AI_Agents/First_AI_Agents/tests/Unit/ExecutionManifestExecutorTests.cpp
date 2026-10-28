@@ -6,9 +6,9 @@
 // each test file in this codebase is self-contained.
 #include "ai/application/agents/AgentToolExecutionService.hpp"
 #include "ai/application/proposals/ChangeProposalService.hpp"
-#include "ai/application/ExecutionManifestExecutionCapacity.hpp"
-#include "ai/application/ExecutionManifestExecutor.hpp"
-#include "ai/application/ExecutionManifestScheduler.hpp"
+#include "ai/application/execution/ExecutionManifestExecutionCapacity.hpp"
+#include "ai/application/execution/ExecutionManifestExecutor.hpp"
+#include "ai/application/execution/ExecutionManifestScheduler.hpp"
 #include "ai/application/workspace/FilesystemWorkspaceToolExecutor.hpp"
 #include "ai/application/InMemoryRepositories.hpp"
 #include "ai/application/InMemoryRunWorkspaceScopeRepository.hpp"

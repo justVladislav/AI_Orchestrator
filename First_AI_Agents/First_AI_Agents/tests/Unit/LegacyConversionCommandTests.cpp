@@ -5,8 +5,8 @@
 // itself is exercised end to end in ManifestWorkflowRunnerTests.
 #include "ai/application/IWorkflowRunner.hpp"
 #include "ai/application/InMemoryRepositories.hpp"
-#include "ai/application/LegacyConversionRecord.hpp"
-#include "ai/application/LegacyRosterAdapter.hpp"
+#include "ai/application/execution/LegacyConversionRecord.hpp"
+#include "ai/application/execution/LegacyRosterAdapter.hpp"
 #include "ai/application/MockWorkflowRunner.hpp"
 #include "ai/application/OrchestrationService.hpp"
 #include "ai/application/projects/ProjectService.hpp"

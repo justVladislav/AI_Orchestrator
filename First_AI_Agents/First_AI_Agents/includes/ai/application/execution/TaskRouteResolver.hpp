@@ -4,7 +4,7 @@
 #include "ai/application/catalog/ExecutionProfileTypes.hpp"
 #include "ai/application/catalog/IModelRepository.hpp"
 #include "ai/application/catalog/IProviderRepository.hpp"
-#include "ai/application/ManifestRouting.hpp"
+#include "ai/application/execution/ManifestRouting.hpp"
 #include "ai/common/Result.hpp"
 
 #include <chrono>

@@ -3,12 +3,12 @@
 #include "ai/application/planning/IOutcomeBriefTrigger.hpp"
 
 #include "ai/application/artifacts/ArtifactService.hpp"
-#include "ai/application/ExecutionAcceptanceContract.hpp"
-#include "ai/application/ExecutionManifestExecutionCapacity.hpp"
+#include "ai/application/execution/ExecutionAcceptanceContract.hpp"
+#include "ai/application/execution/ExecutionManifestExecutionCapacity.hpp"
 #include "ai/application/verification/ManifestMandatoryVerificationPolicy.hpp"
 #include "ai/application/verification/ManifestProposalOverlay.hpp"
 #include "ai/application/verification/ManifestVerificationRepairability.hpp"
-#include "ai/application/TaskRouteResolver.hpp"
+#include "ai/application/execution/TaskRouteResolver.hpp"
 #include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 #include "ai/application/workspace/WorkspaceReadPolicy.hpp"
 

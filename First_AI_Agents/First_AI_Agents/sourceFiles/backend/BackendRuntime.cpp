@@ -10,7 +10,7 @@
 #include "ai/application/planning/FollowUpPlanReadModel.hpp"
 #include "ai/application/planning/FollowUpPlanService.hpp"
 #include "ai/application/planning/FollowUpSourceReader.hpp"
-#include "ai/application/ManifestWorkflowRunner.hpp"
+#include "ai/application/execution/ManifestWorkflowRunner.hpp"
 #include "ai/application/workspace/FilesystemWorkspaceToolExecutor.hpp"
 #include "ai/application/agents/IAgentToolAuditRepository.hpp"
 #include "ai/application/agents/IAgentToolSessionRepository.hpp"

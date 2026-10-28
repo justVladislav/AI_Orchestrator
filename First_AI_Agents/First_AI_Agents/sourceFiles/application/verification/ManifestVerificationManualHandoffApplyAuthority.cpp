@@ -1,6 +1,6 @@
 #include "ai/application/verification/ManifestVerificationManualHandoffApplyAuthority.hpp"
 
-#include "ai/application/ExecutionAcceptanceContract.hpp"
+#include "ai/application/execution/ExecutionAcceptanceContract.hpp"
 #include "ai/application/verification/ManifestVerificationManualHandoffTypes.hpp"
 
 #include <algorithm>

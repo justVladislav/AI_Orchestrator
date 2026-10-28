@@ -6,7 +6,7 @@
 #include "../execution/SqliteRunStatusMapping.hpp"
 #include "../planning/SqliteRunDraftGroupStorage.hpp"
 
-#include "ai/application/ExecutionAcceptanceContract.hpp"
+#include "ai/application/execution/ExecutionAcceptanceContract.hpp"
 #include "ai/application/CacheDurationAccounting.hpp"
 #include "ai/application/conversations/ChatProjectContext.hpp"
 #include "ai/application/planning/RunDraftGroup.hpp"

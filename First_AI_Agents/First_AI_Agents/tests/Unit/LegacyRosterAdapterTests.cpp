@@ -4,11 +4,11 @@
 // (the retired read-only snapshot, the four-member proposal roster with a lead that
 // carries maxAttempts 2) so the policy is proven against what users actually ran.
 // No provider, no SQLite, no repository reads inside the adapter itself.
-#include "ai/application/ExecutionAssignmentValidation.hpp"
+#include "ai/application/execution/ExecutionAssignmentValidation.hpp"
 #include "ai/application/IWorkflowRunner.hpp"
 #include "ai/application/InMemoryRepositories.hpp"
-#include "ai/application/LegacyRosterAdapter.hpp"
-#include "ai/application/ManifestRouting.hpp"
+#include "ai/application/execution/LegacyRosterAdapter.hpp"
+#include "ai/application/execution/ManifestRouting.hpp"
 #include "ai/application/catalog/ProviderCatalogService.hpp"
 #include "ai/application/WorkflowRouter.hpp"
 

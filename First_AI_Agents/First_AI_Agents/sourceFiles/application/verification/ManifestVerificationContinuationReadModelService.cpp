@@ -1,6 +1,6 @@
 #include "ai/application/verification/ManifestVerificationContinuationReadModelService.hpp"
 
-#include "ai/application/ExecutionAcceptanceContract.hpp"
+#include "ai/application/execution/ExecutionAcceptanceContract.hpp"
 #include "ai/application/IWorkflowRunner.hpp"
 #include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"
 

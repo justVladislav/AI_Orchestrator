@@ -9,7 +9,7 @@
 // completion the Overview page must reflect real backend state, not demo data.
 #include <ai/application/proposals/ChangeProposalService.hpp>
 #include <ai/application/proposals/ChangeProposalTypes.hpp>
-#include <ai/application/ExecutionAcceptanceContract.hpp>
+#include <ai/application/execution/ExecutionAcceptanceContract.hpp>
 #include <ai/application/IManifestWorkLedgerRepository.hpp>
 #include <ai/application/IRunRepository.hpp>
 #include <ai/application/IWorkflowRunner.hpp>

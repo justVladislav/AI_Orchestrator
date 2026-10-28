@@ -2,7 +2,7 @@
 
 #include "ai/application/verification/QmlLintDiagnosticPolicy.hpp"
 
-#include "ai/application/ExecutionAcceptanceContract.hpp"
+#include "ai/application/execution/ExecutionAcceptanceContract.hpp"
 
 #include <algorithm>
 #include <cctype>

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/ApplicationTypes.hpp"
-#include "ai/application/LegacyConversionRecord.hpp"
+#include "ai/application/execution/LegacyConversionRecord.hpp"
 #include "ai/common/Result.hpp"
 
 #include <algorithm>

@@ -1,7 +1,7 @@
-#include "ai/application/ManifestMemberUsage.hpp"
+#include "ai/application/execution/ManifestMemberUsage.hpp"
 
-#include "ai/application/ManifestRouting.hpp"
-#include "ai/application/TaskRouteResolver.hpp"
+#include "ai/application/execution/ManifestRouting.hpp"
+#include "ai/application/execution/TaskRouteResolver.hpp"
 
 #include <algorithm>
 #include <limits>

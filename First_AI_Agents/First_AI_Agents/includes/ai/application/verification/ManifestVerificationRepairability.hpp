@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/proposals/ChangeProposalTypes.hpp"
-#include "ai/application/ExecutionAcceptanceContract.hpp"
+#include "ai/application/execution/ExecutionAcceptanceContract.hpp"
 #include "ai/application/execution/ExecutionManifestTypes.hpp"
 #include "ai/application/ManifestWorkLedgerTypes.hpp"
 

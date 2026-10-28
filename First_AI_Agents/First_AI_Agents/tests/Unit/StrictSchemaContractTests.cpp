@@ -6,7 +6,7 @@
 // no HTTP fakes: this exercises the schema shape only.
 
 #include "ai/application/agents/AgentToolTurnLoopRunner.hpp"
-#include "ai/application/ExecutionManifestPlanner.hpp"
+#include "ai/application/execution/ExecutionManifestPlanner.hpp"
 #include "ai/application/proposals/ProposedChangeSetParser.hpp"
 #include "ai/providers/StrictSchemaValidation.hpp"
 

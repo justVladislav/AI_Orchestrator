@@ -1,6 +1,6 @@
 #include "ai/application/WorkflowRouter.hpp"
 
-#include "ai/application/ExecutionAssignmentValidation.hpp"
+#include "ai/application/execution/ExecutionAssignmentValidation.hpp"
 
 #include <algorithm>
 #include <utility>

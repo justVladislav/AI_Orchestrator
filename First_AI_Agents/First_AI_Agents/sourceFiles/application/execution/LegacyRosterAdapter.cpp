@@ -1,8 +1,8 @@
-#include "ai/application/LegacyRosterAdapter.hpp"
+#include "ai/application/execution/LegacyRosterAdapter.hpp"
 
-#include "ai/application/ExecutionAssignmentValidation.hpp"
+#include "ai/application/execution/ExecutionAssignmentValidation.hpp"
 #include "ai/application/IWorkflowRunner.hpp"
-#include "ai/application/ManifestRouting.hpp"
+#include "ai/application/execution/ManifestRouting.hpp"
 #include "ai/application/Sha256.hpp"
 
 #include <algorithm>

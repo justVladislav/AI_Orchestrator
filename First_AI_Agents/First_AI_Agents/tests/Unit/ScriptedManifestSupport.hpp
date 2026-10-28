@@ -9,7 +9,7 @@
 #include "ai/application/agents/AgentToolExecutionService.hpp"
 #include "ai/application/execution/ExecutionManifestDraftParser.hpp"
 #include "ai/application/workspace/FilesystemWorkspaceToolExecutor.hpp"
-#include "ai/application/ManifestWorkflowRunner.hpp"
+#include "ai/application/execution/ManifestWorkflowRunner.hpp"
 
 #include <nlohmann/json.hpp>
 

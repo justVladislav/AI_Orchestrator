@@ -11,8 +11,8 @@
 #include "ai/application/RunManager.hpp"
 
 #include "ai/application/artifacts/ArtifactService.hpp"
-#include "ai/application/ExecutionAcceptanceContract.hpp"
-#include "ai/application/ExecutionManifestPlanner.hpp"
+#include "ai/application/execution/ExecutionAcceptanceContract.hpp"
+#include "ai/application/execution/ExecutionManifestPlanner.hpp"
 #include "ai/application/IWorkflowRunner.hpp"
 #include "ai/application/InMemoryExecutionManifestRepository.hpp"
 #include "ai/application/InMemoryManifestTaskExecutionRepository.hpp"
