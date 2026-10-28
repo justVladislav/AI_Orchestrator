@@ -7,8 +7,8 @@
 #include "ai/application/execution/IManifestWorkLedgerRepository.hpp"
 #include "ai/application/projects/IProjectRepository.hpp"
 #include "ai/application/proposals/IProposalReviewRepository.hpp"
-#include "ai/application/IRunRepository.hpp"
-#include "ai/application/IWorkflowRunner.hpp"
+#include "ai/application/execution/IRunRepository.hpp"
+#include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"
 
 #include <algorithm>

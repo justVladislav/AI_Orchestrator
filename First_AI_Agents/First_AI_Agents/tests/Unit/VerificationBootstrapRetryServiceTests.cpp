@@ -5,11 +5,11 @@
 // state cheaply.
 #include "ai/application/InMemoryRepositories.hpp"
 #include "ai/application/InMemoryVerificationBootstrapRepository.hpp"
-#include "ai/application/MockWorkflowRunner.hpp"
-#include "ai/application/OrchestrationService.hpp"
-#include "ai/application/RunManager.hpp"
+#include "ai/application/execution/MockWorkflowRunner.hpp"
+#include "ai/application/execution/OrchestrationService.hpp"
+#include "ai/application/execution/RunManager.hpp"
 #include "ai/application/verification/VerificationBootstrapRetryService.hpp"
-#include "ai/application/WorkflowRouter.hpp"
+#include "ai/application/execution/WorkflowRouter.hpp"
 
 #include <atomic>
 #include <chrono>

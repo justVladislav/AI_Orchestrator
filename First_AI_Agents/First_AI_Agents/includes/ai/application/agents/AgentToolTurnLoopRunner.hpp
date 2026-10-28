@@ -6,7 +6,7 @@
 #include "ai/application/proposals/ChangeProposalService.hpp"
 #include "ai/application/execution/ExecutionAcceptanceContract.hpp"
 #include "ai/application/execution/ManifestWorkerNoChanges.hpp"
-#include "ai/application/RunEvent.hpp"
+#include "ai/application/execution/RunEvent.hpp"
 #include "ai/application/execution/RunWorkspaceScopeTypes.hpp"
 #include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 #include "ai/models/TokenUsage.hpp"

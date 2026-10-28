@@ -11,7 +11,7 @@
 #include "ai/application/projects/IProjectRepository.hpp"
 #include "ai/application/verification/IVerificationScratchRootProvider.hpp"
 #include "ai/application/catalog/IProviderRepository.hpp"
-#include "ai/application/IRunRepository.hpp"
+#include "ai/application/execution/IRunRepository.hpp"
 #include "ai/application/verification/ManifestProposalSetVerifier.hpp"
 #include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"
 #include "ai/application/execution/ManifestWorkLedgerService.hpp"

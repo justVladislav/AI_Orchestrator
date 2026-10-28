@@ -7,7 +7,7 @@
 #include "ai/application/execution/IManifestTaskExecutionRepository.hpp"
 #include "ai/application/execution/IManifestWorkLedgerRepository.hpp"
 #include "ai/application/proposals/IProposalReviewRepository.hpp"
-#include "ai/application/IRunRepository.hpp"
+#include "ai/application/execution/IRunRepository.hpp"
 #include "ai/application/execution/IRunWorkspaceScopeRepository.hpp"
 #include "ai/application/execution/ManifestWorkLedgerTypes.hpp"
 #include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"

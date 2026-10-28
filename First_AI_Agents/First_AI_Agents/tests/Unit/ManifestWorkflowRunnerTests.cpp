@@ -26,14 +26,14 @@
 #include "ai/application/execution/ManifestRouting.hpp"
 #include "ai/application/execution/ManifestWorkflowRunner.hpp"
 #include "ai/application/verification/VerificationEnvironmentDiscoveryService.hpp"
-#include "ai/application/MockWorkflowRunner.hpp"
+#include "ai/application/execution/MockWorkflowRunner.hpp"
 #include "ai/application/agents/ModelExecutionService.hpp"
-#include "ai/application/OrchestrationService.hpp"
+#include "ai/application/execution/OrchestrationService.hpp"
 #include "ai/application/verification/ProjectReadinessService.hpp"
 #include "ai/application/projects/ProjectService.hpp"
 #include "ai/application/catalog/ProviderCatalogService.hpp"
-#include "ai/application/RunManager.hpp"
-#include "ai/application/WorkflowRouter.hpp"
+#include "ai/application/execution/RunManager.hpp"
+#include "ai/application/execution/WorkflowRouter.hpp"
 #include "ai/infrastructure/FileChangeProposalStore.hpp"
 
 #include <nlohmann/json.hpp>

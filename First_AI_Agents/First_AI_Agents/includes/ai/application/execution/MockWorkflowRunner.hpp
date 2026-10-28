@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/IWorkflowRunner.hpp"
+#include "ai/application/execution/IWorkflowRunner.hpp"
 
 #include <chrono>
 #include <cstddef>

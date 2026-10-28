@@ -1,9 +1,9 @@
 #pragma once
 
 #include "ai/application/projects/IProjectRepository.hpp"
-#include "ai/application/IRunRepository.hpp"
-#include "ai/application/IWorkflowResolver.hpp"
-#include "ai/application/IWorkflowRunner.hpp"
+#include "ai/application/execution/IRunRepository.hpp"
+#include "ai/application/execution/IWorkflowResolver.hpp"
+#include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/execution/ManifestWorkLedgerService.hpp"
 #include "ai/application/agents/ModelExecutionService.hpp"
 #include "ai/application/conversations/ProjectMemoryService.hpp"

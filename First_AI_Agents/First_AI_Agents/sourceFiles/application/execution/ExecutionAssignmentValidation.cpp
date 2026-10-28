@@ -1,6 +1,6 @@
 #include "ai/application/execution/ExecutionAssignmentValidation.hpp"
 
-#include "ai/application/IWorkflowRunner.hpp"
+#include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/execution/ManifestRouting.hpp"
 
 #include <algorithm>

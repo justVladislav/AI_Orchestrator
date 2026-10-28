@@ -4,13 +4,13 @@
 // finalOutput is covered separately in WorkflowRoutingAndProductionTests.cpp,
 // which already has the fake provider-client fixtures that test needs.
 #include "ai/application/InMemoryRepositories.hpp"
-#include "ai/application/IWorkflowResolver.hpp"
-#include "ai/application/MockWorkflowRunner.hpp"
-#include "ai/application/OrchestrationService.hpp"
+#include "ai/application/execution/IWorkflowResolver.hpp"
+#include "ai/application/execution/MockWorkflowRunner.hpp"
+#include "ai/application/execution/OrchestrationService.hpp"
 #include "ai/application/conversations/ProjectMemoryCompactionService.hpp"
 #include "ai/application/conversations/ProjectMemoryService.hpp"
 #include "ai/application/projects/ProjectService.hpp"
-#include "ai/application/RunManager.hpp"
+#include "ai/application/execution/RunManager.hpp"
 
 #include "RecordingOutcomeBriefTrigger.hpp"
 

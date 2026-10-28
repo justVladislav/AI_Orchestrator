@@ -6,7 +6,7 @@
 // tests instead.
 
 #include "ai/application/planning/IRunDraftRepository.hpp"
-#include "ai/application/IWorkflowRunner.hpp"
+#include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/planning/NextRunPlan.hpp"
 #include "ai/application/planning/RunDraftGroup.hpp"
 #include "ai/application/execution/RunInterfaceContract.hpp"

@@ -7,7 +7,7 @@
 #include "ai/application/planning/IOutcomeBriefRepository.hpp"
 #include "ai/application/catalog/IProviderRepository.hpp"
 #include "ai/application/planning/IRunDraftRepository.hpp"
-#include "ai/application/IRunSourceLookup.hpp"
+#include "ai/application/execution/IRunSourceLookup.hpp"
 #include "ai/common/Result.hpp"
 
 #include <cstddef>

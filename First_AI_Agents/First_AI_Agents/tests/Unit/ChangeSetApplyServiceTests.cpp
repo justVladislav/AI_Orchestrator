@@ -7,7 +7,7 @@
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/proposals/IChangeApprovalRepository.hpp"
 #include "ai/application/proposals/IChangeProposalRepository.hpp"
-#include "ai/application/IWorkflowRunner.hpp"
+#include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/InMemoryRepositories.hpp"
 #include "ai/application/Sha256.hpp"
 #include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"

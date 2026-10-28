@@ -9,7 +9,7 @@
 #include "ai/application/verification/ManifestVerificationManualHandoffService.hpp"
 #include "ai/application/execution/ManifestWorkLedgerService.hpp"
 #include "ai/application/agents/ModelExecutionService.hpp"
-#include "ai/application/OrchestrationService.hpp"
+#include "ai/application/execution/OrchestrationService.hpp"
 
 #include <set>
 #include <string>

@@ -2,7 +2,7 @@
 
 #include "ai/application/execution/ExecutionManifestValidator.hpp"
 #include "ai/application/execution/IExecutionManifestRepository.hpp"
-#include "ai/application/IRunRepository.hpp"
+#include "ai/application/execution/IRunRepository.hpp"
 
 namespace ai::application {
 

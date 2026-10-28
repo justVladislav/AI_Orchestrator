@@ -3,8 +3,8 @@
 // PC-4C: one scenario for IRunRepository::listTerminalRunsPage, run on every adapter that has its own implementation (SQLite) and on the
 // default one (in-memory): the same order, the same keyset, the same filters.
 
-#include "ai/application/IRunRepository.hpp"
-#include "ai/application/IWorkflowRunner.hpp"
+#include "ai/application/execution/IRunRepository.hpp"
+#include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"
 #include "ai/application/verification/ManifestVerificationManualHandoffTypes.hpp"
 

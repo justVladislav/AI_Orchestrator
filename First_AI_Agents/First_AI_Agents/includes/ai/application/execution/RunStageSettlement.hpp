@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/IRunRepository.hpp"
+#include "ai/application/execution/IRunRepository.hpp"
 
 #include <chrono>
 #include <optional>

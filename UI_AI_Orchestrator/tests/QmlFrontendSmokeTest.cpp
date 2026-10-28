@@ -11,9 +11,9 @@
 #include <ai/application/proposals/ChangeProposalTypes.hpp>
 #include <ai/application/execution/ExecutionAcceptanceContract.hpp>
 #include <ai/application/execution/IManifestWorkLedgerRepository.hpp>
-#include <ai/application/IRunRepository.hpp>
-#include <ai/application/IWorkflowRunner.hpp>
-#include <ai/application/MockWorkflowRunner.hpp>
+#include <ai/application/execution/IRunRepository.hpp>
+#include <ai/application/execution/IWorkflowRunner.hpp>
+#include <ai/application/execution/MockWorkflowRunner.hpp>
 #include <ai/application/verification/ManifestProposalContentHash.hpp>
 #include <ai/application/verification/ManifestVerificationContinuationPreparationService.hpp>
 #include <ai/application/verification/ManifestVerificationContinuationTypes.hpp>

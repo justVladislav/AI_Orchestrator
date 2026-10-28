@@ -6,14 +6,14 @@
 // OrchestrationService's own test suites.
 #include "ai/application/execution/ManifestWorkLedgerService.hpp"
 #include "RecordingOutcomeBriefTrigger.hpp"
-#include "ai/application/IWorkflowResolver.hpp"
-#include "ai/application/OrchestrationService.hpp"
-#include "ai/application/RunManager.hpp"
+#include "ai/application/execution/IWorkflowResolver.hpp"
+#include "ai/application/execution/OrchestrationService.hpp"
+#include "ai/application/execution/RunManager.hpp"
 
 #include "ai/application/artifacts/ArtifactService.hpp"
 #include "ai/application/execution/ExecutionAcceptanceContract.hpp"
 #include "ai/application/execution/ExecutionManifestPlanner.hpp"
-#include "ai/application/IWorkflowRunner.hpp"
+#include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/InMemoryExecutionManifestRepository.hpp"
 #include "ai/application/InMemoryManifestTaskExecutionRepository.hpp"
 #include "ai/application/InMemoryManifestWorkLedgerRepository.hpp"

@@ -3,7 +3,7 @@
 #include "ai/application/catalog/IExecutionProfileRepository.hpp"
 #include "ai/application/catalog/IModelRepository.hpp"
 #include "ai/application/catalog/IProviderRepository.hpp"
-#include "ai/application/IWorkflowResolver.hpp"
+#include "ai/application/execution/IWorkflowResolver.hpp"
 
 #include <unordered_map>
 

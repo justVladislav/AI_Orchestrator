@@ -3,15 +3,15 @@
 // rerun guards - proved through the real RunManager / OrchestrationService / WorkflowRouter with
 // in-memory repositories and a mock workflow runner (provider-free). The Manifest workflow
 // itself is exercised end to end in ManifestWorkflowRunnerTests.
-#include "ai/application/IWorkflowRunner.hpp"
+#include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/InMemoryRepositories.hpp"
 #include "ai/application/execution/LegacyConversionRecord.hpp"
 #include "ai/application/execution/LegacyRosterAdapter.hpp"
-#include "ai/application/MockWorkflowRunner.hpp"
-#include "ai/application/OrchestrationService.hpp"
+#include "ai/application/execution/MockWorkflowRunner.hpp"
+#include "ai/application/execution/OrchestrationService.hpp"
 #include "ai/application/projects/ProjectService.hpp"
 #include "ai/application/catalog/ProviderCatalogService.hpp"
-#include "ai/application/WorkflowRouter.hpp"
+#include "ai/application/execution/WorkflowRouter.hpp"
 
 #include <algorithm>
 #include <chrono>

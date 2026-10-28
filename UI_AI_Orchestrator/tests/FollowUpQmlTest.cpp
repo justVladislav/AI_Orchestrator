@@ -11,7 +11,7 @@
 // Any QML warning fails the test.
 #include "FollowUpRequestTestSupport.hpp"
 
-#include <ai/application/IWorkflowRunner.hpp>
+#include <ai/application/execution/IWorkflowRunner.hpp>
 #include <ai/application/execution/ManifestWorkLedgerTypes.hpp>
 #include <ai/backend/BackendRuntime.hpp>
 #include <ai/infrastructure/SqliteRepositories.hpp>

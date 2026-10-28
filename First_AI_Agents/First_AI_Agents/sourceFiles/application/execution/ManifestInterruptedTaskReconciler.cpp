@@ -1,6 +1,6 @@
 #include "ai/application/execution/ManifestInterruptedTaskReconciler.hpp"
 
-#include "ai/application/IWorkflowRunner.hpp"
+#include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/execution/ManifestRouting.hpp"
 #include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"
 #include "ai/application/agents/ModelExecutionTypes.hpp"

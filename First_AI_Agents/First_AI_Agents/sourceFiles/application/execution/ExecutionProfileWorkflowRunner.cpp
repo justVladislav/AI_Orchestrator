@@ -1,4 +1,4 @@
-#include "ai/application/ExecutionProfileWorkflowRunner.hpp"
+#include "ai/application/execution/ExecutionProfileWorkflowRunner.hpp"
 
 #include "ai/application/artifacts/ArtifactService.hpp"
 #include "ai/application/context/ContextSnapshot.hpp"

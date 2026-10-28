@@ -2,7 +2,7 @@
 
 #include "ai/application/execution/LegacyConversionRecord.hpp"
 #include "ai/application/execution/LegacyRosterAdapter.hpp"
-#include "ai/application/RunManager.hpp"
+#include "ai/application/execution/RunManager.hpp"
 
 #include <filesystem>
 #include <optional>

@@ -56,7 +56,7 @@ set(APPLICATION_SOURCES
     sourceFiles/application/artifacts/ArtifactTypes.cpp
     sourceFiles/application/artifacts/ArtifactPathPolicy.cpp
     sourceFiles/application/artifacts/ArtifactService.cpp
-    sourceFiles/application/RunWarning.cpp
+    sourceFiles/application/execution/RunWarning.cpp
     sourceFiles/application/verification/VerificationScratchPolicy.cpp
     sourceFiles/application/verification/VerificationScratchService.cpp
     sourceFiles/application/verification/VerificationToolchain.cpp
@@ -114,10 +114,10 @@ set(APPLICATION_SOURCES
     sourceFiles/application/InMemoryRepositories.cpp
     sourceFiles/application/projects/ProjectService.cpp
     sourceFiles/application/projects/TaskService.cpp
-    sourceFiles/application/MockWorkflowRunner.cpp
-    sourceFiles/application/RunStageSettlement.cpp
-    sourceFiles/application/RunManager.cpp
-    sourceFiles/application/OrchestrationService.cpp
+    sourceFiles/application/execution/MockWorkflowRunner.cpp
+    sourceFiles/application/execution/RunStageSettlement.cpp
+    sourceFiles/application/execution/RunManager.cpp
+    sourceFiles/application/execution/OrchestrationService.cpp
     sourceFiles/application/WorkspaceContextService.cpp
     sourceFiles/application/catalog/ProviderCatalogTypes.cpp
     sourceFiles/application/catalog/ProviderCatalogService.cpp
@@ -129,8 +129,8 @@ set(APPLICATION_SOURCES
     sourceFiles/application/catalog/ExecutionProfileService.cpp
     sourceFiles/application/planning/RunDraftService.cpp
     sourceFiles/application/execution/ExecutionAssignmentValidation.cpp
-    sourceFiles/application/WorkflowRouter.cpp
-    sourceFiles/application/ExecutionProfileWorkflowRunner.cpp
+    sourceFiles/application/execution/WorkflowRouter.cpp
+    sourceFiles/application/execution/ExecutionProfileWorkflowRunner.cpp
     sourceFiles/application/agents/AgentToolTurnLoopRunner.cpp
     sourceFiles/application/execution/ManifestWorkerNoChanges.cpp
     sourceFiles/application/verification/ManifestProposalOverlay.cpp

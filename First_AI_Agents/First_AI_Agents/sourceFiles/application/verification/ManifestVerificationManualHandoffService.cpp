@@ -4,7 +4,7 @@
 
 #include "ai/application/execution/ExecutionAcceptanceContract.hpp"
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
-#include "ai/application/IWorkflowRunner.hpp"
+#include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/IdGenerator.hpp"
 #include "ai/application/verification/ManifestProposalOverlay.hpp"
 #include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"

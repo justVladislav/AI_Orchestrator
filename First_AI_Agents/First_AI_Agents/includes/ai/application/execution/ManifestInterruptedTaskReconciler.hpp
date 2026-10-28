@@ -4,7 +4,7 @@
 #include "ai/application/execution/IManifestTaskExecutionRepository.hpp"
 #include "ai/application/execution/IManifestWorkLedgerRepository.hpp"
 #include "ai/application/agents/IModelExecutionRepository.hpp"
-#include "ai/application/IRunRepository.hpp"
+#include "ai/application/execution/IRunRepository.hpp"
 #include "ai/common/Result.hpp"
 
 #include <cstddef>

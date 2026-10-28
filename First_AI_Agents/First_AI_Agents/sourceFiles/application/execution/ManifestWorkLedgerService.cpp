@@ -2,7 +2,7 @@
 
 #include "ai/application/artifacts/ArtifactService.hpp"
 #include "ai/application/execution/ExecutionManifestPlanner.hpp"
-#include "ai/application/IWorkflowRunner.hpp"
+#include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"
 #include "ai/application/verification/ManifestVerificationManualHandoffTypes.hpp"
 #include "ai/application/execution/ManifestWorkerNoChanges.hpp"

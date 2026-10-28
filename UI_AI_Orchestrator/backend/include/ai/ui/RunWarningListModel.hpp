@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ai/application/IRunWarningRepository.hpp>
+#include <ai/application/execution/IRunWarningRepository.hpp>
 
 #include <QAbstractListModel>
 

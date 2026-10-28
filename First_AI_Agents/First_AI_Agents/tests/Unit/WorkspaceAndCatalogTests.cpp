@@ -7,7 +7,7 @@
 #include "ai/application/execution/ExecutionAssignmentValidation.hpp"
 #include "ai/application/catalog/ExecutionProfileService.hpp"
 #include "ai/application/InMemoryRepositories.hpp"
-#include "ai/application/IWorkflowRunner.hpp"
+#include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/projects/ProjectService.hpp"
 #include "ai/application/catalog/ProviderCatalogService.hpp"
 #include "ai/application/WorkspaceContextService.hpp"

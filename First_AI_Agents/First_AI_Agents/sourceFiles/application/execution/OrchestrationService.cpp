@@ -1,8 +1,8 @@
-#include "ai/application/OrchestrationService.hpp"
+#include "ai/application/execution/OrchestrationService.hpp"
 
-#include "ai/application/IWorkflowRunner.hpp"
+#include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/execution/LegacyRosterAdapter.hpp"
-#include "ai/application/RunStageSettlement.hpp"
+#include "ai/application/execution/RunStageSettlement.hpp"
 
 #include <algorithm>
 

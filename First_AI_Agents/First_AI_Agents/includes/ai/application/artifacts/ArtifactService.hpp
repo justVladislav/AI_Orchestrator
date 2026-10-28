@@ -2,7 +2,7 @@
 
 #include "ai/application/artifacts/IArtifactRepository.hpp"
 #include "ai/application/artifacts/IArtifactStore.hpp"
-#include "ai/application/IRunWarningRepository.hpp"
+#include "ai/application/execution/IRunWarningRepository.hpp"
 
 #include <functional>
 #include <optional>

@@ -5,7 +5,7 @@
 // project rows, schema triggers, a lost head pointer, migrations, a second connection) lives in the SQLite tests instead.
 
 #include "ai/application/planning/IOutcomeBriefRepository.hpp"
-#include "ai/application/IWorkflowRunner.hpp"
+#include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/Sha256.hpp"
 
 #include <algorithm>

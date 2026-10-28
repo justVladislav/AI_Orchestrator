@@ -5,7 +5,7 @@
 // assignment uses lead position + 1 + task ordinal), so the tests do not lean on the code they
 // check. The end-to-end behaviour - a real SQLite crash state, the production startup order, a
 // restart - is proved in ManifestRosterRestartTests.
-#include "ai/application/IWorkflowRunner.hpp"
+#include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/InMemoryExecutionManifestRepository.hpp"
 #include "ai/application/InMemoryManifestTaskExecutionRepository.hpp"
 #include "ai/application/InMemoryManifestWorkLedgerRepository.hpp"

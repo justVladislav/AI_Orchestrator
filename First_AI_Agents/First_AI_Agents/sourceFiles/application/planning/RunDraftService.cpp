@@ -1,6 +1,6 @@
 #include "ai/application/planning/RunDraftService.hpp"
 
-#include "ai/application/IWorkflowRunner.hpp"
+#include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/IdGenerator.hpp"
 #include "ai/application/execution/RunInterfaceContract.hpp"
 

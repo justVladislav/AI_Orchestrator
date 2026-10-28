@@ -1,7 +1,7 @@
 #pragma once
 
-#include "ai/application/IRunRepository.hpp"
-#include "ai/application/IWorkflowRunner.hpp"
+#include "ai/application/execution/IRunRepository.hpp"
+#include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/execution/LegacyConversionRecord.hpp"
 #include "ai/application/execution/LegacyRosterAdapter.hpp"
 

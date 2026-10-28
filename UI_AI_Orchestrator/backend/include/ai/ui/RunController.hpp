@@ -1,7 +1,7 @@
 #pragma once
 
 #include <ai/application/artifacts/ArtifactService.hpp>
-#include <ai/application/OrchestrationService.hpp>
+#include <ai/application/execution/OrchestrationService.hpp>
 #include <ai/application/catalog/ProviderCatalogService.hpp>
 #include <ai/application/verification/ManifestVerificationManualHandoffReadModelService.hpp>
 #include <ai/ui/ArtifactListModel.hpp>

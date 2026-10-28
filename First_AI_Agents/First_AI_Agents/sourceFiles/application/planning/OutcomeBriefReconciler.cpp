@@ -1,6 +1,6 @@
 #include "ai/application/planning/OutcomeBriefReconciler.hpp"
 
-#include "ai/application/IWorkflowRunner.hpp"
+#include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"
 #include "ai/application/context/ProjectContextSnapshot.hpp"
 

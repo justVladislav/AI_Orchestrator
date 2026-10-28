@@ -5,7 +5,7 @@
 #include "ai/application/planning/IFollowUpSourceReader.hpp"
 #include "ai/application/planning/IOutcomeBriefRepository.hpp"
 #include "ai/application/projects/IProjectRepository.hpp"
-#include "ai/application/IRunRepository.hpp"
+#include "ai/application/execution/IRunRepository.hpp"
 #include "ai/application/context/ProjectContextSnapshotService.hpp"
 
 #include <string>

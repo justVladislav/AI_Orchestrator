@@ -1,7 +1,7 @@
 #include "ai/application/planning/FollowUpPlanReadModel.hpp"
 
 #include "ai/application/planning/FollowUpComposerQuote.hpp"
-#include "ai/application/IWorkflowRunner.hpp"
+#include "ai/application/execution/IWorkflowRunner.hpp"
 
 #include <algorithm>
 #include <iterator>

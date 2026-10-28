@@ -5,12 +5,12 @@
 // carries maxAttempts 2) so the policy is proven against what users actually ran.
 // No provider, no SQLite, no repository reads inside the adapter itself.
 #include "ai/application/execution/ExecutionAssignmentValidation.hpp"
-#include "ai/application/IWorkflowRunner.hpp"
+#include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/InMemoryRepositories.hpp"
 #include "ai/application/execution/LegacyRosterAdapter.hpp"
 #include "ai/application/execution/ManifestRouting.hpp"
 #include "ai/application/catalog/ProviderCatalogService.hpp"
-#include "ai/application/WorkflowRouter.hpp"
+#include "ai/application/execution/WorkflowRouter.hpp"
 
 #include <algorithm>
 #include <functional>

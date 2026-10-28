@@ -1,7 +1,7 @@
 #include "ai/application/planning/FollowUpComposerQuote.hpp"
 
 #include "ai/application/conversations/ChatContextAssembler.hpp"
-#include "ai/application/IWorkflowRunner.hpp"
+#include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/Sha256.hpp"
 
 #include <algorithm>

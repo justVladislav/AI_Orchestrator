@@ -25,7 +25,7 @@
 #include "ai/application/InMemoryManifestWorkLedgerRepository.hpp"
 #include "ai/application/InMemoryRepositories.hpp"
 #include "ai/application/InMemoryRunWorkspaceScopeRepository.hpp"
-#include "ai/application/IWorkflowRunner.hpp"
+#include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/verification/ManifestApplyVerificationGate.hpp"
 #include "ai/application/verification/ManifestProposalOverlay.hpp"
 #include "ai/application/verification/QmlLintDiagnosticPolicy.hpp"

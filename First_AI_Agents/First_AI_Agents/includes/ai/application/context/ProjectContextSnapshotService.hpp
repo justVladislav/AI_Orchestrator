@@ -3,7 +3,7 @@
 #include "ai/application/execution/IManifestWorkLedgerRepository.hpp"
 #include "ai/application/conversations/IProjectMemoryRepository.hpp"
 #include "ai/application/projects/IProjectRepository.hpp"
-#include "ai/application/IRunRepository.hpp"
+#include "ai/application/execution/IRunRepository.hpp"
 #include "ai/application/verification/ManifestVerificationManualHandoffResolution.hpp"
 #include "ai/application/context/ProjectContextSnapshot.hpp"
 

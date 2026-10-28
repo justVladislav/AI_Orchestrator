@@ -1,6 +1,6 @@
 #include "ai/application/planning/FollowUpPlanRequest.hpp"
 
-#include "ai/application/IWorkflowRunner.hpp"
+#include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/planning/FollowUpPlanAdvisories.hpp"
 #include "ai/application/context/ProjectContextSnapshot.hpp"
 

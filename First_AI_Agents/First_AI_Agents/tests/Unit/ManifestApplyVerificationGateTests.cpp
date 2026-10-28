@@ -12,7 +12,7 @@
 #include "ai/application/InMemoryExecutionManifestRepository.hpp"
 #include "ai/application/InMemoryRepositories.hpp"
 #include "ai/application/InMemoryVerificationBootstrapRepository.hpp"
-#include "ai/application/IWorkflowRunner.hpp"
+#include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/verification/ManifestApplyVerificationGate.hpp"
 #include "ai/application/execution/ManifestWorkLedgerTypes.hpp"
 #include "ai/application/Sha256.hpp"

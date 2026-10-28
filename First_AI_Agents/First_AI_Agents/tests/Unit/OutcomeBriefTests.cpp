@@ -1,6 +1,6 @@
 #include "ai/application/planning/OutcomeBrief.hpp"
 
-#include "ai/application/IWorkflowRunner.hpp"
+#include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"
 #include "ai/application/verification/ManifestVerificationManualHandoffTypes.hpp"
 #include "ai/application/Sha256.hpp"

@@ -7,16 +7,16 @@
 // general - see CODEX_CONTEXT.md).
 #include "ai/application/CredentialManagementService.hpp"
 #include "ai/application/catalog/ExecutionProfileService.hpp"
-#include "ai/application/ExecutionProfileWorkflowRunner.hpp"
+#include "ai/application/execution/ExecutionProfileWorkflowRunner.hpp"
 #include "ai/application/ICredentialStore.hpp"
 #include "ai/application/conversations/IProjectMemoryRepository.hpp"
 #include "ai/application/InMemoryRepositories.hpp"
 #include "ai/application/agents/ModelExecutionService.hpp"
-#include "ai/application/MockWorkflowRunner.hpp"
-#include "ai/application/OrchestrationService.hpp"
+#include "ai/application/execution/MockWorkflowRunner.hpp"
+#include "ai/application/execution/OrchestrationService.hpp"
 #include "ai/application/projects/ProjectService.hpp"
 #include "ai/application/catalog/ProviderCatalogService.hpp"
-#include "ai/application/WorkflowRouter.hpp"
+#include "ai/application/execution/WorkflowRouter.hpp"
 
 #include <algorithm>
 #include <atomic>
