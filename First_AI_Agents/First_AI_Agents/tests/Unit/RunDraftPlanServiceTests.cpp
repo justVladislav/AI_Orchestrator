@@ -3,11 +3,11 @@
 // Draft, Project and Chat repositories and a read-only "project of this Run" lookup, so these tests need nothing
 // else (fakes for the chat repository and the Run lookup, the in-memory Draft and Project repositories).
 
-#include "ai/application/IWorkflowRunner.hpp"
-#include "ai/application/IRunSourceLookup.hpp"
-#include "ai/application/InMemoryRepositories.hpp"
-#include "ai/application/RunDraftGroup.hpp"
-#include "ai/application/RunDraftPlanService.hpp"
+#include "ai/application/execution/IWorkflowRunner.hpp"
+#include "ai/application/execution/IRunSourceLookup.hpp"
+#include "ai/application/inmemory/InMemoryRepositories.hpp"
+#include "ai/application/planning/RunDraftGroup.hpp"
+#include "ai/application/planning/RunDraftPlanService.hpp"
 #include "ai/application/Sha256.hpp"
 
 #include <algorithm>

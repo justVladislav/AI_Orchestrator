@@ -1,4 +1,4 @@
-#include "ai/application/WorkspaceBaselineProvenance.hpp"
+#include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -108,6 +108,121 @@ void testCaptureIsDeterministicBoundedAndNonLeaking()
     require(!corrupted.success()
             && corrupted.error()->code == "workspace_baseline.identity_mismatch",
         "Semantically corrupted baseline manifest did not fail closed");
+}
+
+void testVisualStudioCacheIsExcludedWithoutHidingProjectFiles()
+{
+    TempWorkspace workspace;
+    const auto policy = policyFor(workspace.path);
+    const std::string oversizedCache(policy.maxFileBytes + 1, 'x');
+    writeFile(workspace.path / ".vs" / "project" / "Browse.VC.db", oversizedCache);
+    writeFile(workspace.path / "src" / ".vs" / "index.ipch", oversizedCache);
+    writeFile(workspace.path / ".vsconfig", "{\"components\": []}\n");
+    writeFile(workspace.path / "src" / "main.cpp", "int main() { return 0; }\n");
+
+    for (const auto& path : {fs::path(".vs/project/Browse.VC.db"),
+             fs::path("src/.vs/index.ipch")}) {
+        const auto denied = WorkspaceReadPolicyValidator::validateRelativePath(path, policy);
+        require(!denied.success() && denied.error()->code == "workspace_path.denied",
+            "Visual Studio cache remained readable by workspace tools");
+    }
+    require(WorkspaceReadPolicyValidator::validateRelativePath(".vsconfig", policy).success(),
+        "The Visual Studio workload configuration must remain readable");
+
+    const auto first = WorkspaceBaselineProvenance::capture(policy);
+    require(first.success() && first.value().files.size() == 2
+            && first.value().files[0].relativePath == ".vsconfig"
+            && first.value().files[1].relativePath == "src/main.cpp",
+        "Oversized Visual Studio caches must be skipped without hiding project inputs");
+    require(std::find(first.value().exclusions.begin(), first.value().exclusions.end(),
+                "directory-name:.vs") != first.value().exclusions.end(),
+        "The snapshot did not record the Visual Studio cache exclusion");
+
+    writeFile(workspace.path / ".vs" / "project" / "Browse.VC.db", "changed IDE cache");
+    const auto second = WorkspaceBaselineProvenance::capture(policy);
+    require(second.success() && second.value().fingerprint == first.value().fingerprint,
+        "Visual Studio housekeeping changed the source baseline fingerprint");
+}
+
+void testVisualStudioBuildDirectoriesAreExcludedAtAnyDepth()
+{
+    TempWorkspace workspace;
+    auto policy = policyFor(workspace.path);
+    policy.maxFileBytes = 16;
+    const std::vector<fs::path> outputs {
+        "VfpDbNative/VfpDbNative/x64/Debug/BitOperations.obj",
+        "VfpDbNative/x64/Release/native.pdb",
+        "Win32/Debug/native.pch", "sub/Win32/Release/native.dll"};
+    const std::vector<fs::path> inputs {
+        "src/Debug/Diagnostics.cpp", "src/Release/Notes.cpp",
+        "src/x64/Intrinsics.hpp", "src/Win32/Platform.hpp",
+        "src/x64/Debugging/Helper.cpp", "data/table.json",
+        "resources/icon.svg", "cmake/config.cmake", "CMakeLists.txt"};
+    for (const auto& path : outputs) {
+        writeFile(workspace.path / path, std::string(policy.maxFileBytes + 1, 'x'));
+        const auto denied = WorkspaceReadPolicyValidator::validateRelativePath(path, policy);
+        require(!denied.success() && denied.error()->code == "workspace_path.denied",
+            "MSVC output remained readable by workspace tools");
+    }
+    for (const auto& path : inputs) {
+        writeFile(workspace.path / path, "project input");
+        require(WorkspaceReadPolicyValidator::validateRelativePath(path, policy).success(),
+            "The MSVC output rule hid an unrelated project input");
+    }
+#ifdef _WIN32
+    require(!WorkspaceReadPolicyValidator::validateRelativePath(
+                "nested/X64/DEBUG/native.obj", policy).success(),
+        "MSVC output matching must be case-insensitive on Windows");
+#endif
+    const auto first = WorkspaceBaselineProvenance::capture(policy);
+    require(first.success() && first.value().files.size() == inputs.size(),
+        "Baseline must skip oversized MSVC output and retain all project inputs");
+    require(std::find(first.value().exclusions.begin(), first.value().exclusions.end(),
+                "directory-sequence:x64/Debug") != first.value().exclusions.end(),
+        "The baseline must record its MSVC output exclusion rule");
+    writeFile(workspace.path / outputs.front(), "changed output");
+    const auto second = WorkspaceBaselineProvenance::capture(policy);
+    require(second.success() && second.value().fingerprint == first.value().fingerprint,
+        "Rebuilding MSVC output changed the source baseline fingerprint");
+
+    policy.allowedRoots = {"VfpDbNative/VfpDbNative/x64/Debug"};
+    require(!WorkspaceReadPolicyValidator::validateRelativePath(outputs.front(), policy).success(),
+        "An allowed root must not override the MSVC output exclusion");
+    const auto scoped = WorkspaceBaselineProvenance::capture(policy);
+    require(scoped.success() && scoped.value().files.empty(),
+        "Baseline traversal starting inside MSVC output bypassed the exclusion");
+}
+
+void testFileLimitDiagnosticsNameRelativeFileAndCorrectBudget()
+{
+    TempWorkspace workspace;
+    writeFile(workspace.path / fs::path(u8"src/\u6e2c\u8a66.cpp"), "12345");
+    auto policy = policyFor(workspace.path);
+    policy.maxFileBytes = 4;
+    const auto oversized = WorkspaceBaselineProvenance::capture(policy);
+    require(!oversized.success() && oversized.error()->code == "workspace_baseline.file_limit",
+        "An oversized source file must still fail closed");
+    require(oversized.error()->message
+            == "Policy-visible workspace file \"src/\xe6\xb8\xac\xe8\xa9\xa6.cpp\" is 5 bytes; per-file limit is 4 bytes",
+        "The file-limit diagnostic must name the UTF-8 relative path, size and limit only");
+    policy.maxFileBytes = 5;
+    require(WorkspaceBaselineProvenance::capture(policy).success(),
+        "A file exactly at the byte limit must remain permitted");
+
+    TempWorkspace aggregate;
+    writeFile(aggregate.path / "first" / "a.cpp", "1234");
+    writeFile(aggregate.path / "second" / "b.cpp", "5678");
+    auto aggregatePolicy = policyFor(aggregate.path);
+    aggregatePolicy.allowedRoots = {"first", "second"};
+    WorkspaceBaselineLimits limits;
+    limits.maxTotalBytes = 6;
+    const auto totalOverflow = WorkspaceBaselineProvenance::capture(aggregatePolicy, limits);
+    require(!totalOverflow.success()
+            && totalOverflow.error()->code == "workspace_baseline.file_limit",
+        "The aggregate baseline limit must still fail closed");
+    require(totalOverflow.error()->message
+            == "Policy-visible workspace file \"second/b.cpp\" is 4 bytes; remaining baseline byte budget is 2 bytes (total baseline limit: 6 bytes)",
+        "The aggregate-limit diagnostic must identify the remaining budget, not blame the per-file limit");
 }
 
 void testNonGitWorkspaceAndManualDriftClassification()
@@ -326,6 +441,9 @@ int main()
 {
     try {
         testCaptureIsDeterministicBoundedAndNonLeaking();
+        testVisualStudioCacheIsExcludedWithoutHidingProjectFiles();
+        testVisualStudioBuildDirectoriesAreExcludedAtAnyDepth();
+        testFileLimitDiagnosticsNameRelativeFileAndCorrectBudget();
         testNonGitWorkspaceAndManualDriftClassification();
         testPruneExcludedPrefixesMatchesLiveCaptureAfterExclusion();
         testPruneExcludedPrefixesRejectsUnsafePrefixesAndEmptyList();

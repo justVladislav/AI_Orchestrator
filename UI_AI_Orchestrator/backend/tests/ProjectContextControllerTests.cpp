@@ -1,6 +1,6 @@
 #include "../../test_support/QtTestSupport.hpp"
 
-#include <ai/application/ProjectService.hpp>
+#include <ai/application/projects/ProjectService.hpp>
 #include <ai/backend/BackendRuntime.hpp>
 #include <ai/ui/BackendBridge.hpp>
 #include <ai/ui/ChatController.hpp>

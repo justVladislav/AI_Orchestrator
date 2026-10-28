@@ -4,8 +4,8 @@
 // scenarios, so a difference between them is a test failure, not a surprise. Anything that depends on SQLite (the Run and
 // project rows, schema triggers, a lost head pointer, migrations, a second connection) lives in the SQLite tests instead.
 
-#include "ai/application/IOutcomeBriefRepository.hpp"
-#include "ai/application/IWorkflowRunner.hpp"
+#include "ai/application/planning/IOutcomeBriefRepository.hpp"
+#include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/Sha256.hpp"
 
 #include <algorithm>

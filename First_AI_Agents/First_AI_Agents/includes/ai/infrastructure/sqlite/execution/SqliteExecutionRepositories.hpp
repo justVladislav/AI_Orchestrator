@@ -1,12 +1,12 @@
 #pragma once
 
-#include "ai/application/IArtifactRepository.hpp"
-#include "ai/application/IExecutionManifestRepository.hpp"
-#include "ai/application/IManifestTaskExecutionRepository.hpp"
-#include "ai/application/IManifestWorkLedgerRepository.hpp"
-#include "ai/application/IRunRepository.hpp"
-#include "ai/application/IRunWarningRepository.hpp"
-#include "ai/application/IRunWorkspaceScopeRepository.hpp"
+#include "ai/application/artifacts/IArtifactRepository.hpp"
+#include "ai/application/execution/IExecutionManifestRepository.hpp"
+#include "ai/application/execution/IManifestTaskExecutionRepository.hpp"
+#include "ai/application/execution/IManifestWorkLedgerRepository.hpp"
+#include "ai/application/execution/IRunRepository.hpp"
+#include "ai/application/execution/IRunWarningRepository.hpp"
+#include "ai/application/execution/IRunWorkspaceScopeRepository.hpp"
 #include "ai/common/Result.hpp"
 #include "ai/infrastructure/sqlite/SqliteDatabase.hpp"
 

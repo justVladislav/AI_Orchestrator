@@ -6,18 +6,18 @@
 // deterministic, no-duplicate projection over already-durable Backend state
 // (frozen RunWorkspaceScope + expansions + ManifestTaskState +
 // change-proposal data), never something a UI layer could compute itself.
-#include "ai/application/ExecutionManifestReadModelService.hpp"
+#include "ai/application/execution/ExecutionManifestReadModelService.hpp"
 
-#include "ai/application/ExecutionManifestService.hpp"
-#include "ai/application/InMemoryExecutionManifestRepository.hpp"
-#include "ai/application/InMemoryManifestTaskExecutionRepository.hpp"
-#include "ai/application/InMemoryManifestWorkLedgerRepository.hpp"
-#include "ai/application/InMemoryRepositories.hpp"
-#include "ai/application/InMemoryRunWorkspaceScopeRepository.hpp"
-#include "ai/application/InMemoryVerificationBootstrapRepository.hpp"
-#include "ai/application/InMemoryVerificationEnvironmentRepository.hpp"
-#include "ai/application/ManifestRouting.hpp"
-#include "ai/application/RunWorkspaceScopeService.hpp"
+#include "ai/application/execution/ExecutionManifestService.hpp"
+#include "ai/application/inmemory/InMemoryExecutionManifestRepository.hpp"
+#include "ai/application/inmemory/InMemoryManifestTaskExecutionRepository.hpp"
+#include "ai/application/inmemory/InMemoryManifestWorkLedgerRepository.hpp"
+#include "ai/application/inmemory/InMemoryRepositories.hpp"
+#include "ai/application/inmemory/InMemoryRunWorkspaceScopeRepository.hpp"
+#include "ai/application/inmemory/InMemoryVerificationBootstrapRepository.hpp"
+#include "ai/application/inmemory/InMemoryVerificationEnvironmentRepository.hpp"
+#include "ai/application/execution/ManifestRouting.hpp"
+#include "ai/application/execution/RunWorkspaceScopeService.hpp"
 
 #include <chrono>
 #include <map>

@@ -6,15 +6,15 @@
 // and a real ChangeProposalService with a real FileChangeProposalStore (temp
 // directory) validates and stages the final proposal.v1 output. No network,
 // no CURL, no real provider adapter.
-#include "ai/application/AgentToolExecutionService.hpp"
-#include "ai/application/AgentToolTurnLoopRunner.hpp"
-#include "ai/application/ChangeProposalService.hpp"
-#include "ai/application/FilesystemWorkspaceToolExecutor.hpp"
-#include "ai/application/InMemoryRepositories.hpp"
-#include "ai/application/InMemoryRunWorkspaceScopeRepository.hpp"
-#include "ai/application/ProjectWritePolicy.hpp"
-#include "ai/application/RunPathClaimRegistry.hpp"
-#include "ai/application/RunWorkspaceScopeService.hpp"
+#include "ai/application/agents/AgentToolExecutionService.hpp"
+#include "ai/application/agents/AgentToolTurnLoopRunner.hpp"
+#include "ai/application/proposals/ChangeProposalService.hpp"
+#include "ai/application/workspace/FilesystemWorkspaceToolExecutor.hpp"
+#include "ai/application/inmemory/InMemoryRepositories.hpp"
+#include "ai/application/inmemory/InMemoryRunWorkspaceScopeRepository.hpp"
+#include "ai/application/workspace/ProjectWritePolicy.hpp"
+#include "ai/application/execution/RunPathClaimRegistry.hpp"
+#include "ai/application/execution/RunWorkspaceScopeService.hpp"
 #include "ai/application/Sha256.hpp"
 #include "ai/infrastructure/FileChangeProposalStore.hpp"
 

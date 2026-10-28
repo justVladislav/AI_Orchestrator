@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ai/application/ComparisonTypes.hpp>
+#include <ai/application/comparison/ComparisonTypes.hpp>
 
 #include <QAbstractListModel>
 #include <vector>

@@ -1,7 +1,7 @@
 #include "../SqliteConnection.hpp"
 #include "../SqlitePrimitives.hpp"
 
-#include "ai/application/ApplicationSettingsTypes.hpp"
+#include "ai/application/settings/ApplicationSettingsTypes.hpp"
 
 #include <sqlite3.h>
 

@@ -1,5 +1,5 @@
 #include "ai/providers/AnthropicAgentSession.hpp"
-#include "ai/application/CacheDurationAccounting.hpp"
+#include "ai/application/budget/CacheDurationAccounting.hpp"
 #include "ai/http/HttpRequest.hpp"
 #include "ai/http/HttpResponse.hpp"
 #include "ai/providers/AnthropicResponseParser.hpp"

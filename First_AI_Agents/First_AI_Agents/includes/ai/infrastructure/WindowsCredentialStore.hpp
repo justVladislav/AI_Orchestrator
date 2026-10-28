@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/ICredentialStore.hpp"
+#include "ai/application/providers/ICredentialStore.hpp"
 
 namespace ai::infrastructure {
 

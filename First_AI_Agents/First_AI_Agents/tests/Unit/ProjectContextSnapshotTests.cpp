@@ -1,5 +1,5 @@
-#include "ai/application/ChatContextAssembler.hpp"
-#include "ai/application/ProjectContextSnapshot.hpp"
+#include "ai/application/conversations/ChatContextAssembler.hpp"
+#include "ai/application/context/ProjectContextSnapshot.hpp"
 
 #include <algorithm>
 #include <iostream>

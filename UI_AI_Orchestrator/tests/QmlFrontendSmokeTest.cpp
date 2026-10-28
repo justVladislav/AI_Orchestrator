@@ -7,20 +7,20 @@
 //
 // Also covers OverviewPage's live data binding: after project creation and run
 // completion the Overview page must reflect real backend state, not demo data.
-#include <ai/application/ChangeProposalService.hpp>
-#include <ai/application/ChangeProposalTypes.hpp>
-#include <ai/application/ExecutionAcceptanceContract.hpp>
-#include <ai/application/IManifestWorkLedgerRepository.hpp>
-#include <ai/application/IRunRepository.hpp>
-#include <ai/application/IWorkflowRunner.hpp>
-#include <ai/application/MockWorkflowRunner.hpp>
-#include <ai/application/ManifestProposalContentHash.hpp>
-#include <ai/application/ManifestVerificationContinuationPreparationService.hpp>
-#include <ai/application/ManifestVerificationContinuationTypes.hpp>
-#include <ai/application/ManifestWorkLedgerTypes.hpp>
+#include <ai/application/proposals/ChangeProposalService.hpp>
+#include <ai/application/proposals/ChangeProposalTypes.hpp>
+#include <ai/application/execution/ExecutionAcceptanceContract.hpp>
+#include <ai/application/execution/IManifestWorkLedgerRepository.hpp>
+#include <ai/application/execution/IRunRepository.hpp>
+#include <ai/application/execution/IWorkflowRunner.hpp>
+#include <ai/application/execution/MockWorkflowRunner.hpp>
+#include <ai/application/verification/ManifestProposalContentHash.hpp>
+#include <ai/application/verification/ManifestVerificationContinuationPreparationService.hpp>
+#include <ai/application/verification/ManifestVerificationContinuationTypes.hpp>
+#include <ai/application/execution/ManifestWorkLedgerTypes.hpp>
 #include <ai/application/Sha256.hpp>
-#include <ai/application/WorkspaceBaselineProvenance.hpp>
-#include <ai/application/WorkspaceReadPolicy.hpp>
+#include <ai/application/workspace/WorkspaceBaselineProvenance.hpp>
+#include <ai/application/workspace/WorkspaceReadPolicy.hpp>
 #include <ai/backend/BackendRuntime.hpp>
 #include <ai/infrastructure/SqliteRepositories.hpp>
 #include <ai/ui/BackendBridge.hpp>

@@ -4,9 +4,9 @@
 // the controller is driven over exactly the Backend the service tests prove.
 #include "FollowUpServiceTestSupport.hpp"
 
-#include <ai/application/FollowUpPlanReadModel.hpp>
-#include <ai/application/InMemoryOutcomeBriefRepository.hpp>
-#include <ai/application/OutcomeBrief.hpp>
+#include <ai/application/planning/FollowUpPlanReadModel.hpp>
+#include <ai/application/inmemory/InMemoryOutcomeBriefRepository.hpp>
+#include <ai/application/planning/OutcomeBrief.hpp>
 #include <ai/backend/BackendRuntime.hpp>
 #include <ai/infrastructure/SqliteRepositories.hpp>
 #include <ai/ui/BackendBridge.hpp>

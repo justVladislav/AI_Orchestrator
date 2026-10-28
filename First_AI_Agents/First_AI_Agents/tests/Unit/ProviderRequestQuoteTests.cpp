@@ -1,4 +1,4 @@
-#include "ai/application/ProviderRequestQuote.hpp"
+#include "ai/application/budget/ProviderRequestQuote.hpp"
 
 #include <iostream>
 #include <stdexcept>

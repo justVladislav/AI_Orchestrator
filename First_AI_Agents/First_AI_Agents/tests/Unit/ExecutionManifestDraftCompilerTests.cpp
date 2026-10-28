@@ -1,5 +1,5 @@
-#include "ai/application/ExecutionManifestDependencyGraph.hpp"
-#include "ai/application/ExecutionManifestDraftCompiler.hpp"
+#include "ai/application/execution/ExecutionManifestDependencyGraph.hpp"
+#include "ai/application/execution/ExecutionManifestDraftCompiler.hpp"
 
 #include <algorithm>
 #include <filesystem>

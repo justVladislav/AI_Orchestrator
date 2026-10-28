@@ -1,9 +1,9 @@
 #pragma once
 
-#include <ai/application/ApplicationSettingsService.hpp>
-#include <ai/application/ExecutionProfileService.hpp>
-#include <ai/application/ProviderCatalogService.hpp>
-#include <ai/application/VerificationScratchService.hpp>
+#include <ai/application/settings/ApplicationSettingsService.hpp>
+#include <ai/application/catalog/ExecutionProfileService.hpp>
+#include <ai/application/catalog/ProviderCatalogService.hpp>
+#include <ai/application/verification/VerificationScratchService.hpp>
 
 #include <QObject>
 #include <QString>

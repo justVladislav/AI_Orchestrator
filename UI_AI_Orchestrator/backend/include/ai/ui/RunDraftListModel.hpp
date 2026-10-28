@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ai/application/RunDraftTypes.hpp>
+#include <ai/application/planning/RunDraftTypes.hpp>
 
 #include <QAbstractListModel>
 #include <QString>

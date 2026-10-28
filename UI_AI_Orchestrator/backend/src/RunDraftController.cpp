@@ -1,6 +1,6 @@
 #include <ai/ui/RunDraftController.hpp>
 
-#include <ai/application/IWorkflowRunner.hpp>
+#include <ai/application/execution/IWorkflowRunner.hpp>
 #include <ai/ui/PlanDraftProjection.hpp>
 #include <ai/ui/ProviderBudgetVariant.hpp>
 #include <ai/ui/RunContractVariant.hpp>

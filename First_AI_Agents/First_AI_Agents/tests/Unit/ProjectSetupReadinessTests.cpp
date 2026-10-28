@@ -1,6 +1,6 @@
-#include "ai/application/FilesystemPathUtils.hpp"
-#include "ai/application/ProjectSetupReadiness.hpp"
-#include "ai/application/VerificationEnvironmentPresetSetupService.hpp"
+#include "ai/application/workspace/FilesystemPathUtils.hpp"
+#include "ai/application/verification/ProjectSetupReadiness.hpp"
+#include "ai/application/verification/VerificationEnvironmentPresetSetupService.hpp"
 
 #include <algorithm>
 #include <chrono>

@@ -1,6 +1,6 @@
 #include "ai/providers/OpenAIAgentSession.hpp"
-#include "ai/application/AgentToolTurnLoopRunner.hpp"
-#include "ai/application/ProviderExecutionBudget.hpp"
+#include "ai/application/agents/AgentToolTurnLoopRunner.hpp"
+#include "ai/application/budget/ProviderExecutionBudget.hpp"
 #include "ai/providers/OpenAIResponseParser.hpp"
 #include "ai/http/HttpRequest.hpp"
 #include "ai/http/IHttpClient.hpp"

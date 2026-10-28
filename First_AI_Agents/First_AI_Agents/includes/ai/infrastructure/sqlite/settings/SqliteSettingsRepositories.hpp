@@ -1,7 +1,7 @@
 #pragma once
 
-#include "ai/application/IApplicationSettingsRepository.hpp"
-#include "ai/application/IVerificationScratchSettingRepository.hpp"
+#include "ai/application/settings/IApplicationSettingsRepository.hpp"
+#include "ai/application/verification/IVerificationScratchSettingRepository.hpp"
 #include "ai/common/Result.hpp"
 #include "ai/infrastructure/sqlite/SqliteDatabase.hpp"
 

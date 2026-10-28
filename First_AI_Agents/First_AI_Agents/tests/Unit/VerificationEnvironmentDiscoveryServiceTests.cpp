@@ -6,9 +6,9 @@
 // linked configure/build identity, honest provenance, and a candidate-relative
 // best-effort binaryDir resolution. Real temp-directory files, a scripted
 // command runner, no real cmake invocation.
-#include "ai/application/InMemoryVerificationEnvironmentRepository.hpp"
-#include "ai/application/VerificationEnvironmentDiscoveryService.hpp"
-#include "ai/application/WorkspaceReadPolicy.hpp"
+#include "ai/application/inmemory/InMemoryVerificationEnvironmentRepository.hpp"
+#include "ai/application/verification/VerificationEnvironmentDiscoveryService.hpp"
+#include "ai/application/workspace/WorkspaceReadPolicy.hpp"
 
 #include <cassert>
 #include <chrono>

@@ -1,15 +1,15 @@
 #include "ai/backend/StartupRecovery.hpp"
 
-#include "ai/application/ComparisonService.hpp"
-#include "ai/application/FollowUpComposerProcessor.hpp"
-#include "ai/application/IAgentToolAuditRepository.hpp"
-#include "ai/application/IAgentToolSessionRepository.hpp"
-#include "ai/application/ManifestInterruptedTaskReconciler.hpp"
-#include "ai/application/ManifestVerificationContinuationPreparationService.hpp"
-#include "ai/application/ManifestVerificationManualHandoffService.hpp"
-#include "ai/application/ManifestWorkLedgerService.hpp"
-#include "ai/application/ModelExecutionService.hpp"
-#include "ai/application/OrchestrationService.hpp"
+#include "ai/application/comparison/ComparisonService.hpp"
+#include "ai/application/planning/FollowUpComposerProcessor.hpp"
+#include "ai/application/agents/IAgentToolAuditRepository.hpp"
+#include "ai/application/agents/IAgentToolSessionRepository.hpp"
+#include "ai/application/execution/ManifestInterruptedTaskReconciler.hpp"
+#include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"
+#include "ai/application/verification/ManifestVerificationManualHandoffService.hpp"
+#include "ai/application/execution/ManifestWorkLedgerService.hpp"
+#include "ai/application/agents/ModelExecutionService.hpp"
+#include "ai/application/execution/OrchestrationService.hpp"
 
 #include <set>
 #include <string>

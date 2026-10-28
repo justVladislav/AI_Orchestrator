@@ -4,13 +4,13 @@
 // filesystem - SqliteRepositoryTests.cpp/BackendRuntimeTests.cpp cover the
 // same business rules again against the real persistence adapters and
 // through BackendRuntime's storage.unavailable controlled-failure path.
-#include "ai/application/ExecutionAssignmentValidation.hpp"
-#include "ai/application/ExecutionProfileService.hpp"
-#include "ai/application/InMemoryRepositories.hpp"
-#include "ai/application/IWorkflowRunner.hpp"
-#include "ai/application/ProjectService.hpp"
-#include "ai/application/ProviderCatalogService.hpp"
-#include "ai/application/WorkspaceContextService.hpp"
+#include "ai/application/execution/ExecutionAssignmentValidation.hpp"
+#include "ai/application/catalog/ExecutionProfileService.hpp"
+#include "ai/application/inmemory/InMemoryRepositories.hpp"
+#include "ai/application/execution/IWorkflowRunner.hpp"
+#include "ai/application/projects/ProjectService.hpp"
+#include "ai/application/catalog/ProviderCatalogService.hpp"
+#include "ai/application/projects/WorkspaceContextService.hpp"
 
 #include <cassert>
 #include <chrono>

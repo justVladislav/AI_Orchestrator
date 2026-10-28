@@ -13,7 +13,7 @@
 //   - exhausted scripted session
 //   - legacy IProviderClient::send() contract is unchanged and independent
 
-#include "ai/application/IProviderClient.hpp"
+#include "ai/application/providers/IProviderClient.hpp"
 #include "ai/providers/IProviderAgentSession.hpp"
 #include "ai/providers/ProviderAgentSessionTypes.hpp"
 

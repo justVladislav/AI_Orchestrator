@@ -24,8 +24,8 @@
 //   no-write / no-rename guarantee    — only IWorkspaceToolExecutor::execute() used
 //   no absolute paths in results      — verified on every result
 
-#include "ai/application/FilesystemWorkspaceToolExecutor.hpp"
-#include "ai/application/WorkspaceReadPolicy.hpp"
+#include "ai/application/workspace/FilesystemWorkspaceToolExecutor.hpp"
+#include "ai/application/workspace/WorkspaceReadPolicy.hpp"
 
 #include <nlohmann/json.hpp>
 

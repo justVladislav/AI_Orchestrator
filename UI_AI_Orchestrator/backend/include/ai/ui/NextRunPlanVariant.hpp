@@ -1,7 +1,7 @@
 #pragma once
 
-#include <ai/application/NextRunPlan.hpp>
-#include <ai/application/RunDraftGroup.hpp>
+#include <ai/application/planning/NextRunPlan.hpp>
+#include <ai/application/planning/RunDraftGroup.hpp>
 #include <ai/ui/RunContractVariant.hpp>
 
 #include <QString>

@@ -3,10 +3,10 @@
 // PC-5B test fixtures shared by the pure-rule tests, the in-memory contract run and the SQLite tests. Everything is built
 // with the REAL functions (the context assembler, the ACD-4 quote), so a request in these tests is what 5C would store.
 
-#include "ai/application/FollowUpComposerContext.hpp"
-#include "ai/application/FollowUpComposerQuote.hpp"
-#include "ai/application/FollowUpPlanRequest.hpp"
-#include "ai/application/IWorkflowRunner.hpp"
+#include "ai/application/planning/FollowUpComposerContext.hpp"
+#include "ai/application/planning/FollowUpComposerQuote.hpp"
+#include "ai/application/planning/FollowUpPlanRequest.hpp"
+#include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/Sha256.hpp"
 
 #include <chrono>

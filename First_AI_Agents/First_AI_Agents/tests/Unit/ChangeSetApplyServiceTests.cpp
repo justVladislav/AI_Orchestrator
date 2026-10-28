@@ -1,16 +1,16 @@
 // Stage 8 tests for ChangeSetApplyService: hash-verified, rollback-safe
 // workspace apply pipeline.  Uses real FileChangeProposalStore + temp
 // directories so file I/O paths are fully exercised without mocking.
-#include "ai/application/ChangeProposalService.hpp"
-#include "ai/application/ChangeSetApplyService.hpp"
-#include "ai/application/ArtifactService.hpp"
-#include "ai/application/FilesystemPathUtils.hpp"
-#include "ai/application/IChangeApprovalRepository.hpp"
-#include "ai/application/IChangeProposalRepository.hpp"
-#include "ai/application/IWorkflowRunner.hpp"
-#include "ai/application/InMemoryRepositories.hpp"
+#include "ai/application/proposals/ChangeProposalService.hpp"
+#include "ai/application/proposals/ChangeSetApplyService.hpp"
+#include "ai/application/artifacts/ArtifactService.hpp"
+#include "ai/application/workspace/FilesystemPathUtils.hpp"
+#include "ai/application/proposals/IChangeApprovalRepository.hpp"
+#include "ai/application/proposals/IChangeProposalRepository.hpp"
+#include "ai/application/execution/IWorkflowRunner.hpp"
+#include "ai/application/inmemory/InMemoryRepositories.hpp"
 #include "ai/application/Sha256.hpp"
-#include "ai/application/WorkspaceBaselineProvenance.hpp"
+#include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 #include "ai/infrastructure/FileChangeProposalStore.hpp"
 #include "RecordingOutcomeBriefTrigger.hpp"
 

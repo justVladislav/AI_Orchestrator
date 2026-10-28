@@ -1,6 +1,6 @@
-#include "ai/application/FollowUpPlanAdvisories.hpp"
+#include "ai/application/planning/FollowUpPlanAdvisories.hpp"
 
-#include "ai/application/RunInterfaceContract.hpp"
+#include "ai/application/execution/RunInterfaceContract.hpp"
 
 #include <algorithm>
 #include <iostream>

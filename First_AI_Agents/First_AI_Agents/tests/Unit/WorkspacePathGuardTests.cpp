@@ -8,10 +8,10 @@
 //   Group 4  — Custom policy lists and allowed-roots enforcement
 //   Group 5  — Error messages contain no absolute paths or model input
 
-#include "ai/application/WorkspacePathGuard.hpp"
-#include "ai/application/WorkspaceReadPolicy.hpp"
+#include "ai/application/workspace/WorkspacePathGuard.hpp"
+#include "ai/application/workspace/WorkspaceReadPolicy.hpp"
 
-#include "ai/application/FilesystemPathUtils.hpp"
+#include "ai/application/workspace/FilesystemPathUtils.hpp"
 
 #include <cassert>
 #include <chrono>

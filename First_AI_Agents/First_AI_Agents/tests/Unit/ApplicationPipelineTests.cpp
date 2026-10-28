@@ -1,8 +1,8 @@
-#include "ai/application/InMemoryRepositories.hpp"
-#include "ai/application/MockWorkflowRunner.hpp"
-#include "ai/application/OrchestrationService.hpp"
-#include "ai/application/ProjectService.hpp"
-#include "ai/application/RunStageSettlement.hpp"
+#include "ai/application/inmemory/InMemoryRepositories.hpp"
+#include "ai/application/execution/MockWorkflowRunner.hpp"
+#include "ai/application/execution/OrchestrationService.hpp"
+#include "ai/application/projects/ProjectService.hpp"
+#include "ai/application/execution/RunStageSettlement.hpp"
 
 #include <algorithm>
 #include <atomic>

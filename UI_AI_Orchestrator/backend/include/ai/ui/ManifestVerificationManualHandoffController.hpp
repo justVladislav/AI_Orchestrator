@@ -1,11 +1,11 @@
 #pragma once
 
-#include <ai/application/ChangeProposalService.hpp>
-#include <ai/application/ChangeSetApplyService.hpp>
-#include <ai/application/ManifestApplyVerificationGate.hpp>
-#include <ai/application/ManifestVerificationManualHandoffReadModelService.hpp>
-#include <ai/application/ManifestVerificationManualHandoffService.hpp>
-#include <ai/application/ProposalReviewService.hpp>
+#include <ai/application/proposals/ChangeProposalService.hpp>
+#include <ai/application/proposals/ChangeSetApplyService.hpp>
+#include <ai/application/verification/ManifestApplyVerificationGate.hpp>
+#include <ai/application/verification/ManifestVerificationManualHandoffReadModelService.hpp>
+#include <ai/application/verification/ManifestVerificationManualHandoffService.hpp>
+#include <ai/application/proposals/ProposalReviewService.hpp>
 
 #include <QFutureWatcher>
 #include <QObject>

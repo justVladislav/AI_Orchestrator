@@ -1,8 +1,8 @@
 #pragma once
 
 #include "ai/providers/IProviderAgentSession.hpp"
-#include "ai/application/ICredentialStore.hpp"
-#include "ai/application/IProviderRepository.hpp"
+#include "ai/application/providers/ICredentialStore.hpp"
+#include "ai/application/catalog/IProviderRepository.hpp"
 
 namespace ai::providers {
 

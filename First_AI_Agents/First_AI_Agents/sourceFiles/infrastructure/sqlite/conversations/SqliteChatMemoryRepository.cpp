@@ -1,7 +1,7 @@
 #include "../SqliteConnection.hpp"
 #include "../SqlitePrimitives.hpp"
 
-#include "ai/application/ChatTypes.hpp"
+#include "ai/application/conversations/ChatTypes.hpp"
 
 #include <sqlite3.h>
 

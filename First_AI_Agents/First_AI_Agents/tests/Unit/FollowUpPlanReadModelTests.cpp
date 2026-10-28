@@ -4,10 +4,10 @@
 
 #include "FollowUpRequestTestSupport.hpp"
 
-#include "ai/application/FollowUpPlanReadModel.hpp"
-#include "ai/application/InMemoryFollowUpPlanRepository.hpp"
-#include "ai/application/InMemoryOutcomeBriefRepository.hpp"
-#include "ai/application/InMemoryRepositories.hpp"
+#include "ai/application/planning/FollowUpPlanReadModel.hpp"
+#include "ai/application/inmemory/InMemoryFollowUpPlanRepository.hpp"
+#include "ai/application/inmemory/InMemoryOutcomeBriefRepository.hpp"
+#include "ai/application/inmemory/InMemoryRepositories.hpp"
 
 #include <functional>
 #include <iostream>

@@ -2,7 +2,7 @@
 
 // Run draft group storage that the run draft repository and the follow-up plan confirm code (still in the
 // aggregate) both use. The caller owns the database lock, and for the insert the transaction as well.
-#include "ai/application/RunDraftTypes.hpp"
+#include "ai/application/planning/RunDraftTypes.hpp"
 #include "ai/common/Result.hpp"
 
 #include <sqlite3.h>

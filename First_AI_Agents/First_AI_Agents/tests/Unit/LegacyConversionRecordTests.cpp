@@ -2,9 +2,9 @@
 // fingerprints, the safe-automatic-Retry predicate, the durable LegacyConversionRecord (its
 // integrity, its consistency with the Run it describes) and the strict `dropped` JSON. No
 // repository and no provider: the repository atomicity and the commands have their own tests.
-#include "ai/application/IWorkflowRunner.hpp"
-#include "ai/application/LegacyConversionRecord.hpp"
-#include "ai/application/LegacyRosterAdapter.hpp"
+#include "ai/application/execution/IWorkflowRunner.hpp"
+#include "ai/application/execution/LegacyConversionRecord.hpp"
+#include "ai/application/execution/LegacyRosterAdapter.hpp"
 
 #include <algorithm>
 #include <chrono>

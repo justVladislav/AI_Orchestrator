@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ai/application/ExecutionProfileService.hpp>
+#include <ai/application/catalog/ExecutionProfileService.hpp>
 #include <ai/ui/ExecutionProfileListModel.hpp>
 
 #include <QAbstractItemModel>

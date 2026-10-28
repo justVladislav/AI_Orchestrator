@@ -26,7 +26,7 @@
 // This interface does not replace IProviderClient::send(). Ordinary one-shot
 // chat and Run workflows continue to use IProviderClient unchanged.
 
-#include "ai/application/AgentToolTypes.hpp"
+#include "ai/application/agents/AgentToolTypes.hpp"
 #include "ai/common/Result.hpp"
 #include "ai/providers/ProviderAgentSessionTypes.hpp"
 

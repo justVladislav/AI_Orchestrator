@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ai/application/ProjectService.hpp>
+#include <ai/application/projects/ProjectService.hpp>
 #include <ai/ui/ProjectListModel.hpp>
 
 #include <QAbstractItemModel>

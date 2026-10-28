@@ -1,10 +1,10 @@
 // Unit tests for AG-17.1's ManifestRouting: the Backend-owned, frozen routing
 // contract (manifest-routing.v1) that says which roster member executes which
 // provider-backed task. Pure function tests: no provider, no SQLite.
-#include "ai/application/AgentToolTurnLoopRunner.hpp"
-#include "ai/application/ExecutionManifestTypes.hpp"
-#include "ai/application/ExecutionManifestValidator.hpp"
-#include "ai/application/ManifestRouting.hpp"
+#include "ai/application/agents/AgentToolTurnLoopRunner.hpp"
+#include "ai/application/execution/ExecutionManifestTypes.hpp"
+#include "ai/application/execution/ExecutionManifestValidator.hpp"
+#include "ai/application/execution/ManifestRouting.hpp"
 
 #include <algorithm>
 #include <functional>

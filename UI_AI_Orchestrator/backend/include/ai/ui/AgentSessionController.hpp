@@ -4,12 +4,12 @@
 #include "ai/ui/AgentToolCallListModel.hpp"
 #include "ai/ui/AgentTurnListModel.hpp"
 
-#include <ai/application/AgentToolReadModelService.hpp>
-#include <ai/application/ChangeProposalService.hpp>
-#include <ai/application/ChangeSetApplyService.hpp>
-#include <ai/application/ManifestApplyVerificationGate.hpp>
-#include <ai/application/ProposalReviewService.hpp>
-#include <ai/application/ProposalReviewTypes.hpp>
+#include <ai/application/agents/AgentToolReadModelService.hpp>
+#include <ai/application/proposals/ChangeProposalService.hpp>
+#include <ai/application/proposals/ChangeSetApplyService.hpp>
+#include <ai/application/verification/ManifestApplyVerificationGate.hpp>
+#include <ai/application/proposals/ProposalReviewService.hpp>
+#include <ai/application/proposals/ProposalReviewTypes.hpp>
 
 #include <QFutureWatcher>
 #include <QObject>

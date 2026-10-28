@@ -1,9 +1,9 @@
 #pragma once
 
-#include <ai/application/ArtifactService.hpp>
-#include <ai/application/OrchestrationService.hpp>
-#include <ai/application/ProviderCatalogService.hpp>
-#include <ai/application/ManifestVerificationManualHandoffReadModelService.hpp>
+#include <ai/application/artifacts/ArtifactService.hpp>
+#include <ai/application/execution/OrchestrationService.hpp>
+#include <ai/application/catalog/ProviderCatalogService.hpp>
+#include <ai/application/verification/ManifestVerificationManualHandoffReadModelService.hpp>
 #include <ai/ui/ArtifactListModel.hpp>
 #include <ai/ui/RunWarningListModel.hpp>
 #include <ai/ui/RunListModel.hpp>

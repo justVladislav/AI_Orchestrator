@@ -5,13 +5,13 @@
 
 #include "FollowUpServiceTestSupport.hpp"
 
-#include "ai/application/FilesystemFollowUpFileLoader.hpp"
-#include "ai/application/FollowUpSourceReader.hpp"
-#include "ai/application/InMemoryManifestWorkLedgerRepository.hpp"
-#include "ai/application/InMemoryOutcomeBriefRepository.hpp"
-#include "ai/application/FilesystemPathUtils.hpp"
-#include "ai/application/WorkspacePathGuard.hpp"
-#include "ai/application/WorkspaceReadPolicy.hpp"
+#include "ai/application/planning/FilesystemFollowUpFileLoader.hpp"
+#include "ai/application/planning/FollowUpSourceReader.hpp"
+#include "ai/application/inmemory/InMemoryManifestWorkLedgerRepository.hpp"
+#include "ai/application/inmemory/InMemoryOutcomeBriefRepository.hpp"
+#include "ai/application/workspace/FilesystemPathUtils.hpp"
+#include "ai/application/workspace/WorkspacePathGuard.hpp"
+#include "ai/application/workspace/WorkspaceReadPolicy.hpp"
 
 #include <algorithm>
 #include <atomic>

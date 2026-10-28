@@ -1,5 +1,5 @@
-#include "ai/application/FilesystemPathUtils.hpp"
-#include "ai/application/ProjectReadinessService.hpp"
+#include "ai/application/workspace/FilesystemPathUtils.hpp"
+#include "ai/application/verification/ProjectReadinessService.hpp"
 #include "ai/infrastructure/SqliteRepositories.hpp"
 
 #include <sqlite3.h>

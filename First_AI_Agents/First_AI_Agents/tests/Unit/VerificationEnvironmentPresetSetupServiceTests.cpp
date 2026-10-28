@@ -7,11 +7,11 @@
 // this file nor the service itself references any provider/session type -
 // matching this codebase's own established "by construction" convention
 // (see e.g. ARCHITECTURE_GAPS.md's QML-P4R.6 canary entries).
-#include "ai/application/FilesystemPathUtils.hpp"
-#include "ai/application/InMemoryVerificationEnvironmentRepository.hpp"
-#include "ai/application/ManifestProposalSetVerifier.hpp"
-#include "ai/application/VerificationEnvironmentDiscoveryService.hpp"
-#include "ai/application/VerificationEnvironmentPresetSetupService.hpp"
+#include "ai/application/workspace/FilesystemPathUtils.hpp"
+#include "ai/application/inmemory/InMemoryVerificationEnvironmentRepository.hpp"
+#include "ai/application/verification/ManifestProposalSetVerifier.hpp"
+#include "ai/application/verification/VerificationEnvironmentDiscoveryService.hpp"
+#include "ai/application/verification/VerificationEnvironmentPresetSetupService.hpp"
 
 #include <nlohmann/json.hpp>
 

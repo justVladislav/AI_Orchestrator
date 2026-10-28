@@ -1,9 +1,9 @@
 #include "ai/infrastructure/FileChangeProposalStore.hpp"
 
-#include "ai/application/ArtifactPathPolicy.hpp"
-#include "ai/application/FilesystemPathUtils.hpp"
+#include "ai/application/artifacts/ArtifactPathPolicy.hpp"
+#include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/IdGenerator.hpp"
-#include "ai/application/ProjectWritePolicy.hpp"
+#include "ai/application/workspace/ProjectWritePolicy.hpp"
 #include "ai/application/Sha256.hpp"
 
 #include <nlohmann/json.hpp>

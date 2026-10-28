@@ -6,10 +6,10 @@
 // The shapes are the ones ManifestWorkflowRunnerTests.cpp uses; this header lets a second test
 // executable (the restart proofs, which need SQLite and the production recovery sequence) share
 // them without that large file.
-#include "ai/application/AgentToolExecutionService.hpp"
-#include "ai/application/ExecutionManifestDraftParser.hpp"
-#include "ai/application/FilesystemWorkspaceToolExecutor.hpp"
-#include "ai/application/ManifestWorkflowRunner.hpp"
+#include "ai/application/agents/AgentToolExecutionService.hpp"
+#include "ai/application/execution/ExecutionManifestDraftParser.hpp"
+#include "ai/application/workspace/FilesystemWorkspaceToolExecutor.hpp"
+#include "ai/application/execution/ManifestWorkflowRunner.hpp"
 
 #include <nlohmann/json.hpp>
 

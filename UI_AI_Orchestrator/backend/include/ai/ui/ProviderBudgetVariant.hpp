@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ai/application/ProviderExecutionBudget.hpp>
+#include <ai/application/budget/ProviderExecutionBudget.hpp>
 
 #include <QString>
 #include <QVariant>

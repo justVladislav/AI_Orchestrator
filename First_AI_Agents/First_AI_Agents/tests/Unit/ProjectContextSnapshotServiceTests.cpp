@@ -1,5 +1,5 @@
-#include "ai/application/InMemoryRepositories.hpp"
-#include "ai/application/ProjectContextSnapshotService.hpp"
+#include "ai/application/inmemory/InMemoryRepositories.hpp"
+#include "ai/application/context/ProjectContextSnapshotService.hpp"
 #include "ai/application/Sha256.hpp"
 
 #include <algorithm>

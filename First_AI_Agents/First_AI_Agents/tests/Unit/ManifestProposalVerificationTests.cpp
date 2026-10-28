@@ -1,10 +1,10 @@
-#include "ai/application/FilesystemPathUtils.hpp"
-#include "ai/application/ManifestProposalOverlay.hpp"
-#include "ai/application/ManifestProposalSetVerifier.hpp"
-#include "ai/application/ManifestVerificationEnvironmentPreflight.hpp"
-#include "ai/application/ManifestVerificationRepairability.hpp"
-#include "ai/application/QmlLintDiagnosticPolicy.hpp"
-#include "ai/application/WorkspaceBaselineProvenance.hpp"
+#include "ai/application/workspace/FilesystemPathUtils.hpp"
+#include "ai/application/verification/ManifestProposalOverlay.hpp"
+#include "ai/application/verification/ManifestProposalSetVerifier.hpp"
+#include "ai/application/verification/ManifestVerificationEnvironmentPreflight.hpp"
+#include "ai/application/verification/ManifestVerificationRepairability.hpp"
+#include "ai/application/verification/QmlLintDiagnosticPolicy.hpp"
+#include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 
 #include <algorithm>
 #include <chrono>

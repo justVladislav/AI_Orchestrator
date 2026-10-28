@@ -1,8 +1,8 @@
 #pragma once
 
-#include "ai/application/IAgentToolAuditRepository.hpp"
-#include "ai/application/IAgentToolSessionRepository.hpp"
-#include "ai/application/IModelExecutionRepository.hpp"
+#include "ai/application/agents/IAgentToolAuditRepository.hpp"
+#include "ai/application/agents/IAgentToolSessionRepository.hpp"
+#include "ai/application/agents/IModelExecutionRepository.hpp"
 #include "ai/common/Result.hpp"
 #include "ai/infrastructure/sqlite/SqliteDatabase.hpp"
 

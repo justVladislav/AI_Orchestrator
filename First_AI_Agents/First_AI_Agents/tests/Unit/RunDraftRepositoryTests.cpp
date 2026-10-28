@@ -1,7 +1,7 @@
 #include "RunDraftRepositoryContract.hpp"
 
-#include "ai/application/RunDraftPlanService.hpp"
-#include "ai/application/RunDraftService.hpp"
+#include "ai/application/planning/RunDraftPlanService.hpp"
+#include "ai/application/planning/RunDraftService.hpp"
 #include "ai/infrastructure/SqliteRepositories.hpp"
 
 #include <sqlite3.h>

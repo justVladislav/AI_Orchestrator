@@ -2,7 +2,7 @@
 #include "../SqlitePrimitives.hpp"
 
 #include "ai/application/ApplicationTypes.hpp"
-#include "ai/application/ProjectMemoryCompactionTypes.hpp"
+#include "ai/application/conversations/ProjectMemoryCompactionTypes.hpp"
 
 #include <sqlite3.h>
 #include <nlohmann/json.hpp>
