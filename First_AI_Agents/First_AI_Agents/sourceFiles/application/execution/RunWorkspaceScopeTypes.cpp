@@ -1,4 +1,4 @@
-#include "ai/application/RunWorkspaceScopeTypes.hpp"
+#include "ai/application/execution/RunWorkspaceScopeTypes.hpp"
 
 namespace ai::application {
 

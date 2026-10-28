@@ -8,7 +8,7 @@
 #include "ai/application/InMemoryRunWorkspaceScopeRepository.hpp"
 #include "ai/application/verification/ManifestMandatoryVerificationPolicy.hpp"
 #include "ai/application/execution/ManifestRouting.hpp"
-#include "ai/application/RunWorkspaceScopeService.hpp"
+#include "ai/application/execution/RunWorkspaceScopeService.hpp"
 #include "ai/application/workspace/WorkspaceReadPolicy.hpp"
 
 #include <nlohmann/json.hpp>

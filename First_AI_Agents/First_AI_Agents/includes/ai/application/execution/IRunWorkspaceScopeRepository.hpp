@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/RunWorkspaceScopeTypes.hpp"
+#include "ai/application/execution/RunWorkspaceScopeTypes.hpp"
 #include "ai/common/Result.hpp"
 
 #include <optional>

@@ -10,7 +10,7 @@
 #include "ai/application/InMemoryManifestTaskExecutionRepository.hpp"
 #include "ai/application/InMemoryManifestWorkLedgerRepository.hpp"
 #include "ai/application/InMemoryRepositories.hpp"
-#include "ai/application/ManifestInterruptedTaskReconciler.hpp"
+#include "ai/application/execution/ManifestInterruptedTaskReconciler.hpp"
 #include "ai/application/execution/ManifestRouting.hpp"
 #include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"
 

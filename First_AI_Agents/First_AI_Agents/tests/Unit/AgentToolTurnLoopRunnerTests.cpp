@@ -13,8 +13,8 @@
 #include "ai/application/InMemoryRepositories.hpp"
 #include "ai/application/InMemoryRunWorkspaceScopeRepository.hpp"
 #include "ai/application/workspace/ProjectWritePolicy.hpp"
-#include "ai/application/RunPathClaimRegistry.hpp"
-#include "ai/application/RunWorkspaceScopeService.hpp"
+#include "ai/application/execution/RunPathClaimRegistry.hpp"
+#include "ai/application/execution/RunWorkspaceScopeService.hpp"
 #include "ai/application/Sha256.hpp"
 #include "ai/infrastructure/FileChangeProposalStore.hpp"
 

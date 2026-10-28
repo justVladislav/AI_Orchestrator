@@ -4,10 +4,10 @@
 #include "ai/application/IRunRepository.hpp"
 #include "ai/application/IWorkflowResolver.hpp"
 #include "ai/application/IWorkflowRunner.hpp"
-#include "ai/application/ManifestWorkLedgerService.hpp"
+#include "ai/application/execution/ManifestWorkLedgerService.hpp"
 #include "ai/application/agents/ModelExecutionService.hpp"
 #include "ai/application/conversations/ProjectMemoryService.hpp"
-#include "ai/application/RunPathClaimRegistry.hpp"
+#include "ai/application/execution/RunPathClaimRegistry.hpp"
 
 #include <condition_variable>
 #include <deque>

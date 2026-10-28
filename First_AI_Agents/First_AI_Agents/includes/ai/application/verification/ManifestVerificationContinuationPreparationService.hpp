@@ -2,7 +2,7 @@
 
 #include "ai/application/execution/IExecutionManifestRepository.hpp"
 #include "ai/application/verification/IManifestVerificationContinuationRepository.hpp"
-#include "ai/application/IManifestWorkLedgerRepository.hpp"
+#include "ai/application/execution/IManifestWorkLedgerRepository.hpp"
 #include "ai/application/projects/IProjectRepository.hpp"
 #include "ai/application/verification/IVerificationScratchRootProvider.hpp"
 #include "ai/application/IRunRepository.hpp"

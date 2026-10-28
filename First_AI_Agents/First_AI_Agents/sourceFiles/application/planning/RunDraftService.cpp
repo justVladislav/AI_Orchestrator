@@ -2,7 +2,7 @@
 
 #include "ai/application/IWorkflowRunner.hpp"
 #include "ai/application/IdGenerator.hpp"
-#include "ai/application/RunInterfaceContract.hpp"
+#include "ai/application/execution/RunInterfaceContract.hpp"
 
 #include <chrono>
 #include <string>

@@ -3,7 +3,7 @@
 #include "ai/application/ApplicationTypes.hpp"
 #include "ai/application/proposals/ChangeProposalTypes.hpp"
 #include "ai/application/execution/ExecutionAcceptanceContract.hpp"
-#include "ai/application/RunWorkspaceScopeTypes.hpp"
+#include "ai/application/execution/RunWorkspaceScopeTypes.hpp"
 
 #include <chrono>
 #include <cstddef>

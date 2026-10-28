@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/IManifestTaskExecutionRepository.hpp"
+#include "ai/application/execution/IManifestTaskExecutionRepository.hpp"
 
 #include <map>
 #include <mutex>

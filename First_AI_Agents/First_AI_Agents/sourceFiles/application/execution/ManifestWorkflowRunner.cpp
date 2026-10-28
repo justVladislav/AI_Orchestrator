@@ -13,7 +13,7 @@
 #include "ai/application/execution/TaskRouteResolver.hpp"
 #include "ai/application/verification/QmlLintDiagnosticPolicy.hpp"
 #include "ai/application/verification/ProjectReadinessService.hpp"
-#include "ai/application/RunWorkspaceScopeService.hpp"
+#include "ai/application/execution/RunWorkspaceScopeService.hpp"
 #include "ai/application/Sha256.hpp"
 #include "ai/application/verification/VerificationEnvironmentDiscoveryService.hpp"
 #include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"

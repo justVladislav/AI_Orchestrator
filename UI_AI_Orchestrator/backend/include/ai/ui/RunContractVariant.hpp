@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ai/application/RunInterfaceContract.hpp>
+#include <ai/application/execution/RunInterfaceContract.hpp>
 
 #include <QRegularExpression>
 #include <QString>

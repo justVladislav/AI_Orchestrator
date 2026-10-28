@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/RunInterfaceContract.hpp"
+#include "ai/application/execution/RunInterfaceContract.hpp"
 #include "ai/common/Result.hpp"
 
 #include <cstddef>

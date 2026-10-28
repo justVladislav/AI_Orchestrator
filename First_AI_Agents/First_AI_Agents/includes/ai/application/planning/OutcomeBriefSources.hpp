@@ -3,7 +3,7 @@
 #include "ai/application/ApplicationTypes.hpp"
 #include "ai/application/proposals/ChangeProposalTypes.hpp"
 #include "ai/application/verification/ManifestVerificationManualHandoffResolution.hpp"
-#include "ai/application/ManifestWorkLedgerTypes.hpp"
+#include "ai/application/execution/ManifestWorkLedgerTypes.hpp"
 #include "ai/application/IRunRepository.hpp"
 #include "ai/application/proposals/ProposalReviewTypes.hpp"
 #include "ai/common/Result.hpp"

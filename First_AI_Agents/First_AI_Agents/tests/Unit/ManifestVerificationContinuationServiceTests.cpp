@@ -29,7 +29,7 @@
 #include "ai/application/verification/ManifestApplyVerificationGate.hpp"
 #include "ai/application/verification/ManifestProposalOverlay.hpp"
 #include "ai/application/verification/QmlLintDiagnosticPolicy.hpp"
-#include "ai/application/ManifestWorkLedgerService.hpp"
+#include "ai/application/execution/ManifestWorkLedgerService.hpp"
 #include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 #include "ai/application/workspace/WorkspaceReadPolicy.hpp"
 #include "ai/application/Sha256.hpp"

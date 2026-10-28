@@ -2,7 +2,7 @@
 
 #include "ai/application/proposals/ChangeProposalService.hpp"
 #include "ai/application/verification/IManifestVerificationManualHandoffRepository.hpp"
-#include "ai/application/IManifestWorkLedgerRepository.hpp"
+#include "ai/application/execution/IManifestWorkLedgerRepository.hpp"
 #include "ai/application/IRunRepository.hpp"
 #include "ai/application/verification/ManifestApplyVerificationGate.hpp"
 #include "ai/application/verification/ManifestVerificationManualHandoffResolution.hpp"

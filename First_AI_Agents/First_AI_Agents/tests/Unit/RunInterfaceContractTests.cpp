@@ -1,4 +1,4 @@
-#include "ai/application/RunInterfaceContract.hpp"
+#include "ai/application/execution/RunInterfaceContract.hpp"
 
 #include "ai/application/InMemoryRepositories.hpp"
 

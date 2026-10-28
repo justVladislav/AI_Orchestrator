@@ -17,7 +17,7 @@
 #include "ai/application/InMemoryVerificationBootstrapRepository.hpp"
 #include "ai/application/InMemoryVerificationEnvironmentRepository.hpp"
 #include "ai/application/execution/ManifestRouting.hpp"
-#include "ai/application/RunWorkspaceScopeService.hpp"
+#include "ai/application/execution/RunWorkspaceScopeService.hpp"
 
 #include <chrono>
 #include <map>

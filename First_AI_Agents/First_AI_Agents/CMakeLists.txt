@@ -80,9 +80,9 @@ set(APPLICATION_SOURCES
     sourceFiles/application/execution/ExecutionManifestExecutor.cpp
     sourceFiles/application/verification/ManifestVerificationRepairability.cpp
     sourceFiles/application/execution/ManifestWorkflowRunner.cpp
-    sourceFiles/application/ManifestWorkLedgerTypes.cpp
-    sourceFiles/application/ManifestWorkLedgerService.cpp
-    sourceFiles/application/ManifestInterruptedTaskReconciler.cpp
+    sourceFiles/application/execution/ManifestWorkLedgerTypes.cpp
+    sourceFiles/application/execution/ManifestWorkLedgerService.cpp
+    sourceFiles/application/execution/ManifestInterruptedTaskReconciler.cpp
     sourceFiles/application/verification/ManifestVerificationContinuationTypes.cpp
     sourceFiles/application/InMemoryManifestVerificationContinuationRepository.cpp
     sourceFiles/application/verification/ManifestVerificationContinuationService.cpp
@@ -96,8 +96,8 @@ set(APPLICATION_SOURCES
     sourceFiles/application/verification/ManifestVerificationManualHandoffService.cpp
     sourceFiles/application/verification/ManifestVerificationManualHandoffReadModelService.cpp
     sourceFiles/application/verification/ManifestVerificationContinuationRepairService.cpp
-    sourceFiles/application/RunWorkspaceScopeTypes.cpp
-    sourceFiles/application/RunWorkspaceScopeService.cpp
+    sourceFiles/application/execution/RunWorkspaceScopeTypes.cpp
+    sourceFiles/application/execution/RunWorkspaceScopeService.cpp
     sourceFiles/application/verification/VerificationEnvironmentSnapshotTypes.cpp
     sourceFiles/application/verification/VerificationEnvironmentDiscoveryService.cpp
     sourceFiles/application/verification/VerificationEnvironmentPresetSetupService.cpp
@@ -146,7 +146,7 @@ set(APPLICATION_SOURCES
     sourceFiles/application/conversations/ProjectMemoryCompactionService.cpp
     sourceFiles/application/context/ProjectContextSnapshot.cpp
     sourceFiles/application/context/ProjectContextSnapshotService.cpp
-    sourceFiles/application/RunInterfaceContract.cpp
+    sourceFiles/application/execution/RunInterfaceContract.cpp
     sourceFiles/application/planning/NextRunPlan.cpp
     sourceFiles/application/planning/FollowUpPlan.cpp
     sourceFiles/application/planning/FollowUpComposerContext.cpp
@@ -187,7 +187,7 @@ set(APPLICATION_SOURCES
     sourceFiles/application/proposals/ChangeSetApplyService.cpp
     sourceFiles/application/proposals/ProposedChangeSetParser.cpp
     sourceFiles/application/proposals/ChangeProposalValidator.cpp
-    sourceFiles/application/RunPathClaimRegistry.cpp
+    sourceFiles/application/execution/RunPathClaimRegistry.cpp
     sourceFiles/application/proposals/ChangeProposalService.cpp
     sourceFiles/application/workspace/WorkspaceReadPolicy.cpp
     sourceFiles/application/workspace/WorkspacePathGuard.cpp

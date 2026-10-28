@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/IRunWorkspaceScopeRepository.hpp"
+#include "ai/application/execution/IRunWorkspaceScopeRepository.hpp"
 
 #include <map>
 #include <mutex>

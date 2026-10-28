@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/IManifestWorkLedgerRepository.hpp"
+#include "ai/application/execution/IManifestWorkLedgerRepository.hpp"
 #include "ai/application/conversations/IProjectMemoryRepository.hpp"
 #include "ai/application/projects/IProjectRepository.hpp"
 #include "ai/application/IRunRepository.hpp"

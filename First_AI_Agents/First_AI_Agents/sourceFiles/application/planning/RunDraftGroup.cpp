@@ -2,7 +2,7 @@
 
 #include "ai/application/IWorkflowRunner.hpp"
 #include "ai/application/planning/NextRunPlan.hpp"
-#include "ai/application/RunInterfaceContract.hpp"
+#include "ai/application/execution/RunInterfaceContract.hpp"
 
 #include <algorithm>
 #include <set>

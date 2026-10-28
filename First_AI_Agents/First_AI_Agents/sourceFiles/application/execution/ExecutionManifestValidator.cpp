@@ -5,7 +5,7 @@
 #include "ai/application/verification/ManifestBootstrapValidator.hpp"
 #include "ai/application/verification/ManifestMandatoryVerificationPolicy.hpp"
 #include "ai/application/execution/ManifestRouting.hpp"
-#include "ai/application/RunWorkspaceScopeTypes.hpp"
+#include "ai/application/execution/RunWorkspaceScopeTypes.hpp"
 #include "ai/application/workspace/WorkspaceReadPolicy.hpp"
 
 #include <algorithm>

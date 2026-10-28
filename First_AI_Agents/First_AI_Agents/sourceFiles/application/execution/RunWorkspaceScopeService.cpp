@@ -1,4 +1,4 @@
-#include "ai/application/RunWorkspaceScopeService.hpp"
+#include "ai/application/execution/RunWorkspaceScopeService.hpp"
 
 #include "ai/application/execution/ExecutionManifestDependencyGraph.hpp"
 #include "ai/application/workspace/FilesystemPathUtils.hpp"

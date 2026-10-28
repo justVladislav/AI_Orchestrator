@@ -6,13 +6,13 @@
 #include "ai/application/verification/IManifestVerificationContinuationRepository.hpp"
 #include "ai/application/verification/IManifestVerificationManualHandoffRepository.hpp"
 #include "ai/application/verification/ManifestVerificationManualHandoffApplyAuthority.hpp"
-#include "ai/application/IManifestWorkLedgerRepository.hpp"
+#include "ai/application/execution/IManifestWorkLedgerRepository.hpp"
 #include "ai/application/IRunRepository.hpp"
 #include "ai/application/IWorkflowRunner.hpp"
 #include "ai/application/verification/ManifestProposalContentHash.hpp"
 #include "ai/application/verification/IVerificationBootstrapRepository.hpp"
 #include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"
-#include "ai/application/ManifestWorkLedgerTypes.hpp"
+#include "ai/application/execution/ManifestWorkLedgerTypes.hpp"
 #include "ai/application/Sha256.hpp"
 
 #include <algorithm>

@@ -2,7 +2,7 @@
 
 #include "ai/application/verification/IManifestVerificationBaselineNormalizationRepository.hpp"
 #include "ai/application/verification/IManifestVerificationContinuationRepository.hpp"
-#include "ai/application/IManifestWorkLedgerRepository.hpp"
+#include "ai/application/execution/IManifestWorkLedgerRepository.hpp"
 #include "ai/application/IRunRepository.hpp"
 #include "ai/application/verification/ManifestVerificationContinuationService.hpp"
 #include "ai/application/verification/QmlLintDiagnosticPolicy.hpp"

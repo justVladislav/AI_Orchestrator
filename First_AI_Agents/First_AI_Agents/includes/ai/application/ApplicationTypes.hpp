@@ -2,7 +2,7 @@
 
 #include "ai/application/catalog/ExecutionProfileTypes.hpp"
 #include "ai/application/ProviderExecutionBudget.hpp"
-#include "ai/application/RunInterfaceContract.hpp"
+#include "ai/application/execution/RunInterfaceContract.hpp"
 #include "ai/models/TokenUsage.hpp"
 
 #include <chrono>

@@ -4,7 +4,7 @@
 #include <ai/application/ExecutionAnalyticsService.hpp>
 #include <ai/application/execution/ExecutionManifestReadModelService.hpp>
 #include <ai/application/catalog/ProviderCatalogService.hpp>
-#include <ai/application/IManifestWorkLedgerRepository.hpp>
+#include <ai/application/execution/IManifestWorkLedgerRepository.hpp>
 #include <ai/application/InMemoryExecutionManifestRepository.hpp>
 #include <ai/application/InMemoryManifestTaskExecutionRepository.hpp>
 #include <ai/application/InMemoryManifestWorkLedgerRepository.hpp>
@@ -17,7 +17,7 @@
 #include <ai/application/verification/ManifestProposalContentHash.hpp>
 #include <ai/application/execution/ManifestRouting.hpp>
 #include <ai/application/verification/ManifestProposalOverlay.hpp>
-#include <ai/application/ManifestWorkLedgerTypes.hpp>
+#include <ai/application/execution/ManifestWorkLedgerTypes.hpp>
 #include <ai/application/MockWorkflowRunner.hpp>
 #include <ai/application/OrchestrationService.hpp>
 #include <ai/application/RunManager.hpp>

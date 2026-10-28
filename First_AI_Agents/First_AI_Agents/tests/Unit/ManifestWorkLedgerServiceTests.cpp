@@ -4,7 +4,7 @@
 // production wiring is exercised end to end through ManifestWorkflowRunner,
 // ChangeSetApplyService, ProposalReviewService, RunManager, and
 // OrchestrationService's own test suites.
-#include "ai/application/ManifestWorkLedgerService.hpp"
+#include "ai/application/execution/ManifestWorkLedgerService.hpp"
 #include "RecordingOutcomeBriefTrigger.hpp"
 #include "ai/application/IWorkflowResolver.hpp"
 #include "ai/application/OrchestrationService.hpp"

@@ -4,7 +4,7 @@
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/IdGenerator.hpp"
 #include "ai/application/proposals/ProposedChangeSetParser.hpp"
-#include "ai/application/RunWorkspaceScopeService.hpp"
+#include "ai/application/execution/RunWorkspaceScopeService.hpp"
 
 #include <nlohmann/json.hpp>
 

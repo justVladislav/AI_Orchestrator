@@ -1,7 +1,7 @@
 // Unit tests for RunWorkspaceScopeService (AG-15): the pure freeze/expansion
 // assembly logic, entirely in-memory - no SQLite. Repository round-trip
 // coverage lives in RunWorkspaceScopeRepositoryTests.cpp.
-#include "ai/application/RunWorkspaceScopeService.hpp"
+#include "ai/application/execution/RunWorkspaceScopeService.hpp"
 
 #include "ai/application/InMemoryRunWorkspaceScopeRepository.hpp"
 

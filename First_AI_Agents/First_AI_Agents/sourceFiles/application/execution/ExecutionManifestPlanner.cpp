@@ -1,7 +1,7 @@
 #include "ai/application/execution/ExecutionManifestPlanner.hpp"
 #include "ai/application/CostCalculation.hpp"
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
-#include "ai/application/RunWorkspaceScopeService.hpp"
+#include "ai/application/execution/RunWorkspaceScopeService.hpp"
 
 #include "ai/application/execution/ExecutionManifestDraftCompiler.hpp"
 #include "ai/application/execution/ExecutionManifestExecutionCapacity.hpp"

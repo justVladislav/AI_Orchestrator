@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/ManifestWorkLedgerTypes.hpp"
+#include "ai/application/execution/ManifestWorkLedgerTypes.hpp"
 #include "ai/common/Result.hpp"
 
 #include <cstddef>

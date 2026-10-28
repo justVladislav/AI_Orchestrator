@@ -3,8 +3,8 @@
 #include "ai/application/execution/IExecutionManifestRepository.hpp"
 #include "ai/application/verification/IManifestVerificationBaselineNormalizationRepository.hpp"
 #include "ai/application/verification/IManifestVerificationContinuationRepository.hpp"
-#include "ai/application/IManifestWorkLedgerRepository.hpp"
-#include "ai/application/IRunWorkspaceScopeRepository.hpp"
+#include "ai/application/execution/IManifestWorkLedgerRepository.hpp"
+#include "ai/application/execution/IRunWorkspaceScopeRepository.hpp"
 #include "ai/application/verification/ManifestVerificationContinuationTypes.hpp"
 
 namespace ai::application {

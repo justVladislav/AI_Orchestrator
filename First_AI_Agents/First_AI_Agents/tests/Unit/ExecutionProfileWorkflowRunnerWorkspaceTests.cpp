@@ -21,7 +21,7 @@
 #include "ai/application/OrchestrationService.hpp"
 #include "ai/application/projects/ProjectService.hpp"
 #include "ai/application/catalog/ProviderCatalogService.hpp"
-#include "ai/application/RunPathClaimRegistry.hpp"
+#include "ai/application/execution/RunPathClaimRegistry.hpp"
 #include "ai/application/WorkflowRouter.hpp"
 #include "ai/infrastructure/FileChangeProposalStore.hpp"
 

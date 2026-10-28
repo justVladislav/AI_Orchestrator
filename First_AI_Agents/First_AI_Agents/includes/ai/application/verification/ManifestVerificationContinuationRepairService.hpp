@@ -4,9 +4,9 @@
 #include "ai/application/proposals/ChangeProposalService.hpp"
 #include "ai/application/execution/ExecutionManifestExecutor.hpp"
 #include "ai/application/execution/ExecutionManifestService.hpp"
-#include "ai/application/IManifestTaskExecutionRepository.hpp"
+#include "ai/application/execution/IManifestTaskExecutionRepository.hpp"
 #include "ai/application/verification/IManifestVerificationContinuationRepository.hpp"
-#include "ai/application/IManifestWorkLedgerRepository.hpp"
+#include "ai/application/execution/IManifestWorkLedgerRepository.hpp"
 #include "ai/application/catalog/IModelRepository.hpp"
 #include "ai/application/projects/IProjectRepository.hpp"
 #include "ai/application/verification/IVerificationScratchRootProvider.hpp"
@@ -14,7 +14,7 @@
 #include "ai/application/IRunRepository.hpp"
 #include "ai/application/verification/ManifestProposalSetVerifier.hpp"
 #include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"
-#include "ai/application/ManifestWorkLedgerService.hpp"
+#include "ai/application/execution/ManifestWorkLedgerService.hpp"
 #include "ai/providers/IProviderAgentSession.hpp"
 
 #include <filesystem>

@@ -1,8 +1,8 @@
 #pragma once
 
 #include "ai/application/execution/ExecutionManifestTypes.hpp"
-#include "ai/application/IRunWorkspaceScopeRepository.hpp"
-#include "ai/application/RunWorkspaceScopeTypes.hpp"
+#include "ai/application/execution/IRunWorkspaceScopeRepository.hpp"
+#include "ai/application/execution/RunWorkspaceScopeTypes.hpp"
 #include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 #include "ai/application/workspace/WorkspaceReadPolicy.hpp"
 #include "ai/common/Result.hpp"
