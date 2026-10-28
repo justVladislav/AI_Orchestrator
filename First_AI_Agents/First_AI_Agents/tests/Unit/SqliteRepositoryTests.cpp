@@ -4,7 +4,7 @@
 #include "ai/application/conversations/ChatProjectContext.hpp"
 #include "ai/application/settings/ApplicationSettingsService.hpp"
 #include "ai/application/catalog/ExecutionProfileService.hpp"
-#include "ai/application/InMemoryRepositories.hpp"
+#include "ai/application/inmemory/InMemoryRepositories.hpp"
 #include "ai/application/execution/MockWorkflowRunner.hpp"
 #include "ai/application/execution/OrchestrationService.hpp"
 #include "ai/application/projects/ProjectService.hpp"

@@ -1,8 +1,8 @@
 #include "ai/application/comparison/ComparisonService.hpp"
 #include "ai/application/comparison/ComparisonReadModelService.hpp"
 #include "ai/application/comparison/ComparisonExecutionManager.hpp"
-#include "ai/application/InMemoryComparisonSessionRepository.hpp"
-#include "ai/application/InMemoryRepositories.hpp"
+#include "ai/application/inmemory/InMemoryComparisonSessionRepository.hpp"
+#include "ai/application/inmemory/InMemoryRepositories.hpp"
 #include "ai/application/projects/ProjectService.hpp"
 #include "ai/application/catalog/ProviderCatalogService.hpp"
 

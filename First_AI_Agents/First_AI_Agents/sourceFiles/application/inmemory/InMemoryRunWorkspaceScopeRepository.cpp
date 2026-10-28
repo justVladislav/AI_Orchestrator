@@ -1,4 +1,4 @@
-#include "ai/application/InMemoryRunWorkspaceScopeRepository.hpp"
+#include "ai/application/inmemory/InMemoryRunWorkspaceScopeRepository.hpp"
 
 #include <algorithm>
 

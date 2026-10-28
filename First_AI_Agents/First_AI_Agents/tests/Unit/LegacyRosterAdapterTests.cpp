@@ -6,7 +6,7 @@
 // No provider, no SQLite, no repository reads inside the adapter itself.
 #include "ai/application/execution/ExecutionAssignmentValidation.hpp"
 #include "ai/application/execution/IWorkflowRunner.hpp"
-#include "ai/application/InMemoryRepositories.hpp"
+#include "ai/application/inmemory/InMemoryRepositories.hpp"
 #include "ai/application/execution/LegacyRosterAdapter.hpp"
 #include "ai/application/execution/ManifestRouting.hpp"
 #include "ai/application/catalog/ProviderCatalogService.hpp"

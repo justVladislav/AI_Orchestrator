@@ -1,7 +1,7 @@
 #include "../../test_support/QtTestSupport.hpp"
 
-#include <ai/application/InMemoryOutcomeBriefRepository.hpp>
-#include <ai/application/InMemoryRepositories.hpp>
+#include <ai/application/inmemory/InMemoryOutcomeBriefRepository.hpp>
+#include <ai/application/inmemory/InMemoryRepositories.hpp>
 #include <ai/application/planning/OutcomeBrief.hpp>
 #include <ai/application/planning/OutcomeBriefReadModelService.hpp>
 #include <ai/application/planning/OutcomeBriefReconciler.hpp>

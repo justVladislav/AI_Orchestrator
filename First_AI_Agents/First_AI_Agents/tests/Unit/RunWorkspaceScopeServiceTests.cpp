@@ -3,7 +3,7 @@
 // coverage lives in RunWorkspaceScopeRepositoryTests.cpp.
 #include "ai/application/execution/RunWorkspaceScopeService.hpp"
 
-#include "ai/application/InMemoryRunWorkspaceScopeRepository.hpp"
+#include "ai/application/inmemory/InMemoryRunWorkspaceScopeRepository.hpp"
 
 #include <algorithm>
 #include <chrono>

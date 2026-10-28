@@ -1,4 +1,4 @@
-#include "ai/application/InMemoryManifestVerificationManualHandoffRepository.hpp"
+#include "ai/application/inmemory/InMemoryManifestVerificationManualHandoffRepository.hpp"
 
 #include <algorithm>
 

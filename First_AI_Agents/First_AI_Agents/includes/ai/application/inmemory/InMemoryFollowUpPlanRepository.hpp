@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/planning/IFollowUpPlanRequestRepository.hpp"
-#include "ai/application/InMemoryRepositories.hpp"
+#include "ai/application/inmemory/InMemoryRepositories.hpp"
 
 #include <map>
 #include <mutex>

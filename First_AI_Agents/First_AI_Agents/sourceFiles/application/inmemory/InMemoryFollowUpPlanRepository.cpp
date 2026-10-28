@@ -1,4 +1,4 @@
-#include "ai/application/InMemoryFollowUpPlanRepository.hpp"
+#include "ai/application/inmemory/InMemoryFollowUpPlanRepository.hpp"
 
 #include "ai/application/planning/RunDraftGroup.hpp"
 

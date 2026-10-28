@@ -1,4 +1,4 @@
-#include "ai/application/InMemoryManifestVerificationContinuationRepository.hpp"
+#include "ai/application/inmemory/InMemoryManifestVerificationContinuationRepository.hpp"
 
 namespace ai::application {
 

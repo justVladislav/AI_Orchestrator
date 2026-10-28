@@ -1,4 +1,4 @@
-#include "ai/application/InMemoryOutcomeBriefRepository.hpp"
+#include "ai/application/inmemory/InMemoryOutcomeBriefRepository.hpp"
 
 #include <algorithm>
 

@@ -1,6 +1,6 @@
 #include "ai/application/execution/RunInterfaceContract.hpp"
 
-#include "ai/application/InMemoryRepositories.hpp"
+#include "ai/application/inmemory/InMemoryRepositories.hpp"
 
 #include <iostream>
 #include <stdexcept>

@@ -10,7 +10,7 @@
 #include "ai/application/execution/ExecutionProfileWorkflowRunner.hpp"
 #include "ai/application/providers/ICredentialStore.hpp"
 #include "ai/application/conversations/IProjectMemoryRepository.hpp"
-#include "ai/application/InMemoryRepositories.hpp"
+#include "ai/application/inmemory/InMemoryRepositories.hpp"
 #include "ai/application/agents/ModelExecutionService.hpp"
 #include "ai/application/execution/MockWorkflowRunner.hpp"
 #include "ai/application/execution/OrchestrationService.hpp"

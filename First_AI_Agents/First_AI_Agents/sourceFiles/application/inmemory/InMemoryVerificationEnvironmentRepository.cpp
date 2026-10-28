@@ -1,4 +1,4 @@
-#include "ai/application/InMemoryVerificationEnvironmentRepository.hpp"
+#include "ai/application/inmemory/InMemoryVerificationEnvironmentRepository.hpp"
 
 namespace ai::application {
 

@@ -4,7 +4,7 @@
 // record. Pure value tests plus the Backend builder over in-memory repositories: no
 // provider, no SQLite.
 #include "ai/application/agents/AgentToolTurnLoopRunner.hpp"
-#include "ai/application/InMemoryRepositories.hpp"
+#include "ai/application/inmemory/InMemoryRepositories.hpp"
 #include "ai/application/execution/ManifestRouting.hpp"
 #include "ai/application/execution/TaskRouteResolver.hpp"
 

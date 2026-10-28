@@ -1,5 +1,5 @@
 #include "ai/application/analytics/ExecutionAnalyticsService.hpp"
-#include "ai/application/InMemoryRepositories.hpp"
+#include "ai/application/inmemory/InMemoryRepositories.hpp"
 
 #include <chrono>
 #include <cstdint>

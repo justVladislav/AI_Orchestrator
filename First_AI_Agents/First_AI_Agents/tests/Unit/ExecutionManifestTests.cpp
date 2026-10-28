@@ -1,8 +1,8 @@
 #include "ai/application/execution/ExecutionManifestService.hpp"
 #include "ai/application/execution/ExecutionManifestParser.hpp"
 #include "ai/application/execution/ExecutionManifestValidator.hpp"
-#include "ai/application/InMemoryExecutionManifestRepository.hpp"
-#include "ai/application/InMemoryRepositories.hpp"
+#include "ai/application/inmemory/InMemoryExecutionManifestRepository.hpp"
+#include "ai/application/inmemory/InMemoryRepositories.hpp"
 #include "ai/application/verification/QmlLintDiagnosticPolicy.hpp"
 #include "ai/application/workspace/WorkspaceReadPolicy.hpp"
 

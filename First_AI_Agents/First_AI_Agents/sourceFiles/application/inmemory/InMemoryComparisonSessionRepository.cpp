@@ -1,4 +1,4 @@
-#include "ai/application/InMemoryComparisonSessionRepository.hpp"
+#include "ai/application/inmemory/InMemoryComparisonSessionRepository.hpp"
 
 #include <algorithm>
 #include <utility>

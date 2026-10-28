@@ -3,7 +3,7 @@
 
 #include "RunDraftRepositoryContract.hpp"
 
-#include "ai/application/InMemoryRepositories.hpp"
+#include "ai/application/inmemory/InMemoryRepositories.hpp"
 #include "ai/application/planning/RunDraftGroup.hpp"
 
 #include <atomic>

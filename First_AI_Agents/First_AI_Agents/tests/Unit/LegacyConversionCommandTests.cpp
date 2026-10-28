@@ -4,7 +4,7 @@
 // in-memory repositories and a mock workflow runner (provider-free). The Manifest workflow
 // itself is exercised end to end in ManifestWorkflowRunnerTests.
 #include "ai/application/execution/IWorkflowRunner.hpp"
-#include "ai/application/InMemoryRepositories.hpp"
+#include "ai/application/inmemory/InMemoryRepositories.hpp"
 #include "ai/application/execution/LegacyConversionRecord.hpp"
 #include "ai/application/execution/LegacyRosterAdapter.hpp"
 #include "ai/application/execution/MockWorkflowRunner.hpp"

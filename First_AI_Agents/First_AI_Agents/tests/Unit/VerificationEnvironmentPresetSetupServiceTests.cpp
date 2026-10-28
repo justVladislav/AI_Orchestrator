@@ -8,7 +8,7 @@
 // matching this codebase's own established "by construction" convention
 // (see e.g. ARCHITECTURE_GAPS.md's QML-P4R.6 canary entries).
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
-#include "ai/application/InMemoryVerificationEnvironmentRepository.hpp"
+#include "ai/application/inmemory/InMemoryVerificationEnvironmentRepository.hpp"
 #include "ai/application/verification/ManifestProposalSetVerifier.hpp"
 #include "ai/application/verification/VerificationEnvironmentDiscoveryService.hpp"
 #include "ai/application/verification/VerificationEnvironmentPresetSetupService.hpp"

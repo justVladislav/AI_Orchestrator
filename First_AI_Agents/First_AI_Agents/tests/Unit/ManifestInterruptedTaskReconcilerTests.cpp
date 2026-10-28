@@ -6,10 +6,10 @@
 // check. The end-to-end behaviour - a real SQLite crash state, the production startup order, a
 // restart - is proved in ManifestRosterRestartTests.
 #include "ai/application/execution/IWorkflowRunner.hpp"
-#include "ai/application/InMemoryExecutionManifestRepository.hpp"
-#include "ai/application/InMemoryManifestTaskExecutionRepository.hpp"
-#include "ai/application/InMemoryManifestWorkLedgerRepository.hpp"
-#include "ai/application/InMemoryRepositories.hpp"
+#include "ai/application/inmemory/InMemoryExecutionManifestRepository.hpp"
+#include "ai/application/inmemory/InMemoryManifestTaskExecutionRepository.hpp"
+#include "ai/application/inmemory/InMemoryManifestWorkLedgerRepository.hpp"
+#include "ai/application/inmemory/InMemoryRepositories.hpp"
 #include "ai/application/execution/ManifestInterruptedTaskReconciler.hpp"
 #include "ai/application/execution/ManifestRouting.hpp"
 #include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"

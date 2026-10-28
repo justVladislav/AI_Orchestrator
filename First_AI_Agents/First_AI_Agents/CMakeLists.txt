@@ -84,15 +84,15 @@ set(APPLICATION_SOURCES
     sourceFiles/application/execution/ManifestWorkLedgerService.cpp
     sourceFiles/application/execution/ManifestInterruptedTaskReconciler.cpp
     sourceFiles/application/verification/ManifestVerificationContinuationTypes.cpp
-    sourceFiles/application/InMemoryManifestVerificationContinuationRepository.cpp
+    sourceFiles/application/inmemory/InMemoryManifestVerificationContinuationRepository.cpp
     sourceFiles/application/verification/ManifestVerificationContinuationService.cpp
     sourceFiles/application/verification/ManifestVerificationContinuationPreparationService.cpp
     sourceFiles/application/verification/ManifestVerificationContinuationReadModelService.cpp
     sourceFiles/application/verification/ManifestVerificationAttributionService.cpp
     sourceFiles/application/verification/ManifestVerificationLegacyBaselineNormalizationService.cpp
-    sourceFiles/application/InMemoryManifestVerificationBaselineNormalizationRepository.cpp
+    sourceFiles/application/inmemory/InMemoryManifestVerificationBaselineNormalizationRepository.cpp
     sourceFiles/application/verification/ManifestVerificationManualHandoffTypes.cpp
-    sourceFiles/application/InMemoryManifestVerificationManualHandoffRepository.cpp
+    sourceFiles/application/inmemory/InMemoryManifestVerificationManualHandoffRepository.cpp
     sourceFiles/application/verification/ManifestVerificationManualHandoffService.cpp
     sourceFiles/application/verification/ManifestVerificationManualHandoffReadModelService.cpp
     sourceFiles/application/verification/ManifestVerificationContinuationRepairService.cpp
@@ -102,16 +102,16 @@ set(APPLICATION_SOURCES
     sourceFiles/application/verification/VerificationEnvironmentDiscoveryService.cpp
     sourceFiles/application/verification/VerificationEnvironmentPresetSetupService.cpp
     sourceFiles/application/workspace/WorkspaceBaselineProvenance.cpp
-    sourceFiles/application/InMemoryExecutionManifestRepository.cpp
-    sourceFiles/application/InMemoryManifestTaskExecutionRepository.cpp
-    sourceFiles/application/InMemoryManifestWorkLedgerRepository.cpp
-    sourceFiles/application/InMemoryRunWorkspaceScopeRepository.cpp
-    sourceFiles/application/InMemoryVerificationEnvironmentRepository.cpp
+    sourceFiles/application/inmemory/InMemoryExecutionManifestRepository.cpp
+    sourceFiles/application/inmemory/InMemoryManifestTaskExecutionRepository.cpp
+    sourceFiles/application/inmemory/InMemoryManifestWorkLedgerRepository.cpp
+    sourceFiles/application/inmemory/InMemoryRunWorkspaceScopeRepository.cpp
+    sourceFiles/application/inmemory/InMemoryVerificationEnvironmentRepository.cpp
     sourceFiles/application/execution/ExecutionManifestReadModelService.cpp
     sourceFiles/application/context/ContextSnapshot.cpp
     sourceFiles/application/Sha256.cpp
     sourceFiles/application/IdGenerator.cpp
-    sourceFiles/application/InMemoryRepositories.cpp
+    sourceFiles/application/inmemory/InMemoryRepositories.cpp
     sourceFiles/application/projects/ProjectService.cpp
     sourceFiles/application/projects/TaskService.cpp
     sourceFiles/application/execution/MockWorkflowRunner.cpp
@@ -153,7 +153,7 @@ set(APPLICATION_SOURCES
     sourceFiles/application/planning/FollowUpComposerQuote.cpp
     sourceFiles/application/planning/FollowUpPlanAdvisories.cpp
     sourceFiles/application/planning/FollowUpPlanRequest.cpp
-    sourceFiles/application/InMemoryFollowUpPlanRepository.cpp
+    sourceFiles/application/inmemory/InMemoryFollowUpPlanRepository.cpp
     sourceFiles/application/planning/FollowUpAdmission.cpp
     sourceFiles/application/planning/FollowUpPlanService.cpp
     sourceFiles/application/planning/FollowUpComposerProcessor.cpp
@@ -162,7 +162,7 @@ set(APPLICATION_SOURCES
     sourceFiles/application/planning/FollowUpPlanReadModel.cpp
     sourceFiles/application/planning/OutcomeBrief.cpp
     sourceFiles/application/planning/OutcomeBriefRepository.cpp
-    sourceFiles/application/InMemoryOutcomeBriefRepository.cpp
+    sourceFiles/application/inmemory/InMemoryOutcomeBriefRepository.cpp
     sourceFiles/application/planning/OutcomeBriefSources.cpp
     sourceFiles/application/planning/OutcomeBriefReconciler.cpp
     sourceFiles/application/planning/OutcomeBriefReadModelService.cpp
@@ -181,7 +181,7 @@ set(APPLICATION_SOURCES
     sourceFiles/application/execution/ManifestMemberUsage.cpp
     sourceFiles/application/verification/ManifestVerificationProfileBinder.cpp
     sourceFiles/application/verification/VerificationBootstrapTypes.cpp
-    sourceFiles/application/InMemoryVerificationBootstrapRepository.cpp
+    sourceFiles/application/inmemory/InMemoryVerificationBootstrapRepository.cpp
     sourceFiles/application/verification/ManifestBootstrapValidator.cpp
     sourceFiles/application/verification/VerificationBootstrapRetryService.cpp
     sourceFiles/application/proposals/ChangeSetApplyService.cpp
@@ -197,11 +197,11 @@ set(APPLICATION_SOURCES
     sourceFiles/application/agents/AgentToolReadModelService.cpp
     sourceFiles/application/conversations/ChatService.cpp
     sourceFiles/application/agents/ModelExecutionTypes.cpp
-    sourceFiles/application/InMemoryModelExecutionRepository.cpp
+    sourceFiles/application/inmemory/InMemoryModelExecutionRepository.cpp
     sourceFiles/application/agents/ModelExecutionService.cpp
     sourceFiles/application/analytics/ExecutionAnalyticsService.cpp
     sourceFiles/application/comparison/ComparisonTypes.cpp
-    sourceFiles/application/InMemoryComparisonSessionRepository.cpp
+    sourceFiles/application/inmemory/InMemoryComparisonSessionRepository.cpp
     sourceFiles/application/comparison/ComparisonService.cpp
     sourceFiles/application/comparison/ComparisonReadModelService.cpp
     sourceFiles/application/comparison/ComparisonQualityEvaluator.cpp

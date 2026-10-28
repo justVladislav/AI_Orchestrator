@@ -3,7 +3,7 @@
 // MockWorkflowRunner's WorkflowResult::finalOutput. ExecutionProfileWorkflowRunner's
 // finalOutput is covered separately in WorkflowRoutingAndProductionTests.cpp,
 // which already has the fake provider-client fixtures that test needs.
-#include "ai/application/InMemoryRepositories.hpp"
+#include "ai/application/inmemory/InMemoryRepositories.hpp"
 #include "ai/application/execution/IWorkflowResolver.hpp"
 #include "ai/application/execution/MockWorkflowRunner.hpp"
 #include "ai/application/execution/OrchestrationService.hpp"

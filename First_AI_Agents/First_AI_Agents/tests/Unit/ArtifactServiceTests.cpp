@@ -1,7 +1,7 @@
 #include "ai/application/artifacts/ArtifactService.hpp"
 #include "ai/application/artifacts/ArtifactPathPolicy.hpp"
 #include "ai/application/context/ContextSnapshot.hpp"
-#include "ai/application/InMemoryRepositories.hpp"
+#include "ai/application/inmemory/InMemoryRepositories.hpp"
 #include "ai/application/execution/MockWorkflowRunner.hpp"
 #include "ai/application/execution/OrchestrationService.hpp"
 #include "ai/application/workspace/FilesystemPathUtils.hpp"

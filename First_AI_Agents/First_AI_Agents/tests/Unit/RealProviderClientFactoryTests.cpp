@@ -1,4 +1,4 @@
-#include "ai/application/InMemoryRepositories.hpp"
+#include "ai/application/inmemory/InMemoryRepositories.hpp"
 #include "ai/backend/RealProviderClientFactory.hpp"
 
 #include <iostream>

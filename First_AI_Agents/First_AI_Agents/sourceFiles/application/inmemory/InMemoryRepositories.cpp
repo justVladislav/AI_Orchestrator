@@ -1,4 +1,4 @@
-#include "ai/application/InMemoryRepositories.hpp"
+#include "ai/application/inmemory/InMemoryRepositories.hpp"
 
 #include "ai/application/artifacts/ArtifactPathPolicy.hpp"
 #include "ai/application/budget/CacheDurationAccounting.hpp"

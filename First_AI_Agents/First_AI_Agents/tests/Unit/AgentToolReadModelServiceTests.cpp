@@ -3,7 +3,7 @@
 // and, critically, that proposal file-change bodies (proposedContent /
 // capturedOriginalContent) are never eagerly populated in the projection.
 #include "ai/application/agents/AgentToolReadModelService.hpp"
-#include "ai/application/InMemoryRepositories.hpp"
+#include "ai/application/inmemory/InMemoryRepositories.hpp"
 #include "ai/infrastructure/FileChangeProposalStore.hpp"
 
 #include <cassert>

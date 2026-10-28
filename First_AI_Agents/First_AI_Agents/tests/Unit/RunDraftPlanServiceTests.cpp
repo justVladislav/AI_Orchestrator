@@ -5,7 +5,7 @@
 
 #include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/execution/IRunSourceLookup.hpp"
-#include "ai/application/InMemoryRepositories.hpp"
+#include "ai/application/inmemory/InMemoryRepositories.hpp"
 #include "ai/application/planning/RunDraftGroup.hpp"
 #include "ai/application/planning/RunDraftPlanService.hpp"
 #include "ai/application/Sha256.hpp"

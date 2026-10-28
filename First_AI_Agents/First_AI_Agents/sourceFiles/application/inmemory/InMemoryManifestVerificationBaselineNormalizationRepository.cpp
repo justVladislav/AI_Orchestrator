@@ -1,4 +1,4 @@
-#include "ai/application/InMemoryManifestVerificationBaselineNormalizationRepository.hpp"
+#include "ai/application/inmemory/InMemoryManifestVerificationBaselineNormalizationRepository.hpp"
 
 namespace ai::application {
 

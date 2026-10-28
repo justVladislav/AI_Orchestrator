@@ -3,8 +3,8 @@
 // ActionRequired disposition. Uses the trivial Mock workflow (no provider/
 // session mocking needed) so the created Run can actually reach a terminal
 // state cheaply.
-#include "ai/application/InMemoryRepositories.hpp"
-#include "ai/application/InMemoryVerificationBootstrapRepository.hpp"
+#include "ai/application/inmemory/InMemoryRepositories.hpp"
+#include "ai/application/inmemory/InMemoryVerificationBootstrapRepository.hpp"
 #include "ai/application/execution/MockWorkflowRunner.hpp"
 #include "ai/application/execution/OrchestrationService.hpp"
 #include "ai/application/execution/RunManager.hpp"

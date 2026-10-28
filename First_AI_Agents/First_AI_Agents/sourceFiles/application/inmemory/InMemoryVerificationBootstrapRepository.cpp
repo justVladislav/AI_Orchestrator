@@ -1,4 +1,4 @@
-#include "ai/application/InMemoryVerificationBootstrapRepository.hpp"
+#include "ai/application/inmemory/InMemoryVerificationBootstrapRepository.hpp"
 
 #include <algorithm>
 

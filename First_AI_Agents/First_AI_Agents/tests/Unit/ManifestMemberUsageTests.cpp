@@ -6,7 +6,7 @@
 // assignment uses lead position + 1 + task ordinal) so the tests do not lean on the code
 // they check. The writer-side golden - the rows the real runner and executor produce - is
 // asserted in ManifestWorkflowRunnerTests.
-#include "ai/application/InMemoryRepositories.hpp"
+#include "ai/application/inmemory/InMemoryRepositories.hpp"
 #include "ai/application/execution/ManifestMemberUsage.hpp"
 #include "ai/application/execution/ManifestRouting.hpp"
 #include "ai/application/agents/ModelExecutionService.hpp"

@@ -6,7 +6,7 @@
 // through BackendRuntime's storage.unavailable controlled-failure path.
 #include "ai/application/execution/ExecutionAssignmentValidation.hpp"
 #include "ai/application/catalog/ExecutionProfileService.hpp"
-#include "ai/application/InMemoryRepositories.hpp"
+#include "ai/application/inmemory/InMemoryRepositories.hpp"
 #include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/projects/ProjectService.hpp"
 #include "ai/application/catalog/ProviderCatalogService.hpp"

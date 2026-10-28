@@ -1,7 +1,7 @@
 #include "FollowUpPlanRequestRepositoryContract.hpp"
 
-#include "ai/application/InMemoryFollowUpPlanRepository.hpp"
-#include "ai/application/InMemoryRepositories.hpp"
+#include "ai/application/inmemory/InMemoryFollowUpPlanRepository.hpp"
+#include "ai/application/inmemory/InMemoryRepositories.hpp"
 
 #include <iostream>
 #include <map>
