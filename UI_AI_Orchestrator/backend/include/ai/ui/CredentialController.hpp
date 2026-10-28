@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ai/application/CredentialManagementService.hpp>
+#include <ai/application/providers/CredentialManagementService.hpp>
 #include <ai/ui/ProviderCatalogController.hpp>
 
 #include <QObject>

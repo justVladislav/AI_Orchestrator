@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ai/application/projects/IProjectRepository.hpp"
-#include "ai/application/IWorkspaceStateRepository.hpp"
+#include "ai/application/projects/IWorkspaceStateRepository.hpp"
 
 namespace ai::application {
 

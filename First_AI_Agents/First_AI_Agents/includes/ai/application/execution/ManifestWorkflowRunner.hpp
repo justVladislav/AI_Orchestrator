@@ -9,7 +9,7 @@
 #include "ai/application/verification/ManifestVerificationEnvironmentPreflight.hpp"
 #include "ai/application/execution/IManifestTaskExecutionRepository.hpp"
 #include "ai/application/catalog/IModelRepository.hpp"
-#include "ai/application/IProviderClient.hpp"
+#include "ai/application/providers/IProviderClient.hpp"
 #include "ai/application/catalog/IProviderRepository.hpp"
 #include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/verification/IVerificationBootstrapRepository.hpp"

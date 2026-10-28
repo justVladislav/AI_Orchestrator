@@ -12,7 +12,7 @@
 #include "ai/application/catalog/IProviderRepository.hpp"
 #include "ai/application/planning/IRunDraftRepository.hpp"
 #include "ai/application/execution/IRunRepository.hpp"
-#include "ai/application/IWorkspaceStateRepository.hpp"
+#include "ai/application/projects/IWorkspaceStateRepository.hpp"
 
 #include <functional>
 #include <mutex>

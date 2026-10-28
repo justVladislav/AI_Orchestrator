@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/ICredentialStore.hpp"
+#include "ai/application/providers/ICredentialStore.hpp"
 #include "ai/application/catalog/ProviderCatalogService.hpp"
 
 namespace ai::application {

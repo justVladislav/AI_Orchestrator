@@ -1,4 +1,4 @@
-#include "ai/application/FilesystemFollowUpFileLoader.hpp"
+#include "ai/application/planning/FilesystemFollowUpFileLoader.hpp"
 
 #include "ai/application/proposals/ChangeProposalValidator.hpp"
 #include "ai/application/workspace/FilesystemPathUtils.hpp"

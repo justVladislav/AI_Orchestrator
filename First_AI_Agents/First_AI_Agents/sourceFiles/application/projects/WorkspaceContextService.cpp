@@ -1,4 +1,4 @@
-#include "ai/application/WorkspaceContextService.hpp"
+#include "ai/application/projects/WorkspaceContextService.hpp"
 
 namespace ai::application {
 

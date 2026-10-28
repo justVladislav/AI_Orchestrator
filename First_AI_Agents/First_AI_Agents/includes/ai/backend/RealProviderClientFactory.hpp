@@ -1,7 +1,7 @@
 #pragma once
 
-#include "ai/application/ICredentialStore.hpp"
-#include "ai/application/IProviderClient.hpp"
+#include "ai/application/providers/ICredentialStore.hpp"
+#include "ai/application/providers/IProviderClient.hpp"
 #include "ai/application/catalog/IProviderRepository.hpp"
 
 #include <memory>

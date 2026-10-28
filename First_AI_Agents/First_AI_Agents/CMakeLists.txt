@@ -118,7 +118,7 @@ set(APPLICATION_SOURCES
     sourceFiles/application/execution/RunStageSettlement.cpp
     sourceFiles/application/execution/RunManager.cpp
     sourceFiles/application/execution/OrchestrationService.cpp
-    sourceFiles/application/WorkspaceContextService.cpp
+    sourceFiles/application/projects/WorkspaceContextService.cpp
     sourceFiles/application/catalog/ProviderCatalogTypes.cpp
     sourceFiles/application/catalog/ProviderCatalogService.cpp
     sourceFiles/application/budget/ProviderExecutionBudget.cpp
@@ -137,7 +137,7 @@ set(APPLICATION_SOURCES
     sourceFiles/application/verification/ManifestProposalSetVerifier.cpp
     sourceFiles/application/verification/QmlLintDiagnosticPolicy.cpp
     sourceFiles/application/verification/ManifestVerificationEnvironmentPreflight.cpp
-    sourceFiles/application/CredentialManagementService.cpp
+    sourceFiles/application/providers/CredentialManagementService.cpp
     sourceFiles/application/conversations/ChatTypes.cpp
     sourceFiles/application/conversations/ChatContextAssembler.cpp
     sourceFiles/application/conversations/ChatProjectContext.cpp
@@ -157,7 +157,7 @@ set(APPLICATION_SOURCES
     sourceFiles/application/planning/FollowUpAdmission.cpp
     sourceFiles/application/planning/FollowUpPlanService.cpp
     sourceFiles/application/planning/FollowUpComposerProcessor.cpp
-    sourceFiles/application/FilesystemFollowUpFileLoader.cpp
+    sourceFiles/application/planning/FilesystemFollowUpFileLoader.cpp
     sourceFiles/application/planning/FollowUpSourceReader.cpp
     sourceFiles/application/planning/FollowUpPlanReadModel.cpp
     sourceFiles/application/planning/OutcomeBrief.cpp

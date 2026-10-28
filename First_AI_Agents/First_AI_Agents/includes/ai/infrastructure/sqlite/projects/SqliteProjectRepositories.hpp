@@ -3,7 +3,7 @@
 #include "ai/application/verification/IProjectReadinessRepository.hpp"
 #include "ai/application/projects/IProjectRepository.hpp"
 #include "ai/application/projects/ITaskRepository.hpp"
-#include "ai/application/IWorkspaceStateRepository.hpp"
+#include "ai/application/projects/IWorkspaceStateRepository.hpp"
 #include "ai/common/Result.hpp"
 #include "ai/infrastructure/sqlite/SqliteDatabase.hpp"
 

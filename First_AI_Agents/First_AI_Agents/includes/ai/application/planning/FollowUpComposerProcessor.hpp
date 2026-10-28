@@ -3,7 +3,7 @@
 #include "ai/application/planning/FollowUpAdmission.hpp"
 #include "ai/application/planning/FollowUpPlanRequest.hpp"
 #include "ai/application/planning/IFollowUpPlanRequestRepository.hpp"
-#include "ai/application/IProviderClient.hpp"
+#include "ai/application/providers/IProviderClient.hpp"
 #include "ai/application/agents/ModelExecutionService.hpp"
 
 #include <chrono>

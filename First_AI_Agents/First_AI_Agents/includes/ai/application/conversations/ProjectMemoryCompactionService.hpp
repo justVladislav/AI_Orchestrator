@@ -3,7 +3,7 @@
 #include "ai/application/conversations/IProjectMemoryCompactionRepository.hpp"
 #include "ai/application/conversations/IProjectMemoryRepository.hpp"
 #include "ai/application/projects/IProjectRepository.hpp"
-#include "ai/application/IProviderClient.hpp"
+#include "ai/application/providers/IProviderClient.hpp"
 #include "ai/application/catalog/IProviderRepository.hpp"
 #include "ai/application/catalog/IModelRepository.hpp"
 

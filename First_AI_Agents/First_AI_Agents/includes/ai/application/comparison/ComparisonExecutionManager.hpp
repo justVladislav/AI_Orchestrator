@@ -3,7 +3,7 @@
 #include "ai/application/comparison/ComparisonQualityEvaluator.hpp"
 #include "ai/application/comparison/ComparisonService.hpp"
 #include "ai/application/projects/IProjectRepository.hpp"
-#include "ai/application/IProviderClient.hpp"
+#include "ai/application/providers/IProviderClient.hpp"
 
 #include <condition_variable>
 #include <deque>

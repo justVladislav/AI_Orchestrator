@@ -5,7 +5,7 @@
 
 #include "FollowUpServiceTestSupport.hpp"
 
-#include "ai/application/FilesystemFollowUpFileLoader.hpp"
+#include "ai/application/planning/FilesystemFollowUpFileLoader.hpp"
 #include "ai/application/planning/FollowUpSourceReader.hpp"
 #include "ai/application/InMemoryManifestWorkLedgerRepository.hpp"
 #include "ai/application/InMemoryOutcomeBriefRepository.hpp"

@@ -1,4 +1,4 @@
-#include "ai/application/CredentialManagementService.hpp"
+#include "ai/application/providers/CredentialManagementService.hpp"
 
 #include <utility>
 

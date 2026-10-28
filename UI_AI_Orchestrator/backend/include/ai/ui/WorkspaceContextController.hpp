@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ai/application/WorkspaceContextService.hpp>
+#include <ai/application/projects/WorkspaceContextService.hpp>
 
 #include <QObject>
 #include <QString>

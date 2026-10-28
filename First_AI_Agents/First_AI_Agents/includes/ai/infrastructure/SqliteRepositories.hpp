@@ -34,7 +34,7 @@
 #include "ai/application/execution/IRunRepository.hpp"
 #include "ai/application/verification/IVerificationBootstrapRepository.hpp"
 #include "ai/application/verification/IVerificationEnvironmentRepository.hpp"
-#include "ai/application/IWorkspaceStateRepository.hpp"
+#include "ai/application/projects/IWorkspaceStateRepository.hpp"
 #include "ai/common/Result.hpp"
 
 #include <filesystem>

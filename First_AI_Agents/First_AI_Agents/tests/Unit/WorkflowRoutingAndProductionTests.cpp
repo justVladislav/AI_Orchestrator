@@ -5,10 +5,10 @@
 // Credential Manager access. Real network/provider verification is
 // explicitly out of scope for this file (and for ordinary ctest in
 // general - see CODEX_CONTEXT.md).
-#include "ai/application/CredentialManagementService.hpp"
+#include "ai/application/providers/CredentialManagementService.hpp"
 #include "ai/application/catalog/ExecutionProfileService.hpp"
 #include "ai/application/execution/ExecutionProfileWorkflowRunner.hpp"
-#include "ai/application/ICredentialStore.hpp"
+#include "ai/application/providers/ICredentialStore.hpp"
 #include "ai/application/conversations/IProjectMemoryRepository.hpp"
 #include "ai/application/InMemoryRepositories.hpp"
 #include "ai/application/agents/ModelExecutionService.hpp"

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ai/application/IProviderClient.hpp"
+#include "ai/application/providers/IProviderClient.hpp"
 #include "ai/common/Result.hpp"
 #include "ai/models/Message.hpp"
 #include "ai/models/ModelRequest.hpp"

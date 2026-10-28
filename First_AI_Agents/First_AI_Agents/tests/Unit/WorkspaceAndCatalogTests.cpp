@@ -10,7 +10,7 @@
 #include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/projects/ProjectService.hpp"
 #include "ai/application/catalog/ProviderCatalogService.hpp"
-#include "ai/application/WorkspaceContextService.hpp"
+#include "ai/application/projects/WorkspaceContextService.hpp"
 
 #include <cassert>
 #include <chrono>

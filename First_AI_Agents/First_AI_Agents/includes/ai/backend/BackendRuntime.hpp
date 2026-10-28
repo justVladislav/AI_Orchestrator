@@ -9,7 +9,7 @@
 #include "ai/application/verification/VerificationScratchService.hpp"
 #include "ai/providers/IProviderAgentSession.hpp"
 #include "ai/application/settings/ApplicationSettingsService.hpp"
-#include "ai/application/CredentialManagementService.hpp"
+#include "ai/application/providers/CredentialManagementService.hpp"
 #include "ai/application/conversations/ChatService.hpp"
 #include "ai/application/comparison/ComparisonService.hpp"
 #include "ai/application/comparison/ComparisonReadModelService.hpp"
@@ -22,7 +22,7 @@
 #include "ai/application/planning/RunDraftPlanService.hpp"
 #include "ai/application/planning/RunDraftService.hpp"
 #include "ai/application/analytics/ExecutionAnalyticsService.hpp"
-#include "ai/application/ICredentialStore.hpp"
+#include "ai/application/providers/ICredentialStore.hpp"
 #include "ai/application/execution/OrchestrationService.hpp"
 #include "ai/application/verification/VerificationBootstrapRetryService.hpp"
 #include "ai/application/execution/MockWorkflowRunner.hpp"
@@ -44,7 +44,7 @@
 #include "ai/application/projects/ProjectService.hpp"
 #include "ai/application/projects/TaskService.hpp"
 #include "ai/application/catalog/ProviderCatalogService.hpp"
-#include "ai/application/WorkspaceContextService.hpp"
+#include "ai/application/projects/WorkspaceContextService.hpp"
 #include "ai/common/Error.hpp"
 
 #include <chrono>

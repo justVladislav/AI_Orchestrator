@@ -7,7 +7,7 @@
 
 #include "ai/application/planning/FollowUpComposerProcessor.hpp"
 #include "ai/application/planning/FollowUpPlanService.hpp"
-#include "ai/application/IProviderClient.hpp"
+#include "ai/application/providers/IProviderClient.hpp"
 #include "ai/application/InMemoryFollowUpPlanRepository.hpp"
 #include "ai/application/InMemoryRepositories.hpp"
 #include "ai/application/agents/ModelExecutionService.hpp"

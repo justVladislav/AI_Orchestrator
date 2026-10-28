@@ -10,7 +10,7 @@
 #include "ai/application/projects/ProjectService.hpp"
 #include "ai/application/projects/TaskService.hpp"
 #include "ai/application/catalog/ProviderCatalogService.hpp"
-#include "ai/application/WorkspaceContextService.hpp"
+#include "ai/application/projects/WorkspaceContextService.hpp"
 #include "ai/infrastructure/FileArtifactStore.hpp"
 #include "ai/infrastructure/SqliteRepositories.hpp"
 

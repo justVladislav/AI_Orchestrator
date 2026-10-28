@@ -4,9 +4,9 @@
 #include "ai/application/conversations/IChatMemoryRepository.hpp"
 #include "ai/application/catalog/IModelRepository.hpp"
 #include "ai/application/projects/IProjectRepository.hpp"
-#include "ai/application/IProviderClient.hpp"
+#include "ai/application/providers/IProviderClient.hpp"
 #include "ai/application/catalog/IProviderRepository.hpp"
-#include "ai/application/IWorkspaceStateRepository.hpp"
+#include "ai/application/projects/IWorkspaceStateRepository.hpp"
 #include "ai/application/context/ProjectContextSnapshot.hpp"
 
 #include <chrono>
