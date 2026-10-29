@@ -1112,7 +1112,7 @@ void waitForRunWorkerIdle(RunManager& manager, const RunId& runId,
 void giveWorkspaceAnExistingCmakePreset(Harness& harness)
 {
     std::ofstream presets(harness.workspace.path / "CMakePresets.json");
-    presets << R"({"version":3,"configurePresets":[{"name":"local-qt-debug",)"
+    presets << R"({"version":3,"configurePresets":[{"name":"local-qt-debug","generator":"Ninja",)"
                R"("binaryDir":"${sourceDir}/build/local-qt-debug"}],)"
                R"("buildPresets":[{"name":"local-qt-debug",)"
                R"("configurePreset":"local-qt-debug","targets":["all_qmllint"]}]})";
@@ -3439,7 +3439,7 @@ ProjectReadinessService::ToolchainProvider readinessToolchain(bool prepared)
 void proveProjectSetup(ProjectReadinessService& readiness, const Project& project)
 {
     fs::create_directories(project.rootPath / "build" / "local-qt-debug");
-    writeFile(project.rootPath / "build" / "local-qt-debug" / "CMakeCache.txt", "CMAKE_BUILD_TYPE:STRING=Debug\n");
+    writeFile(project.rootPath / "build" / "local-qt-debug" / "CMakeCache.txt", "CMAKE_GENERATOR:INTERNAL=Ninja\nCMAKE_BUILD_TYPE:STRING=Debug\n");
     FakeVerificationCommandRunner scripted;
     ManifestVerificationCommandOutcome configureListing;
     configureListing.started = true;
@@ -3533,6 +3533,29 @@ void testAProjectWithoutAWorkingSetupStopsAManifestRunBeforeThePlannerIsPaid()
     require(record.success() && record.value().has_value() && record.value()->state == ProjectReadinessState::Failed
             && record.value()->failureCode == kProjectSetupToolchainUnavailable,
         "The reason is recorded durably");
+}
+
+void testAnUnsupportedGeneratorStopsTheRunBeforeAnyProviderSession()
+{
+    Harness harness;
+    giveWorkspaceAnExistingCmakePreset(harness);
+    writeFile(harness.workspace.path / "CMakePresets.json", R"json({
+      "version":3,"configurePresets":[{"name":"local-qt-debug","generator":"Visual Studio 18 2026",
+        "binaryDir":"${sourceDir}/build/local-qt-debug"}],
+      "buildPresets":[{"name":"local-qt-debug","configurePreset":"local-qt-debug"}]
+    })json");
+    InMemoryProjectReadinessRepository repository;
+    ProjectReadinessService readiness(repository, readinessToolchain(true));
+    harness.manifestRunner.setProjectReadinessService(&readiness);
+    const auto setup = prepareReadinessRun(harness);
+    const auto runId = startReadinessRun(harness, setup, PlanningCompletionPolicy::RequireManifest);
+    const auto finished = waitForTerminalRun(harness.runs, runId);
+    require(finished.status == RunStatus::Failed
+            && finished.errorMessage.find("project_setup.generator_unsupported") != std::string::npos,
+        ("The Run reports the unsupported generator: " + finished.errorMessage).c_str());
+    require(harness.sessionFactory.invocations.empty(), "No planner or worker provider session is created");
+    require(harness.verificationCommandRunner.requests.size() == 2,
+        "Only the configure/build preset listings run; there is no configure or target probe");
 }
 
 // A Run that may end in "no changes needed" is not blocked up front (it may never need the setup). If its Planner does return a
@@ -3639,8 +3662,8 @@ void testTheSelectedPairIsTheOnlyPairTheRunOffersThePlanner()
     writeFile(harness.workspace.path / "CMakePresets.json", R"json({
       "version": 3,
       "configurePresets": [
-        {"name": "debug", "binaryDir": "${sourceDir}/build/debug"},
-        {"name": "release", "binaryDir": "${sourceDir}/build/release"}],
+        {"name": "debug", "generator": "Ninja", "binaryDir": "${sourceDir}/build/debug"},
+        {"name": "release", "generator": "Ninja", "binaryDir": "${sourceDir}/build/release"}],
       "buildPresets": [
         {"name": "debug-build", "configurePreset": "debug", "targets": ["all_qmllint"]},
         {"name": "release-build", "configurePreset": "release", "targets": ["all_qmllint"]}]})json");
@@ -3660,7 +3683,7 @@ void testTheSelectedPairIsTheOnlyPairTheRunOffersThePlanner()
     // The user chooses release; the setup is proved for exactly that pair (with a scripted cmake of its own).
     require(readiness.selectPair(setup.project.id, setup.project.rootPath, {"release", "release-build"}).success(), "The user chooses");
     fs::create_directories(setup.project.rootPath / "build" / "release");
-    writeFile(setup.project.rootPath / "build" / "release" / "CMakeCache.txt", "CMAKE_BUILD_TYPE:STRING=Release\n");
+    writeFile(setup.project.rootPath / "build" / "release" / "CMakeCache.txt", "CMAKE_GENERATOR:INTERNAL=Ninja\nCMAKE_BUILD_TYPE:STRING=Release\n");
     FakeVerificationCommandRunner scripted;
     ManifestVerificationCommandOutcome configured = configureListing;
     configured.boundedOutput = "-- Configuring done\n";
@@ -5875,6 +5898,7 @@ int main()
         testManifestRunCompletesWithTheRootTheBackendValidated();
         testManifestRunBuildsItsVerificationCopiesUnderTheRootTheBackendValidated();
         testAProjectWithoutAWorkingSetupStopsAManifestRunBeforeThePlannerIsPaid();
+        testAnUnsupportedGeneratorStopsTheRunBeforeAnyProviderSession();
         testARunThatMayNeedNoChangesIsOnlyStoppedOnceItHasAManifest();
         testAProvenSetupIsReusedByTheNextRunAndSurvivesAModelFailure();
         testAReadOnlyRunNeverConfiguresTheProject();

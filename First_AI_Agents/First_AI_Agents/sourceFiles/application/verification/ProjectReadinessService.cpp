@@ -183,6 +183,9 @@ common::Result<ProjectReadinessAssessment> ProjectReadinessService::assess(
     std::string reason;
     if (stripTrailingSlash(rootKey(projectRoot)) != stripTrailingSlash(detail::asciiLower(record.projectRoot))) {
         reason = "project_root_changed";
+    } else if (ProjectSetupReadiness::unsupportedGeneratorReason(projectRoot, record.configurePreset)) {
+        // Records created before generator validation must not bypass the current readiness contract.
+        reason = "generator_unsupported";
     } else {
         const auto environment = toolchain();
         if (!environment.prepared) reason = "toolchain_unavailable";
@@ -194,6 +197,11 @@ common::Result<ProjectReadinessAssessment> ProjectReadinessService::assess(
             || !fs::is_regular_file(detail::longPath(projectRoot / detail::pathFromUtf8(record.binaryDir) / "CMakeCache.txt"), error)) {
             reason = "build_tree_missing";
         }
+    }
+    if (reason.empty()) {
+        const auto generator = ProjectSetupReadiness::validateConfiguredGenerator(
+            projectRoot / detail::pathFromUtf8(record.binaryDir) / "CMakeCache.txt");
+        if (!generator.success()) reason = generator.error()->code;
     }
     if (reason.empty()) {
         const auto inputs = computeInputsFingerprint(projectRoot);

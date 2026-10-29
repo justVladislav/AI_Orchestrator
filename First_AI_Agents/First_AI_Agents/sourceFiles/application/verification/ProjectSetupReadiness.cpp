@@ -181,6 +181,7 @@ std::optional<std::string> stringOrValue(const nlohmann::json& node)
 
 struct PresetFacts {
     std::string generator;
+    bool generatorResolved {true}; // false if an earlier parent could not be resolved before a value was found
     std::string architecture;
     std::vector<std::string> otherText; // toolchain file and cache variable values
     std::vector<std::string> toolchainFiles; // as authored (may contain ${sourceDir})
@@ -193,9 +194,16 @@ void collectFacts(
     std::set<std::string>& visited,
     PresetFacts& facts)
 {
-    if (depth > kMaxInheritDepth || !visited.insert(name).second) return;
+    if (depth > kMaxInheritDepth) {
+        if (facts.generator.empty()) facts.generatorResolved = false;
+        return;
+    }
+    if (!visited.insert(name).second) return;
     const auto found = presets.find(name);
-    if (found == presets.end()) return;
+    if (found == presets.end()) {
+        if (facts.generator.empty()) facts.generatorResolved = false;
+        return;
+    }
     const auto& preset = found->second;
     if (facts.generator.empty() && preset.contains("generator") && preset["generator"].is_string()) {
         facts.generator = preset["generator"].get<std::string>();
@@ -232,6 +240,26 @@ std::string unsupportedMessage(const std::string& preset, const std::string& wha
     return "The CMake preset \"" + preset + "\" is " + what
         + ", but the automatic verification setup supports MSVC x64 only (Visual Studio, 64-bit). Choose a preset that uses an "
           "MSVC 64-bit Qt kit, or verify this project by hand.";
+}
+
+PresetFacts readPresetFacts(const fs::path& projectRoot, const std::string& configurePreset)
+{
+    std::map<std::string, nlohmann::json> presets;
+    std::size_t filesRead = 0;
+    collectConfigurePresets(projectRoot, projectRoot / "CMakePresets.json", 0, filesRead, presets);
+    collectConfigurePresets(projectRoot, projectRoot / "CMakeUserPresets.json", 0, filesRead, presets);
+
+    PresetFacts facts;
+    std::set<std::string> visited;
+    collectFacts(presets, configurePreset, 0, visited, facts);
+    return facts;
+}
+
+std::string unsupportedGeneratorMessage(const std::string& subject, const std::string& generator)
+{
+    return subject + " uses generator \"" + generator
+        + "\", which the application's automatic target discovery does not support yet. "
+          "The currently supported setup is Ninja with MSVC x64. Select a supported preset or verify the project by hand.";
 }
 
 } // namespace
@@ -311,19 +339,46 @@ std::vector<fs::path> ProjectSetupReadiness::presetInputFiles(const fs::path& pr
     return files;
 }
 
+std::optional<std::string> ProjectSetupReadiness::unsupportedGeneratorReason(
+    const fs::path& projectRoot, const std::string& configurePreset)
+{
+    const auto facts = readPresetFacts(projectRoot, configurePreset);
+    if (!facts.generatorResolved || facts.generator.empty() || facts.generator == "Ninja") return std::nullopt;
+    return unsupportedGeneratorMessage("The CMake preset \"" + configurePreset + "\"", facts.generator);
+}
+
+common::Result<void> ProjectSetupReadiness::validateConfiguredGenerator(const fs::path& cacheFile)
+{
+    const auto unconfirmed = [] {
+        return common::Result<void>::failure({kProjectSetupGeneratorUnconfirmed,
+            "The configured build cache does not confirm which generator CMake selected. "
+            "Check the selected preset's build directory and run the configuration check again."});
+    };
+    std::error_code error;
+    const auto size = fs::file_size(detail::longPath(cacheFile), error);
+    if (error || size > kMaxCacheScanBytes) return unconfirmed();
+    std::ifstream stream(detail::longPath(cacheFile), std::ios::binary);
+    if (!stream) return unconfirmed();
+    std::string line;
+    std::size_t scanned = 0;
+    while (std::getline(stream, line) && scanned < kMaxCacheScanBytes) {
+        scanned += line.size() + 1;
+        while (!line.empty() && line.back() == '\r') line.pop_back();
+        if (line.rfind("CMAKE_GENERATOR:", 0) != 0) continue;
+        const auto equals = line.find('=');
+        if (equals == std::string::npos || equals + 1 == line.size()) return unconfirmed();
+        const auto generator = line.substr(equals + 1);
+        if (generator == "Ninja") return common::Result<void>::ok();
+        return common::Result<void>::failure({kProjectSetupGeneratorUnsupported,
+            unsupportedGeneratorMessage("The configured project", generator)});
+    }
+    return unconfirmed();
+}
+
 std::optional<std::string> ProjectSetupReadiness::unsupportedToolchainReason(
     const fs::path& projectRoot, const std::string& configurePreset)
 {
-    std::map<std::string, nlohmann::json> presets;
-    std::size_t filesRead = 0;
-    // CMakeUserPresets.json overrides CMakePresets.json, so it is collected second.
-    collectConfigurePresets(projectRoot, projectRoot / "CMakePresets.json", 0, filesRead, presets);
-    collectConfigurePresets(projectRoot, projectRoot / "CMakeUserPresets.json", 0, filesRead, presets);
-
-    PresetFacts facts;
-    std::set<std::string> visited;
-    collectFacts(presets, configurePreset, 0, visited, facts);
-
+    const auto facts = readPresetFacts(projectRoot, configurePreset);
     const auto generator = lowerAscii(facts.generator);
     if (containsText(generator, "mingw")) return unsupportedMessage(configurePreset, "a MinGW setup (generator \"" + facts.generator + "\")");
     const auto architecture = lowerAscii(facts.architecture);
@@ -379,7 +434,7 @@ std::optional<std::string> ProjectSetupReadiness::unsupportedCompilerReason(cons
 common::Result<ProjectSetupSelection> ProjectSetupReadiness::chooseSelection(
     const VerificationEnvironmentSnapshot& catalog,
     const std::optional<ProjectSetupSelection>& saved,
-    const std::function<std::optional<std::string>(const std::string&)>& unsupportedReason,
+    const std::function<std::optional<common::Error>(const std::string&)>& unsupportedReason,
     std::vector<ProjectSetupSelection>* candidates)
 {
     using Result = common::Result<ProjectSetupSelection>;
@@ -411,7 +466,7 @@ common::Result<ProjectSetupSelection> ProjectSetupReadiness::chooseSelection(
                     "again.")});
     }
     std::vector<ProjectSetupSelection> supported;
-    std::optional<std::string> firstReason;
+    std::optional<common::Error> firstReason;
     for (const auto& pair : all) {
         const auto reason = unsupportedReason ? unsupportedReason(pair.configurePreset) : std::nullopt;
         if (reason.has_value()) {
@@ -421,7 +476,8 @@ common::Result<ProjectSetupSelection> ProjectSetupReadiness::chooseSelection(
         }
     }
     if (supported.empty()) {
-        return Result::failure({kProjectSetupToolchainUnsupported, bounded(*firstReason)});
+        firstReason->message = bounded(std::move(firstReason->message));
+        return Result::failure(*firstReason);
     }
     if (supported.size() > 1) {
         if (candidates != nullptr) *candidates = supported;
@@ -453,7 +509,7 @@ ProjectSetupCheck ProjectSetupReadiness::check(
     };
     if (stopToken.stop_requested()) return cancelled();
 
-    const auto catalog = detail::probePresetCatalog(projectRoot, commandRunner, stopToken);
+    const auto catalog = detail::probePresetCatalog(projectRoot, commandRunner, stopToken, false);
     if (stopToken.stop_requested()) return cancelled();
     if (catalog.state != VerificationEnvironmentState::ExistingProfile) {
         return fail(kProjectSetupPresetNotFound,
@@ -462,16 +518,21 @@ ProjectSetupCheck ProjectSetupReadiness::check(
                   "check again.");
     }
 
-    const auto chosen = chooseSelection(catalog, saved,
-        [&projectRoot](const std::string& configurePreset) {
-            return unsupportedToolchainReason(projectRoot, configurePreset);
-        },
-        &result.candidates);
+    const auto unsupportedReason = [&projectRoot](const std::string& configurePreset) -> std::optional<common::Error> {
+        if (const auto reason = unsupportedToolchainReason(projectRoot, configurePreset)) {
+            return common::Error {kProjectSetupToolchainUnsupported, *reason};
+        }
+        if (const auto reason = unsupportedGeneratorReason(projectRoot, configurePreset)) {
+            return common::Error {kProjectSetupGeneratorUnsupported, *reason};
+        }
+        return std::nullopt;
+    };
+    const auto chosen = chooseSelection(catalog, saved, unsupportedReason, &result.candidates);
     if (!chosen.success()) return fail(chosen.error()->code.c_str(), chosen.error()->message);
     result.selection = chosen.value();
-    // A saved pair is still checked against the toolchain rule: a preset edited to MinGW after it was chosen is refused.
-    if (const auto reason = unsupportedToolchainReason(projectRoot, result.selection.configurePreset)) {
-        return fail(kProjectSetupToolchainUnsupported, *reason);
+    // A saved pair is checked too: a changed generator or toolchain never silently selects a different pair.
+    if (const auto reason = unsupportedReason(result.selection.configurePreset)) {
+        return fail(reason->code.c_str(), reason->message);
     }
 
     const VerificationProfile* selectedProfile = nullptr;
@@ -525,6 +586,8 @@ ProjectSetupCheck ProjectSetupReadiness::check(
 
     {
         const auto cache = projectRoot / detail::pathFromUtf8(result.binaryDirRelative) / "CMakeCache.txt";
+        const auto generator = validateConfiguredGenerator(cache);
+        if (!generator.success()) return fail(generator.error()->code.c_str(), generator.error()->message);
         if (const auto reason = unsupportedCompilerReason(cache)) return fail(kProjectSetupToolchainUnsupported, *reason);
     }
 

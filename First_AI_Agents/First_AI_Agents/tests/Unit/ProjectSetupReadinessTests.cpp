@@ -11,6 +11,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #ifdef _WIN32
@@ -90,6 +91,7 @@ struct FakeCmake final : IManifestVerificationCommandRunner {
     std::string configureOutput {"-- Configuring done\n"};
     bool configureCancelled {false};
     std::string cacheCompiler {"C:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/MSVC/14.51/bin/Hostx64/x64/cl.exe"};
+    std::string cacheGenerator {"Ninja"};
     std::string binaryDir {"build/local"};
     // What `cmake --build --preset <name> --target help` does.
     int targetsExit {0};
@@ -119,7 +121,8 @@ struct FakeCmake final : IManifestVerificationCommandRunner {
             outcome.boundedOutput = configureOutput;
             if (configureExit == 0) {
                 writeFile(root / binaryDir / "CMakeCache.txt",
-                    "CMAKE_BUILD_TYPE:STRING=Debug\nCMAKE_CXX_COMPILER:FILEPATH=" + cacheCompiler + "\n");
+                    "CMAKE_BUILD_TYPE:STRING=Debug\nCMAKE_CXX_COMPILER:FILEPATH=" + cacheCompiler + "\n"
+                        + (cacheGenerator.empty() ? std::string() : "CMAKE_GENERATOR:INTERNAL=" + cacheGenerator + "\n"));
             }
         } else if (!args.empty() && args[0] == "--build") {
             outcome.exitCode = targetsExit;
@@ -318,6 +321,195 @@ void testAMinGwOrArmSetupIsRefusedWithTheLimitationBeforeAnyConfigure()
     }
 }
 
+void testUnsupportedGeneratorsStopBeforeToolchainConfigureAndCachedTargetProbes()
+{
+    for (const std::string generator : {"Visual Studio 18 2026", "Ninja Multi-Config", "Unix Makefiles"}) {
+        TestDirectory project("generator");
+        writeFile(project.path / "CMakePresets.json",
+            "{\"version\":3,\"configurePresets\":[{\"name\":\"local\",\"generator\":\"" + generator
+                + "\",\"binaryDir\":\"${sourceDir}/build/local\"}],"
+                  "\"buildPresets\":[{\"name\":\"local-build\",\"configurePreset\":\"local\"}]}");
+        // A previous configure must not cause catalog discovery to probe this unsupported generator's targets.
+        writeFile(project.path / "build/local/CMakeCache.txt", "CMAKE_GENERATOR:INTERNAL=" + generator + "\n");
+        for (const bool useSaved : {false, true}) {
+            FakeCmake cmake;
+            int toolchainCalls = 0;
+            const auto saved = useSaved ? std::optional<ProjectSetupSelection> {{"local", "local-build"}} : std::nullopt;
+            const auto result = runCheck(cmake, project.path, saved, [&] {
+                ++toolchainCalls;
+                return readyToolchain()();
+            });
+            require(!result.ready && result.failureCode == "project_setup.generator_unsupported",
+                generator + " is refused with its own code: " + result.failureCode);
+            require(result.failureMessage.find(generator) != std::string::npos
+                    && result.failureMessage.find("Ninja") != std::string::npos
+                    && result.failureMessage.find("MSVC x64") != std::string::npos,
+                "The refusal names the generator and the supported alternative");
+            require(toolchainCalls == 0 && cmake.callsStartingWith("--preset") == 0
+                    && cmake.callsStartingWith("--build") == 0 && result.targets.empty(),
+                "An unsupported generator prepares no toolchain, configures nothing and probes no cached targets");
+        }
+    }
+}
+
+void testGeneratorInheritanceUsesIncludesParentOrderAndChildOverrides()
+{
+    const std::vector<std::pair<std::string, bool>> variants {
+        {R"("inherits":["vs","ninja"])", false},
+        {R"("inherits":["ninja","vs"])", true},
+        {R"("inherits":"vs","generator":"Ninja")", true},
+    };
+    for (const auto& [fields, supported] : variants) {
+        TestDirectory project("generator-inheritance");
+        writeFile(project.path / "CMakePresets.json",
+            "{\"version\":4,\"include\":[\"cmake/generators.json\"],\"configurePresets\":[{\"name\":\"local\","
+                + fields + ",\"binaryDir\":\"${sourceDir}/build/local\"}],"
+                           "\"buildPresets\":[{\"name\":\"local-build\",\"configurePreset\":\"local\"}]}");
+        writeFile(project.path / "cmake/generators.json", R"json({
+          "version":4,"configurePresets":[
+            {"name":"vs-root","hidden":true,"generator":"Visual Studio 18 2026"},
+            {"name":"vs","hidden":true,"inherits":"vs-root"},
+            {"name":"ninja","hidden":true,"generator":"Ninja"}]
+        })json");
+        FakeCmake cmake;
+        const auto result = runCheck(cmake, project.path);
+        require(result.ready == supported, "Generator inheritance follows CMake precedence: " + result.failureMessage);
+        if (!supported) {
+            require(result.failureCode == "project_setup.generator_unsupported"
+                    && cmake.callsStartingWith("--preset") == 0 && cmake.callsStartingWith("--build") == 0,
+                "An inherited unsupported generator stops before configure");
+        }
+    }
+}
+
+void testOnlyNinjaPairsAreOfferedButASavedUnsupportedPairIsNeverReplaced()
+{
+    TestDirectory project("generator-choice");
+    writeFile(project.path / "CMakePresets.json", R"json({
+      "version":3,"configurePresets":[
+        {"name":"local","generator":"Ninja","binaryDir":"${sourceDir}/build/local"},
+        {"name":"vs","generator":"Visual Studio 18 2026","binaryDir":"${sourceDir}/build/vs"}],
+      "buildPresets":[{"name":"local-build","configurePreset":"local"},{"name":"vs-build","configurePreset":"vs"}]
+    })json");
+    for (const bool useSaved : {false, true}) {
+        FakeCmake cmake;
+        cmake.configureListing = "Available configure presets:\n  \"local\"\n  \"vs\"\n";
+        cmake.buildListing = "Available build presets:\n  \"local-build\"\n  \"vs-build\"\n";
+        const auto saved = useSaved ? std::optional<ProjectSetupSelection> {{"vs", "vs-build"}} : std::nullopt;
+        const auto result = runCheck(cmake, project.path, saved);
+        if (useSaved) {
+            require(!result.ready && result.failureCode == "project_setup.generator_unsupported"
+                    && result.selection == *saved && cmake.callsStartingWith("--preset") == 0,
+                "A saved Visual Studio pair is refused instead of silently switching to Ninja");
+        } else {
+            require(result.ready && result.selection == ProjectSetupSelection {"local", "local-build"},
+                "The single supported generator pair is selected automatically: " + result.failureMessage);
+        }
+    }
+}
+
+void testAMissingGeneratorUsesCMakeWithoutChangingTheUserPreset()
+{
+    const std::string presets = R"json({
+      "version":3,"configurePresets":[{"name":"local","binaryDir":"${sourceDir}/build/local"}],
+      "buildPresets":[{"name":"local-build","configurePreset":"local"}]
+    })json";
+    for (const std::string actualGenerator : {"Ninja", "Visual Studio 18 2026", ""}) {
+        for (const bool existingCache : {false, true}) {
+            TestDirectory project("generator-missing");
+            writeFile(project.path / "CMakePresets.json", presets);
+            if (existingCache) {
+                writeFile(project.path / "build/local/CMakeCache.txt", "CMAKE_GENERATOR:INTERNAL=Ninja\n");
+            }
+            FakeCmake cmake;
+            cmake.cacheGenerator = actualGenerator;
+            const auto result = runCheck(cmake, project.path);
+            require(cmake.callsStartingWith("--preset") == 1,
+                "An omitted generator is resolved by CMake, not rejected or supplied by the application");
+            if (actualGenerator == "Ninja") {
+                require(result.ready && cmake.callsStartingWith("--build") == 1,
+                    "CMake's confirmed default or cached Ninja generator is usable: " + result.failureMessage);
+            } else {
+                const std::string code = actualGenerator.empty()
+                    ? "project_setup.generator_unconfirmed" : "project_setup.generator_unsupported";
+                require(!result.ready && result.failureCode == code && cmake.callsStartingWith("--build") == 0,
+                    "Only a confirmed supported generator may reach the target probe: " + result.failureCode);
+                require(actualGenerator.empty() || result.failureMessage.find(actualGenerator) != std::string::npos,
+                    "The refusal names CMake's actual unsupported generator");
+            }
+            for (const auto& call : cmake.calls) {
+                if (!call.empty() && call.front() == "--preset") {
+                    require(call == std::vector<std::string> {"--preset", "local"},
+                        "The application invokes the user's preset without adding a generator override");
+                }
+            }
+            std::ifstream saved(project.path / "CMakePresets.json", std::ios::binary);
+            require(std::string(std::istreambuf_iterator<char>(saved), {}) == presets,
+                "The user's preset file stays byte-identical");
+        }
+    }
+}
+
+void testAMissingBuildToolKeepsCMakeFailureDistinctFromAnUnsupportedGenerator()
+{
+    TestDirectory project("generator-tool-missing");
+    writeFile(project.path / "CMakePresets.json", kSinglePreset);
+    FakeCmake cmake;
+    cmake.configureExit = 1;
+    cmake.configureOutput = "CMake Error: CMAKE_MAKE_PROGRAM is not set. Ninja could not be found.\n";
+    const auto result = runCheck(cmake, project.path);
+    require(!result.ready && result.failureCode == kProjectSetupConfigureFailed
+            && result.failureMessage.find("CMAKE_MAKE_PROGRAM") != std::string::npos,
+        "A missing Ninja executable is reported as CMake's configure failure, not an unsupported generator");
+    require(cmake.callsStartingWith("--build") == 0, "No target probe follows a missing build tool");
+}
+
+void testGeneratorRuleReadsUserInheritanceButNeverIncludesOutsideTheProject()
+{
+    TestDirectory project("generator-user");
+    writeFile(project.path / "CMakePresets.json", R"json({
+      "version":4,"configurePresets":[{"name":"base","hidden":true,"generator":"Ninja"}]
+    })json");
+    writeFile(project.path / "CMakeUserPresets.json", R"json({
+      "version":4,"configurePresets":[{"name":"local","inherits":"base","binaryDir":"${sourceDir}/build/local"}],
+      "buildPresets":[{"name":"local-build","configurePreset":"local"}]
+    })json");
+    FakeCmake cmake;
+    require(runCheck(cmake, project.path).ready, "A user preset can inherit Ninja from the project preset file");
+
+    TestDirectory outside("generator-outside");
+    writeFile(outside.path / "presets.json", R"json({
+      "version":4,"configurePresets":[{"name":"foreign","hidden":true,"generator":"Visual Studio 18 2026"}]
+    })json");
+    writeFile(project.path / "CMakeUserPresets.json",
+        "{\"version\":4,\"include\":[\"../" + detail::genericUtf8(outside.path.filename())
+            + "/presets.json\"],\"configurePresets\":[{\"name\":\"local\",\"inherits\":\"foreign\","
+              "\"binaryDir\":\"${sourceDir}/build/local\"}]}");
+    require(!ProjectSetupReadiness::unsupportedGeneratorReason(project.path, "local").has_value(),
+        "The early reader does not inspect the out-of-project include or invent a generator verdict");
+}
+
+void testUnresolvedGeneratorInheritanceNeverFallsBackToTheNextParent()
+{
+    TestDirectory project("generator-depth");
+    std::string presets = R"({"version":3,"configurePresets":[
+      {"name":"local","inherits":["deep0","ninja"],"binaryDir":"${sourceDir}/build/local"},
+      {"name":"ninja","hidden":true,"generator":"Ninja"})";
+    for (int i = 0; i < 10; ++i) {
+        presets += ",{\"name\":\"deep" + std::to_string(i) + "\",\"hidden\":true,";
+        presets += i == 9 ? "\"generator\":\"Visual Studio 18 2026\"}"
+                          : "\"inherits\":\"deep" + std::to_string(i + 1) + "\"}";
+    }
+    presets += R"(],"buildPresets":[{"name":"local-build","configurePreset":"local"}]})";
+    writeFile(project.path / "CMakePresets.json", presets);
+    FakeCmake cmake;
+    cmake.cacheGenerator = "Visual Studio 18 2026";
+    const auto result = runCheck(cmake, project.path);
+    require(!result.ready && result.failureCode == kProjectSetupGeneratorUnsupported
+            && cmake.callsStartingWith("--preset") == 1 && cmake.callsStartingWith("--build") == 0,
+        "An unresolved first parent is left to CMake; its actual generator cannot be replaced by the next parent's Ninja");
+}
+
 void testACompilerThatIsNotMsvcIsRefusedAfterConfigure()
 {
     TestDirectory project("cache");
@@ -462,6 +654,18 @@ void testARealProjectBecomesReadyFromAnUnpreparedProcessAndABrokenOneSaysWhy()
     require(result.toolchainIdentity.rfind("msvc=", 0) == 0, "The identity names the toolchain: " + result.toolchainIdentity);
     require(fs::exists(project.path / "build" / "local" / "CMakeCache.txt"), "The preset's own build tree was configured");
 
+    // A user's valid preset need not repeat the generator already selected for its existing build tree.
+    const std::string implicitPreset = R"json({
+      "version":3,"configurePresets":[{"name":"local","binaryDir":"${sourceDir}/build/local"}],
+      "buildPresets":[{"name":"local-build","configurePreset":"local"}]
+    })json";
+    writeFile(project.path / "CMakePresets.json", implicitPreset);
+    result = ProjectSetupReadiness::check(project.path, {}, runner, {});
+    require(result.ready, "Real CMake reuses the user's cached generator when the preset omits it: " + result.failureMessage);
+    std::ifstream unchangedPreset(project.path / "CMakePresets.json", std::ios::binary);
+    require(std::string(std::istreambuf_iterator<char>(unchangedPreset), {}) == implicitPreset,
+        "The real readiness check leaves the user's preset unchanged");
+
     TestDirectory broken("broken");
     writeFile(broken.path / "CMakeLists.txt", "cmake_minimum_required(VERSION 3.20)\nproject(aio_broken CXX)\n"
                                              "this_command_does_not_exist()\n");
@@ -563,6 +767,13 @@ int main()
         testSeveralPairsAreNeverGuessed();
         testOnlyTheCompatiblePairCountsForTheAutomaticChoice();
         testAMinGwOrArmSetupIsRefusedWithTheLimitationBeforeAnyConfigure();
+        testUnsupportedGeneratorsStopBeforeToolchainConfigureAndCachedTargetProbes();
+        testGeneratorInheritanceUsesIncludesParentOrderAndChildOverrides();
+        testOnlyNinjaPairsAreOfferedButASavedUnsupportedPairIsNeverReplaced();
+        testAMissingGeneratorUsesCMakeWithoutChangingTheUserPreset();
+        testAMissingBuildToolKeepsCMakeFailureDistinctFromAnUnsupportedGenerator();
+        testGeneratorRuleReadsUserInheritanceButNeverIncludesOutsideTheProject();
+        testUnresolvedGeneratorInheritanceNeverFallsBackToTheNextParent();
         testACompilerThatIsNotMsvcIsRefusedAfterConfigure();
         testUnconfirmedTargetsAreNotReady();
         testCancellationNeverLooksLikeReadiness();

@@ -16,9 +16,11 @@ namespace ai::application::detail {
 // offer" - the readiness check never grows a second parser.
 
 // `cmake --list-presets=configure|build` plus the preset files' own enrichment, against `root` as it is. A configured build tree
-// that exists is probed for its targets; nothing is configured here.
+// that exists is probed for its targets unless `probeExistingTargets` is false. Readiness defers that probe until after the
+// selected generator/toolchain have been checked and the project has been configured; nothing is configured here.
 [[nodiscard]] VerificationEnvironmentSnapshot probePresetCatalog(
-    const std::filesystem::path& root, IManifestVerificationCommandRunner& commandRunner, std::stop_token stopToken);
+    const std::filesystem::path& root, IManifestVerificationCommandRunner& commandRunner, std::stop_token stopToken,
+    bool probeExistingTargets = true);
 
 struct ConfiguredTargetsProbe {
     bool confirmed {false};
