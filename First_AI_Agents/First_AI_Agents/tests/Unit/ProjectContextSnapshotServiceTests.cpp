@@ -236,6 +236,131 @@ const ProjectContextSection* section(
     return nullptr;
 }
 
+// ---- P3c: the current read policy of a project-context snapshot -------------------------------------------------------------------
+
+// Answers with secureDefaults of the asked root plus the folders in `denied`; records every question.
+class PolicySpy final : public IOutputApprovalPolicySource {
+public:
+    mutable std::vector<std::pair<ProjectId, std::filesystem::path>> calls;
+    std::vector<std::string> denied;
+    std::optional<ai::common::Error> failure;
+
+    ai::common::Result<WorkspaceReadPolicy> policyFor(
+        const ProjectId& projectId, const std::filesystem::path& root) const override
+    {
+        calls.emplace_back(projectId, root);
+        if (failure.has_value()) return ai::common::Result<WorkspaceReadPolicy>::failure(*failure);
+        auto policy = WorkspaceReadPolicy::secureDefaults(root);
+        for (const auto& path : denied) policy.deniedPaths.push_back(path);
+        return ai::common::Result<WorkspaceReadPolicy>::ok(std::move(policy));
+    }
+};
+
+void writeOutputTree(const TemporaryWorkspace& root)
+{
+    root.write("README.md", "readme");
+    root.write("src/a.cpp", "int a;");
+    root.write("Out2-source/real.txt", "a neighbour that only shares the name prefix");
+    root.write("Out2/gen.txt", "output");
+    root.write("Out2/big.obj", std::string(300 * 1024, 'x')); // over the read limit: the defaults refuse the whole catalogue on it
+}
+
+// With the folder approved a build passes and the folder is not in the catalogue; the sources and the neighbour are. After the
+// revocation the next build sees the folder again and gets the previous file_limit. An error of the source is the build's failure.
+void testTheCatalogueIsTakenUnderTheCurrentApprovals()
+{
+    TemporaryWorkspace root("approved-output");
+    writeOutputTree(root);
+    InMemoryProjectRepository projects;
+    InMemoryRunRepository runs;
+    ScriptedLedger ledger;
+    ScriptedResolutions resolutions;
+    ScriptedMemory memory;
+    require(projects.insert(project("p1", root.path())).success(), "Project seed");
+    ProjectContextSnapshotService service(projects, runs, ledger, resolutions, memory);
+
+    // Without a source (a standalone service) the defaults refuse the output file: the previous behaviour.
+    require(failureCode(service, {"p1", std::nullopt, false}) == "workspace_baseline.file_limit",
+        "Without a source the defaults apply, exactly as before");
+
+    PolicySpy spy;
+    spy.denied = {"Out2"};
+    service.setOutputApprovalPolicySource(&spy);
+    const auto approved = build(service, {"p1", std::nullopt, false});
+    const auto* catalog = section(approved, ProjectContextCategory::WorkspaceCatalog);
+    require(catalog != nullptr, "the catalogue section");
+    require(spy.calls.size() == 1 && spy.calls.front().first == "p1" && spy.calls.front().second == root.path(),
+        "The source is asked once, for the project and the root being read");
+    require(catalog->text.find("src/a.cpp") != std::string::npos && catalog->text.find("Out2-source/real.txt") != std::string::npos
+            && catalog->text.find("README.md") != std::string::npos,
+        "The sources and the neighbour of the folder are in the catalogue");
+    require(catalog->text.find("Out2/") == std::string::npos && catalog->text.find("big.obj") == std::string::npos,
+        "The approved folder and its big file are not");
+
+    spy.denied.clear(); // revoked
+    require(failureCode(service, {"p1", std::nullopt, false}) == "workspace_baseline.file_limit" && spy.calls.size() == 2,
+        "After the revocation the next build asks again and sees the file the defaults refuse");
+
+    // An error of the source is not turned into a context: not under the defaults, not empty; nothing else was read.
+    spy.failure = ai::common::Error {"output_approval.storage_failed", "disk is gone"};
+    require(failureCode(service, {"p1", std::nullopt, false}) == "output_approval.storage_failed",
+        "The source's own typed error is the build's failure");
+    require(resolutions.calls == 0 && memory.listCalls == 0 && ledger.writeCalls == 0, "...before any other source was used");
+}
+
+// The root of the snapshot is the selected Run's own workspace; the policy is asked for exactly that. A policy handed in by a caller
+// that already holds one is used without a second question, and must be the policy of this very root.
+void testAHandedInPolicyMustBelongToTheRootBeingRead()
+{
+    TemporaryWorkspace projectRoot("policy-project-root");
+    TemporaryWorkspace runRoot("policy-run-root");
+    TemporaryWorkspace elsewhere("policy-elsewhere");
+    writeOutputTree(runRoot);
+    projectRoot.write("project-only.txt", "belongs to the project root");
+    InMemoryProjectRepository projects;
+    InMemoryRunRepository runs;
+    ScriptedLedger ledger;
+    ScriptedResolutions resolutions;
+    ScriptedMemory memory;
+    require(projects.insert(project("p1", projectRoot.path())).success(), "Project seed");
+    Run selected = run("selected", "p1");
+    selected.workspacePath = runRoot.path();
+    require(runs.insertRun(selected).success(), "Run seed");
+    ProjectContextSnapshotService service(projects, runs, ledger, resolutions, memory);
+    PolicySpy spy;
+    spy.denied = {"Out2"};
+    service.setOutputApprovalPolicySource(&spy);
+    const ProjectContextSnapshotRequest request {"p1", "selected", false};
+
+    // Asked by the service itself: the Run's workspace, not the project root.
+    const auto own = build(service, request);
+    require(spy.calls.size() == 1 && spy.calls.front().second == runRoot.path(), "The policy is asked for the selected Run's workspace");
+    require(section(own, ProjectContextCategory::WorkspaceCatalog)->text.find("src/a.cpp") != std::string::npos,
+        "...and the catalogue is that workspace");
+
+    // A handed-in policy: used, not asked for again, and the same snapshot results.
+    auto handed = WorkspaceReadPolicy::secureDefaults(runRoot.path());
+    handed.deniedPaths.push_back("Out2");
+    const auto withPolicy = service.build(request, handed);
+    require(withPolicy.success(), withPolicy.success() ? "" : withPolicy.error()->message.c_str());
+    require(spy.calls.size() == 1, "The source is not asked again when the caller holds the policy of its operation");
+    require(withPolicy.value().fingerprint == own.fingerprint, "...and it is the same snapshot");
+
+    // A policy of another root - the project root, an unrelated folder, a neighbour by string prefix - reads nothing.
+    for (const auto& wrong : {projectRoot.path(), elsewhere.path(), std::filesystem::path(runRoot.path().string() + "-x")}) {
+        const auto refused = service.build(request, WorkspaceReadPolicy::secureDefaults(wrong));
+        require(!refused.success() && refused.error()->code == "workspace_policy.root_mismatch",
+            "A policy of another root is refused as root_mismatch");
+    }
+    require(resolutions.calls == 2, "...and a refusal came before the lineage was rendered (only the two accepted builds asked)");
+
+    // The same root spelled with a trailing separator is the same root.
+    auto spelled = WorkspaceReadPolicy::secureDefaults(runRoot.path() / "");
+    spelled.deniedPaths.push_back("Out2");
+    const auto spelledBuild = service.build(request, spelled);
+    require(spelledBuild.success(), spelledBuild.success() ? "" : spelledBuild.error()->message.c_str());
+}
+
 void testBuildUsesSelectedWorkspaceAndLoadsTypedAuthorityWithoutWrites()
 {
     TemporaryWorkspace projectRoot("selected-project-root");
@@ -1124,6 +1249,8 @@ int main()
         testProjectMemoryRequestFailsClosedAndIsIsolated();
         testFingerprintDoesNotDependOnTheWorkspaceLocation();
         testMissingWorkspaceRootFailsClosedWithTheCaptureError();
+        testTheCatalogueIsTakenUnderTheCurrentApprovals();
+        testAHandedInPolicyMustBelongToTheRootBeingRead();
         return 0;
     } catch (const std::exception& exception) {
         std::cerr << exception.what() << '\n';

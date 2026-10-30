@@ -1,7 +1,10 @@
 #include "ai/infrastructure/SqliteRepositories.hpp"
 
+#include "ProjectOutputApprovalRepositoryContract.hpp"
+
 #include <sqlite3.h>
 
+#include <algorithm>
 #include <barrier>
 #include <chrono>
 #include <filesystem>
@@ -740,6 +743,257 @@ void testReadinessCorruptRowsAreHandledAsPinned()
 }
 } // namespace
 
+// ---- P3a: project output approvals (schema step 71) ----
+
+struct ApprovalStore {
+    Workspace workspace;
+    std::shared_ptr<SqliteDatabase> database = workspace.open();
+    SqliteProjectOutputApprovalRepository repository {database};
+    std::vector<std::string> projects;
+
+    void ensureProject(const std::string& id)
+    {
+        if (std::find(projects.begin(), projects.end(), id) != projects.end()) return;
+        addProject(database, workspace, id);
+        projects.push_back(id);
+    }
+};
+
+output_approval_contract::Fixture sqliteApprovalFixture()
+{
+    auto store = std::make_shared<ApprovalStore>();
+    return {store, &store->repository, [store](const std::string& id) { store->ensureProject(id); }};
+}
+
+void testOutputApprovalContractOnSqlite()
+{
+    output_approval_contract::testRoundTripIsolationAndRevoke(sqliteApprovalFixture);
+    output_approval_contract::testIdempotenceLimitAndValidator(sqliteApprovalFixture);
+    output_approval_contract::testNestingRuleBothOrders(sqliteApprovalFixture);
+    output_approval_contract::testRepeatOfTheSameObjectAndIdConflicts(sqliteApprovalFixture);
+    output_approval_contract::testValidatorFailureRollsBackAndReadsAreConsistent(sqliteApprovalFixture);
+    {   // one connection, two threads
+        ApprovalStore store;
+        output_approval_contract::testConcurrentCommitsStayValid(store.repository, store.repository,
+            [&store](const std::string& id) { store.ensureProject(id); }, 40);
+    }
+}
+
+// A local mutex of one handle proves nothing about SQL atomicity: two CONNECTIONS to one file race here.
+void testOutputApprovalTwoConnectionsToOneFile()
+{
+    Workspace workspace;
+    auto first = workspace.open();
+    auto second = workspace.open();
+    SqliteProjectOutputApprovalRepository firstRepository(first);
+    SqliteProjectOutputApprovalRepository secondRepository(second);
+    std::vector<std::string> projects;
+    output_approval_contract::testConcurrentCommitsStayValid(firstRepository, secondRepository,
+        [&](const std::string& id) {
+            if (std::find(projects.begin(), projects.end(), id) == projects.end()) {
+                addProject(first, workspace, id);
+                projects.push_back(id);
+            }
+        },
+        40);
+}
+
+void testOutputApprovalStorageGuards()
+{
+    ApprovalStore store;
+    store.ensureProject("p1");
+    using output_approval_contract::makeApproval;
+
+    // An unknown project is refused with its own code, not stored.
+    const auto unknown = store.repository.commit(makeApproval("u", "ghost", "C:/ws", "Out"), nullptr);
+    require(!unknown.success() && unknown.error()->code == "project.not_found", "An unknown project is refused");
+
+    // Persists across a reopen.
+    require(output_approval_contract::commitOk(store.repository, makeApproval("keep", "p1", "C:/ws", "Out")), "approve");
+    {
+        auto reopened = store.workspace.open();
+        SqliteProjectOutputApprovalRepository again(reopened);
+        const auto listed = again.listForWorkspace("p1", outputApprovalWorkspaceKey("C:/ws"));
+        require(listed.success() && listed.value().size() == 1 && listed.value().front().id == "keep", "An approval survives a reopen");
+    }
+
+    // The trigger is a net below the transaction: a raw ninth insert is refused by SQLite itself.
+    for (int index = 1; index < 8; ++index) {
+        require(output_approval_contract::commitOk(store.repository, makeApproval("t" + std::to_string(index), "p1", "C:/ws", "T" + std::to_string(index))), "fill");
+    }
+    const std::string ninth = "INSERT INTO project_output_approvals (id,project_id,workspace_root,workspace_key,relative_path,path_key,"
+                              "inspection_complete,nested_sources_acknowledged,approved_by,approved_at_ms) "
+                              "VALUES ('raw9','p1','C:/ws','" + outputApprovalWorkspaceKey("C:/ws") + "','Raw9','raw9',1,0,'',1);";
+    bool refused = false;
+    try { store.workspace.sql(ninth.c_str()); } catch (const std::runtime_error&) { refused = true; }
+    require(refused, "SQLite's own trigger refuses a ninth row");
+    require(store.repository.listForWorkspace("p1", outputApprovalWorkspaceKey("C:/ws")).value().size() == 8, "...and the set is intact");
+
+    // A row that breaks the table's own guarantees is an ERROR, never a shorter list.
+    const std::string corruptSql = std::string("PRAGMA ignore_check_constraints = ON; DELETE FROM project_output_approvals WHERE id = 't1';"
+                        "INSERT INTO project_output_approvals (id,project_id,workspace_root,workspace_key,relative_path,path_key,"
+                        "inspection_complete,nested_sources_acknowledged,approved_by,approved_at_ms) "
+                        "VALUES ('bad','p1','C:/ws','") + outputApprovalWorkspaceKey("C:/ws") + "','Bad','bad',2,0,'',1);";
+    store.workspace.sql(corruptSql.c_str());
+    const auto corrupt = store.repository.listForWorkspace("p1", outputApprovalWorkspaceKey("C:/ws"));
+    require(!corrupt.success() && corrupt.error()->code == kOutputApprovalStorageFailedCode, "A corrupt row fails the read");
+    const auto corruptCommit = store.repository.commit(makeApproval("after", "p1", "C:/ws", "After"), nullptr);
+    require(!corruptCommit.success(), "...and a commit over it fails closed instead of adding to a partial set");
+    store.workspace.sql("DELETE FROM project_output_approvals WHERE id = 'bad';");
+    require(store.repository.listForWorkspace("p1", outputApprovalWorkspaceKey("C:/ws")).success(), "A repaired table reads again");
+
+    // Deleting the project removes its approvals (and only its).
+    store.ensureProject("p2");
+    require(output_approval_contract::commitOk(store.repository, makeApproval("other", "p2", "C:/ws", "Out")), "p2 approves");
+    store.workspace.sql("PRAGMA foreign_keys = ON; DELETE FROM projects WHERE id = 'p1';");
+    require(store.repository.listForProject("p1").value().empty(), "A removed project takes its approvals with it");
+    require(store.repository.listForProject("p2").value().size() == 1, "...and nobody else's");
+}
+
+std::string columnNamesOfApprovals(const Workspace& workspace)
+{
+    sqlite3* handle = nullptr;
+    const auto path = workspace.databasePath.generic_u8string();
+    require(sqlite3_open_v2(reinterpret_cast<const char*>(path.c_str()), &handle, SQLITE_OPEN_READONLY, nullptr) == SQLITE_OK, "open");
+    sqlite3_stmt* statement = nullptr;
+    require(sqlite3_prepare_v2(handle, "PRAGMA table_info(project_output_approvals);", -1, &statement, nullptr) == SQLITE_OK, "prepare");
+    std::string names;
+    while (sqlite3_step(statement) == SQLITE_ROW) {
+        names += reinterpret_cast<const char*>(sqlite3_column_text(statement, 1));
+        names += ",";
+    }
+    sqlite3_finalize(statement);
+    sqlite3_close(handle);
+    return names;
+}
+
+long long numberOf(const Workspace& workspace, const char* sql)
+{
+    sqlite3* handle = nullptr;
+    const auto path = workspace.databasePath.generic_u8string();
+    require(sqlite3_open_v2(reinterpret_cast<const char*>(path.c_str()), &handle, SQLITE_OPEN_READONLY, nullptr) == SQLITE_OK, "open");
+    sqlite3_stmt* statement = nullptr;
+    require(sqlite3_prepare_v2(handle, sql, -1, &statement, nullptr) == SQLITE_OK, "prepare");
+    require(sqlite3_step(statement) == SQLITE_ROW, "row");
+    const long long value = sqlite3_column_int64(statement, 0);
+    sqlite3_finalize(statement);
+    sqlite3_close(handle);
+    return value;
+}
+
+void testSchemaStep71IsRepeatableAndNeverDestroysData()
+{
+    using output_approval_contract::makeApproval;
+    // A fresh database has the step's table, index and trigger in the documented shape.
+    {
+        Workspace workspace;
+        { auto database = workspace.open(); }
+        require(columnNamesOfApprovals(workspace)
+                == "id,project_id,workspace_root,workspace_key,relative_path,path_key,inspection_complete,nested_sources_acknowledged,"
+                   "approved_by,approved_at_ms,",
+            "The table has the documented columns");
+        require(numberOf(workspace, "PRAGMA user_version;") == 71, "A new database is at version 71");
+        require(numberOf(workspace, "SELECT count(*) FROM sqlite_master WHERE name IN ('project_output_approvals_pair_idx','project_output_approvals_limit');") == 2,
+            "...with its index and its trigger");
+    }
+    // Rewound to 70 WITH data: the step runs again over its own populated table and keeps every row; its trigger is recreated.
+    {
+        ApprovalStore store;
+        store.ensureProject("p1");
+        require(output_approval_contract::commitOk(store.repository, makeApproval("a", "p1", "C:/ws", "A")), "approve");
+        require(output_approval_contract::commitOk(store.repository, makeApproval("b", "p1", "C:/ws", "B")), "approve");
+        store.workspace.sql("DROP TRIGGER project_output_approvals_limit; PRAGMA user_version = 70;");
+        auto again = SqliteDatabase::open(store.workspace.databasePath);
+        require(again.success(), "Step 71 runs again over its own populated table");
+        SqliteProjectOutputApprovalRepository repository(again.value());
+        require(repository.listForWorkspace("p1", outputApprovalWorkspaceKey("C:/ws")).value().size() == 2, "...and keeps every row");
+        require(numberOf(store.workspace, "SELECT count(*) FROM sqlite_master WHERE name = 'project_output_approvals_limit';") == 1,
+            "...and its trigger is back");
+        require(numberOf(store.workspace, "PRAGMA user_version;") == 71, "...at version 71");
+    }
+    // Something of that name that is not the table (or has another shape) refuses the step and survives it.
+    {
+        Workspace workspace;
+        { auto database = workspace.open(); }
+        workspace.sql("DROP TABLE project_output_approvals; CREATE TABLE project_output_approvals (x INTEGER); "
+                      "INSERT INTO project_output_approvals VALUES (7); PRAGMA user_version = 70;");
+        const auto refused = SqliteDatabase::open(workspace.databasePath);
+        require(!refused.success() && refused.error()->code == "migration.v71_failed", "Another shape refuses the step");
+        require(numberOf(workspace, "SELECT x FROM project_output_approvals;") == 7 && numberOf(workspace, "PRAGMA user_version;") == 70,
+            "...and the foreign table and the version are untouched");
+    }
+    {
+        Workspace workspace;
+        { auto database = workspace.open(); }
+        workspace.sql("DROP TABLE project_output_approvals; CREATE VIEW project_output_approvals AS SELECT 1 AS x; PRAGMA user_version = 70;");
+        const auto refused = SqliteDatabase::open(workspace.databasePath);
+        require(!refused.success() && refused.error()->code == "migration.v71_failed", "A view of that name refuses the step");
+        require(numberOf(workspace, "SELECT count(*) FROM sqlite_master WHERE name = 'project_output_approvals' AND type = 'view';") == 1,
+            "...and survives");
+    }
+    // R1: a table with the right COLUMN NAMES but not the right definition is refused, with its rows and its version untouched.
+    {
+        const std::string columns = "id TEXT, project_id TEXT, workspace_root TEXT, workspace_key TEXT, relative_path TEXT, path_key TEXT, "
+                                    "inspection_complete INTEGER, nested_sources_acknowledged INTEGER, approved_by TEXT, approved_at_ms INTEGER";
+        const std::string row = "INSERT INTO project_output_approvals VALUES ('r1','p1','C:/ws','c:/ws','Out','out',1,0,'',1);";
+        const std::string fullChecks =
+            "id TEXT PRIMARY KEY NOT NULL CHECK(length(CAST(id AS BLOB)) BETWEEN 1 AND 64), "
+            "project_id TEXT NOT NULL %FK%, workspace_root TEXT NOT NULL CHECK(length(CAST(workspace_root AS BLOB)) BETWEEN 1 AND 2048), "
+            "workspace_key TEXT NOT NULL CHECK(length(CAST(workspace_key AS BLOB)) BETWEEN 1 AND 2048), "
+            "relative_path TEXT NOT NULL CHECK(length(CAST(relative_path AS BLOB)) BETWEEN 1 AND 512), "
+            "path_key TEXT NOT NULL CHECK(length(CAST(path_key AS BLOB)) BETWEEN 1 AND 512), "
+            "inspection_complete INTEGER NOT NULL CHECK(inspection_complete IN (0,1)), "
+            "nested_sources_acknowledged INTEGER NOT NULL CHECK(nested_sources_acknowledged IN (0,1)), "
+            "approved_by TEXT NOT NULL DEFAULT '' CHECK(length(CAST(approved_by AS BLOB)) <= 256), approved_at_ms INTEGER NOT NULL";
+        const auto withForeignKey = [&](bool foreignKey, bool unique) {
+            std::string text = fullChecks;
+            text.replace(text.find("%FK%"), 4, foreignKey ? "REFERENCES projects(id) ON UPDATE CASCADE ON DELETE CASCADE" : "");
+            if (unique) text += ", UNIQUE(project_id, workspace_key, path_key)";
+            return "CREATE TABLE project_output_approvals (" + text + ");";
+        };
+        struct Variant { const char* name; std::string setup; };
+        const std::vector<Variant> variants = {
+            {"the same column names without any constraint", "CREATE TABLE project_output_approvals (" + columns + ");"},
+            {"no foreign key", withForeignKey(false, true)},
+            {"no UNIQUE", withForeignKey(true, false)},
+        };
+        for (const auto& variant : variants) {
+            Workspace workspace;
+            { auto database = workspace.open(); }
+            workspace.sql(("INSERT INTO projects(id,name,description,root_path,status,created_at_ms,updated_at_ms) "
+                           "VALUES('p1','n','d','" + workspace.root.generic_string() + "/p1','active',1,1);"
+                           "DROP TABLE project_output_approvals; " + variant.setup + row + "PRAGMA user_version = 70;").c_str());
+            const auto refused = SqliteDatabase::open(workspace.databasePath);
+            require(!refused.success() && refused.error()->code == "migration.v71_failed",
+                (std::string("Step 71 refuses a table with ") + variant.name).c_str());
+            require(numberOf(workspace, "PRAGMA user_version;") == 70, "...and the version stays 70");
+            require(numberOf(workspace, "SELECT count(*) FROM project_output_approvals;") == 1, "...and its row is untouched");
+            require(numberOf(workspace, "SELECT count(*) FROM pragma_foreign_key_list('project_output_approvals');")
+                    == (std::string(variant.name) == "no UNIQUE" ? 1 : 0),
+                "...and nothing was added to the table");
+        }
+        {   // an index of the step's name that is defined otherwise
+            Workspace workspace;
+            { auto database = workspace.open(); }
+            workspace.sql("DROP INDEX project_output_approvals_pair_idx; "
+                          "CREATE INDEX project_output_approvals_pair_idx ON project_output_approvals(path_key); PRAGMA user_version = 70;");
+            const auto refused = SqliteDatabase::open(workspace.databasePath);
+            require(!refused.success() && refused.error()->code == "migration.v71_failed", "An index of the step's name with another definition refuses it");
+            require(numberOf(workspace, "SELECT count(*) FROM pragma_index_info('project_output_approvals_pair_idx');") == 1
+                    && numberOf(workspace, "PRAGMA user_version;") == 70,
+                "...and it stays as it was");
+        }
+    }
+    // A database newer than the build is still refused.
+    {
+        Workspace workspace;
+        { auto database = workspace.open(); }
+        workspace.sql("PRAGMA user_version = 72;");
+        const auto newer = SqliteDatabase::open(workspace.databasePath);
+        require(!newer.success() && newer.error()->code == "migration.unsupported_version", "Version 72 is refused");
+    }
+}
+
 int main()
 {
     try {
@@ -755,7 +1009,11 @@ int main()
         testReadinessEveryStateRoundTripsAndProjectsAreIsolated();
         testReadinessRefusedWritesKeepTheStoredRecord();
         testReadinessCorruptRowsAreHandledAsPinned();
-        std::cout << "SQLite Projects contracts: 12 passed\n";
+        testOutputApprovalContractOnSqlite();
+        testOutputApprovalTwoConnectionsToOneFile();
+        testOutputApprovalStorageGuards();
+        testSchemaStep71IsRepeatableAndNeverDestroysData();
+        std::cout << "SQLite Projects contracts: 16 passed\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "SQLite Projects contracts failed: " << error.what() << '\n';

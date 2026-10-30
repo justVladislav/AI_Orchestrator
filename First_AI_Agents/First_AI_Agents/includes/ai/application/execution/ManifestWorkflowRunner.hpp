@@ -14,6 +14,7 @@
 #include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/verification/IVerificationBootstrapRepository.hpp"
 #include "ai/application/verification/IVerificationScratchRootProvider.hpp"
+#include "ai/application/workspace/OutputApprovalPolicySource.hpp"
 #include "ai/application/execution/ManifestWorkLedgerService.hpp"
 
 namespace ai::application {
@@ -132,7 +133,18 @@ public:
         projectReadiness_ = service;
     }
 
+    // P3c: where a NEW Run learns the read policy of its workspace - today's secureDefaults plus the output folders the user approved
+    // for this (project, workspace root). Asked ONCE, before the baseline is captured and before any provider session exists; the
+    // answer is then the Run's own for its whole life (its baseline artifact freezes it), so a later approval or revocation never
+    // changes a Run in flight. An error of the source fails the Run before the provider. Null (the default, a standalone runner) keeps
+    // the previous behaviour exactly; BackendRuntime always sets one. Set once while the runtime is composed.
+    void setOutputApprovalPolicySource(const IOutputApprovalPolicySource* source) noexcept
+    {
+        outputApprovals_ = source;
+    }
+
 private:
+    const IOutputApprovalPolicySource* outputApprovals_ {nullptr};
     ProjectReadinessService* projectReadiness_ {nullptr};
     const IVerificationScratchRootProvider* scratchProvider_ {nullptr};
     ExecutionManifestPlanner planner_;

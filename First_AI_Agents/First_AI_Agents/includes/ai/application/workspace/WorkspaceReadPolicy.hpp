@@ -46,6 +46,13 @@ public:
         const std::filesystem::path& relativePath,
         const WorkspaceReadPolicy& policy);
 
+    // True when the path is at or below one of policy.deniedPaths: the lexically normalised path is compared per component, ASCII
+    // case-insensitively on Windows, so a neighbour sharing only a string prefix (Out2x for Out2) does not match. The very test
+    // validateRelativePath applies; exposed so the write side shares it instead of keeping a second copy.
+    [[nodiscard]] static bool matchesDeniedPath(
+        const std::filesystem::path& relativePath,
+        const WorkspaceReadPolicy& policy);
+
     [[nodiscard]] static common::Result<void> validateTrustedPolicy(
         const WorkspaceReadPolicy& policy);
 

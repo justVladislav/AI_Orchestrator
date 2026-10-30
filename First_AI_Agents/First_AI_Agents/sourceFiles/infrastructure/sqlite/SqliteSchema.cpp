@@ -5,6 +5,7 @@
 
 #include <sqlite3.h>
 
+#include <cctype>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -26,8 +27,6 @@ using sqlite_detail::execute;
 using sqlite_detail::prepare;
 using sqlite_detail::columnText;
 using sqlite_detail::bindText;
-
-constexpr int supportedSchemaVersion = 70;
 
 // PC-5B/5C/5D: the SQL of the follow-up request table and of everything that lives on it, written ONCE. Step 66 creates it; step 67
 // creates it again for a database whose v66 table was made before the table was amended in place (see step 67). Both therefore
@@ -3807,6 +3806,109 @@ PRAGMA user_version = 70;
 COMMIT;
 )sql";
         const auto migrated = execute(handle, migration, "migration.v70_failed");
+        if (!migrated.success()) {
+            static_cast<void>(execute(handle, "ROLLBACK;", "migration.rollback_failed"));
+            return common::Result<void>::failure(*migrated.error());
+        }
+    }
+
+    if (schemaVersion < 71) {
+        // P3a: the user's explicit approvals of output folders, per project and workspace root. A NEW step; no applied step is edited.
+        // Existing databases get no rows. The step is repeatable over its own objects: a populated table that is EXACTLY this step's
+        // table is kept (a rewound test database, a second run of the step) and only this step's own trigger is recreated. Anything
+        // else of these names - a view, an index with another definition, a table that only has the same column names - refuses the
+        // step; it is neither replaced nor "repaired", and the rows in it stay untouched.
+        //
+        // The table is accepted by its stored definition, because that is the only place its CHECK constraints can be read. SQLite
+        // stores the statement from the object's name to its end, as written, so the text below is both what is executed and what
+        // is compared (whitespace collapsed).
+        const std::string tableBody = R"sql(project_output_approvals (
+    id TEXT PRIMARY KEY NOT NULL CHECK(length(CAST(id AS BLOB)) BETWEEN 1 AND 64),
+    project_id TEXT NOT NULL REFERENCES projects(id) ON UPDATE CASCADE ON DELETE CASCADE,
+    workspace_root TEXT NOT NULL CHECK(length(CAST(workspace_root AS BLOB)) BETWEEN 1 AND 2048),
+    workspace_key TEXT NOT NULL CHECK(length(CAST(workspace_key AS BLOB)) BETWEEN 1 AND 2048),
+    relative_path TEXT NOT NULL CHECK(length(CAST(relative_path AS BLOB)) BETWEEN 1 AND 512),
+    path_key TEXT NOT NULL CHECK(length(CAST(path_key AS BLOB)) BETWEEN 1 AND 512),
+    inspection_complete INTEGER NOT NULL CHECK(inspection_complete IN (0,1)),
+    nested_sources_acknowledged INTEGER NOT NULL CHECK(nested_sources_acknowledged IN (0,1)),
+    approved_by TEXT NOT NULL DEFAULT '' CHECK(length(CAST(approved_by AS BLOB)) <= 256),
+    approved_at_ms INTEGER NOT NULL,
+    UNIQUE(project_id, workspace_key, path_key)
+))sql";
+        const std::string indexBody =
+            "project_output_approvals_pair_idx ON project_output_approvals(project_id, workspace_key)";
+        const auto collapse = [](const std::string& text) {
+            std::string out;
+            bool pendingSpace = false;
+            for (const unsigned char c : text) {
+                if (std::isspace(c) != 0) {
+                    pendingSpace = !out.empty();
+                    continue;
+                }
+                if (pendingSpace) out.push_back(' ');
+                pendingSpace = false;
+                out.push_back(static_cast<char>(c));
+            }
+            return out;
+        };
+
+        const auto begun = execute(handle, "BEGIN IMMEDIATE;", "migration.v71_failed");
+        if (!begun.success()) return common::Result<void>::failure(*begun.error());
+        const auto refuse = [handle](std::string message) {
+            static_cast<void>(execute(handle, "ROLLBACK;", "migration.rollback_failed"));
+            return common::Result<void>::failure(error("migration.v71_failed", std::move(message)));
+        };
+        {
+            Statement existing;
+            const auto prepared = prepare(handle,
+                "SELECT type, name, tbl_name, sql FROM sqlite_master "
+                "WHERE name IN ('project_output_approvals', 'project_output_approvals_pair_idx');",
+                existing);
+            if (!prepared.success()) {
+                static_cast<void>(execute(handle, "ROLLBACK;", "migration.rollback_failed"));
+                return common::Result<void>::failure(*prepared.error());
+            }
+            int step = sqlite3_step(existing.get());
+            for (; step == SQLITE_ROW; step = sqlite3_step(existing.get())) {
+                const std::string type = columnText(existing.get(), 0);
+                const std::string name = columnText(existing.get(), 1);
+                const std::string owner = columnText(existing.get(), 2);
+                const std::string definition = collapse(columnText(existing.get(), 3));
+                if (name == "project_output_approvals") {
+                    if (type != "table") {
+                        return refuse("An object named project_output_approvals exists and is not a table; it is not replaced");
+                    }
+                    if (definition != collapse("CREATE TABLE " + tableBody)) {
+                        return refuse("A table named project_output_approvals exists with another definition (columns, keys, "
+                                      "constraints); it is not replaced");
+                    }
+                } else if (type != "index" || owner != "project_output_approvals"
+                    || definition != collapse("CREATE INDEX " + indexBody)) {
+                    return refuse("An object named project_output_approvals_pair_idx exists with another definition; it is not replaced");
+                }
+            }
+            // A query that did not finish is not "nothing found".
+            if (step != SQLITE_DONE) {
+                static_cast<void>(execute(handle, "ROLLBACK;", "migration.rollback_failed"));
+                return common::Result<void>::failure(
+                    databaseError(handle, "migration.v71_failed", "Could not examine the existing objects of step 71"));
+            }
+        }
+        const std::string migration = "CREATE TABLE IF NOT EXISTS " + tableBody + ";\n"
+            "CREATE INDEX IF NOT EXISTS " + indexBody + ";\n" + R"sql(
+-- A safety net next to the repository's transaction, not a replacement for it: at most 8 approvals per (project, workspace root).
+DROP TRIGGER IF EXISTS project_output_approvals_limit;
+CREATE TRIGGER project_output_approvals_limit
+BEFORE INSERT ON project_output_approvals
+WHEN (SELECT count(*) FROM project_output_approvals
+      WHERE project_id = NEW.project_id AND workspace_key = NEW.workspace_key) >= 8
+BEGIN
+    SELECT RAISE(ABORT, 'output_approval_limit');
+END;
+PRAGMA user_version = 71;
+COMMIT;
+)sql";
+        const auto migrated = execute(handle, migration.c_str(), "migration.v71_failed");
         if (!migrated.success()) {
             static_cast<void>(execute(handle, "ROLLBACK;", "migration.rollback_failed"));
             return common::Result<void>::failure(*migrated.error());

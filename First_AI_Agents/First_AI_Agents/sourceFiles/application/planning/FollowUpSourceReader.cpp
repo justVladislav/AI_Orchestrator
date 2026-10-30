@@ -116,16 +116,21 @@ common::Result<FollowUpSourceMaterial> FollowUpSourceReader::read(const ProjectI
         return Result::ok(std::move(material));
     }
 
-    // The snapshot hashes the workspace: the expensive read.
+    // The one policy of this read (see setOutputApprovalPolicySource): asked once, for the source Run's own workspace, before anything of
+    // the workspace is read. An error of the source is the failure of the whole read - no snapshot, no candidates.
+    const std::filesystem::path workspaceRoot = run.value()->workspacePath.value_or(material.project.rootPath);
+    const auto policy = resolveReadPolicy(outputApprovals_, projectId, workspaceRoot);
+    if (!policy.success()) return Result::failure(*policy.error());
+
+    // The snapshot hashes the workspace: the expensive read. It reads under the policy above (and refuses a policy of another root).
     ProjectContextSnapshotRequest snapshotRequest;
     snapshotRequest.projectId = projectId;
     snapshotRequest.selectedRunId = sourceRunId;
-    auto snapshot = snapshots_.build(snapshotRequest);
+    auto snapshot = snapshots_.build(snapshotRequest, policy.value());
     if (!snapshot.success()) return Result::failure(*snapshot.error());
     material.snapshot = std::move(snapshot.value());
 
-    const std::filesystem::path workspaceRoot = run.value()->workspacePath.value_or(material.project.rootPath);
-    auto candidates = files_.load(workspaceRoot, paths);
+    auto candidates = files_.load(policy.value(), paths);
     if (!candidates.success()) return Result::failure(*candidates.error());
     material.candidates = std::move(candidates.value());
     return Result::ok(std::move(material));

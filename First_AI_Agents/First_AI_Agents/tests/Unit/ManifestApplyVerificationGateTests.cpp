@@ -14,6 +14,11 @@
 #include "ai/application/inmemory/InMemoryVerificationBootstrapRepository.hpp"
 #include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/verification/ManifestApplyVerificationGate.hpp"
+#include "ai/application/verification/RecordedBaselinePolicy.hpp"
+#include "ai/application/artifacts/ArtifactService.hpp"
+#include "ai/application/execution/ManifestWorkLedgerService.hpp"
+#include "ai/application/inmemory/InMemoryManifestTaskExecutionRepository.hpp"
+#include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 #include "ai/application/execution/ManifestWorkLedgerTypes.hpp"
 #include "ai/application/Sha256.hpp"
 #include "ai/infrastructure/FileChangeProposalStore.hpp"
@@ -304,14 +309,30 @@ std::string testComputeContentHash(
 // makePassingVerification()'s defaults line up with Fixture::seedLedgerEntry()'s
 // defaults without every call site having to repeat them.
 constexpr const char* kFixtureProjectId = "p1";
-constexpr const char* kFixtureBaselineFingerprint = "baseline-1";
+// The fingerprint of the (empty) project folder every Fixture uses: a REAL baseline, so that the Manifest Run's mandatory baseline
+// artifact - which production always has - can be persisted for it and Apply can resolve its frozen write area.
+WorkspaceBaselineSnapshot fixtureEmptyBaseline()
+{
+    static const WorkspaceBaselineSnapshot snapshot = [] {
+        TempDir empty;
+        const auto captured = WorkspaceBaselineProvenance::capture(WorkspaceReadPolicy::secureDefaults(empty.path));
+        req(captured.success(), "Could not capture the empty fixture baseline");
+        return captured.value();
+    }();
+    return snapshot;
+}
+const std::string& fixtureBaselineFingerprint()
+{
+    static const std::string fingerprint = fixtureEmptyBaseline().fingerprint;
+    return fingerprint;
+}
 
 ManifestProposalSetVerification makePassingVerification(
     std::vector<ChangeSetId> orderedIds, std::vector<std::string> orderedHashes)
 {
     ManifestProposalSetVerification v;
     v.workspaceIdentity = kFixtureProjectId;
-    v.baselineFingerprint = kFixtureBaselineFingerprint;
+    v.baselineFingerprint = fixtureBaselineFingerprint();
     v.overlayFingerprint = "overlay-1";
     v.orderedProposalIds = std::move(orderedIds);
     v.orderedProposalContentHashes = std::move(orderedHashes);
@@ -348,6 +369,13 @@ struct Fixture {
     InMemoryRunRepository runs;
     InMemoryManifestWorkLedgerRepository ledger;
     std::unique_ptr<FileChangeProposalStore> store;
+    // What Apply needs to resolve a Manifest-family Run's frozen write area (production always wires these).
+    InMemoryArtifactRepository artifactRepository;
+    InMemoryArtifactStore artifactStore;
+    ArtifactService artifacts {artifactRepository, artifactStore};
+    InMemoryExecutionManifestRepository manifestRepository;
+    InMemoryManifestTaskExecutionRepository taskExecutions;
+    ManifestWorkLedgerService ledgerService {ledger, runs, manifestRepository, taskExecutions, repo, &artifacts};
 
     Fixture()
     {
@@ -376,7 +404,7 @@ struct Fixture {
     {
         return ChangeSetApplyService(
             repo, *store, runs, projects, approvals,
-            /*artifacts=*/nullptr, /*manifestWorkLedgerService=*/nullptr, gate);
+            &artifacts, &ledgerService, gate);
     }
 
     ProjectWritePolicy defaultPolicy()
@@ -398,6 +426,9 @@ struct Fixture {
         run.status = RunStatus::Completed;
         run.createdAt = std::chrono::system_clock::now();
         req(runs.insertRun(run).success(), "Could not seed Run");
+        // Like every production Run that has a durable baseline, it owns the baseline artifact its ledger fingerprint names.
+        req(RecordedBaselinePolicy::persist(artifacts, id, std::nullopt, fixtureEmptyBaseline()).success(),
+            "Could not persist the Run's baseline artifact");
         return run;
     }
 
@@ -420,7 +451,7 @@ struct Fixture {
         entry.runId = runId;
         entry.projectId = projectIdOverride.value_or(kFixtureProjectId);
         entry.terminalStatus = terminalStatus;
-        entry.baselineFingerprint = baselineFingerprintOverride.value_or(kFixtureBaselineFingerprint);
+        entry.baselineFingerprint = baselineFingerprintOverride.value_or(fixtureBaselineFingerprint());
         entry.disposition = dispositionOverride.value_or(
             verification.has_value()
                 ? ManifestWorkLedgerDisposition::ManifestReady
@@ -1145,7 +1176,7 @@ void testBootstrapManifestWithoutDurableDecisionDeniesApply()
     VerificationBootstrapDecision decision;
     decision.runId = "r1";
     decision.projectId = kFixtureProjectId;
-    decision.baselineFingerprint = kFixtureBaselineFingerprint;
+    decision.baselineFingerprint = fixtureBaselineFingerprint();
     decision.disposition = VerificationBootstrapDisposition::BootstrapPending;
     decision.reasonCode = "verification_environment.bootstrap_pending";
     decision.bootstrapSetupPaths = {fs::path("CMakeUserPresets.json")};

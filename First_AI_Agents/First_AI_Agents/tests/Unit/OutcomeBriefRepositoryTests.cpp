@@ -675,7 +675,7 @@ void testPersistenceAcrossReopenAndTheV64Migration()
         require(history.size() == 2 && oc::sameRevision(history[0], storedA) && oc::sameRevision(history[1], storedB),
             "...and so does the whole history");
         RawConnection raw(workspace.database);
-        require(raw.scalar("PRAGMA user_version") == 70, "The database is at the latest schema");
+        require(raw.scalar("PRAGMA user_version") == 71, "The database is at the latest schema");
     }
 
     // The v63 shape: everything the earlier schemas hold, and none of the two new tables.
@@ -688,7 +688,7 @@ void testPersistenceAcrossReopenAndTheV64Migration()
     {
         const auto database = openDatabase(workspace.database);
         RawConnection raw(workspace.database);
-        require(raw.scalar("PRAGMA user_version") == 70, "A v63 database migrates to the latest schema");
+        require(raw.scalar("PRAGMA user_version") == 71, "A v63 database migrates to the latest schema");
         require(raw.scalar("SELECT COUNT(*) FROM outcome_brief_revisions") == 0 && raw.scalar("SELECT COUNT(*) FROM outcome_brief_heads") == 0,
             "...with empty brief tables");
         require(raw.scalar("SELECT COUNT(*) FROM runs WHERE id = 'run-1'") == 1, "...and the older data intact");
@@ -712,7 +712,7 @@ void testPersistenceAcrossReopenAndTheV64Migration()
     {
         const auto database = openDatabase(workspace.database);
         RawConnection raw(workspace.database);
-        require(raw.scalar("PRAGMA user_version") == 70, "The second migration ends at the latest schema too");
+        require(raw.scalar("PRAGMA user_version") == 71, "The second migration ends at the latest schema too");
         require(raw.scalar("SELECT COUNT(*) FROM outcome_brief_revisions") == 2 && raw.scalar("SELECT COUNT(*) FROM outcome_brief_heads") == 1,
             "...keeping the revisions and the head");
         expectFailureContaining(raw.exec("UPDATE outcome_brief_revisions SET state = state;"), "outcome_brief_revision_immutable",

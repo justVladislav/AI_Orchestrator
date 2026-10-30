@@ -30,6 +30,10 @@
 #include "ai/application/verification/ManifestProposalOverlay.hpp"
 #include "ai/application/verification/QmlLintDiagnosticPolicy.hpp"
 #include "ai/application/execution/ManifestWorkLedgerService.hpp"
+#include "ai/application/proposals/ChangeSetApplyService.hpp"
+#include "ai/application/proposals/IChangeApprovalRepository.hpp"
+#include "ai/application/verification/RecordedBaselinePolicy.hpp"
+#include "ai/application/workspace/RecordedWorkspaceExclusions.hpp"
 #include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 #include "ai/application/workspace/WorkspaceReadPolicy.hpp"
 #include "ai/application/Sha256.hpp"
@@ -41,11 +45,13 @@
 #include <algorithm>
 #include <chrono>
 #include <deque>
+#include <functional>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <stop_token>
@@ -240,10 +246,13 @@ public:
     std::size_t calls {0};
     // Where every command was asked to run (the verification copy it was started in).
     std::vector<fs::path> workingDirectories;
+    // Optional: something that happens while a verification command "runs" (the user's IDE writing into a candidate, say).
+    std::function<void()> onRun;
     ManifestVerificationCommandOutcome run(
         const ManifestVerificationCommandRequest& request, std::stop_token) override
     {
         ++calls;
+        if (onRun) onRun();
         workingDirectories.push_back(request.workingDirectory);
         if (!queuedOutcomes.empty()) {
             auto next = queuedOutcomes.front();
@@ -1313,7 +1322,120 @@ void testAttributionSourceMismatchNamesTheChangedIdentityField()
 // ManifestProposalSetVerifier calls (scripted only at the command-runner
 // boundary) - exercising prepare()'s actual logic end to end for the first
 // time, not just its reconcileMissingChildren() crash-recovery path.
-void runPrepareScenario(const std::string& ephemeralScratchPadding, ScratchProviderStub* provider = nullptr)
+// P1: how the source Run's durable baseline artifact relates to the dynamic exclusions it froze.
+enum class PrepareRecorded {
+    None,            // no artifact at all - the long-standing shape of this fixture
+    Frozen,          // the artifact records path:Out2; the live workspace holds a large generated Out2/big.obj
+    Unrestorable,    // the artifact records an exclusion that cannot be restored
+    OtherGeneration, // the artifact is valid but is not the baseline the ledger fingerprint names
+    ArtifactMissing, // path:Out2 was frozen over an EMPTY Out2 and the mandatory artifact is gone: same file fingerprint
+    FrozenLegacyDrift // Frozen, and the baseline was taken while Qt Creator housekeeping was still visible (F0); today defaults hide it (F1)
+};
+
+// In-memory approval rows for the Apply path of the manual-handoff scenario below.
+class RecordingApprovalRepository final : public IChangeApprovalRepository {
+public:
+    common::Result<void> recordApproval(const ApprovalRecord& record) override
+    {
+        std::lock_guard lock(mutex_);
+        if (byId_.count(record.changeSetId)) {
+            return common::Result<void>::failure({"proposal.duplicate_id", "Duplicate"});
+        }
+        byId_[record.changeSetId] = record;
+        return common::Result<void>::ok();
+    }
+    common::Result<std::optional<ApprovalRecord>> findApproval(const ChangeSetId& changeSetId) const override
+    {
+        std::lock_guard lock(mutex_);
+        const auto found = byId_.find(changeSetId);
+        if (found == byId_.end()) return common::Result<std::optional<ApprovalRecord>>::ok(std::nullopt);
+        return common::Result<std::optional<ApprovalRecord>>::ok(found->second);
+    }
+    common::Result<void> recordApplyOutcome(const ChangeSetId& changeSetId, const std::string& result,
+        const std::optional<std::string>& errorCode, const std::vector<ApplyHashEntry>& hashLog,
+        const std::optional<std::string>& postApplyWorkspaceFingerprint) override
+    {
+        std::lock_guard lock(mutex_);
+        const auto found = byId_.find(changeSetId);
+        if (found == byId_.end()) return common::Result<void>::failure({"proposal.not_found", "No approval record"});
+        found->second.appliedAt = std::chrono::system_clock::now();
+        found->second.applyResult = result;
+        found->second.applyErrorCode = errorCode;
+        found->second.applyHashLog = hashLog;
+        found->second.postApplyWorkspaceFingerprint = postApplyWorkspaceFingerprint;
+        return common::Result<void>::ok();
+    }
+
+private:
+    mutable std::mutex mutex_;
+    std::map<ChangeSetId, ApprovalRecord> byId_;
+};
+
+// P1 fixture: captures the workspace baseline and, unless `recorded` is None, makes it the one a Run that froze `path:Out2`
+// would have recorded (over a large generated Out2/big.obj that no static exclusion hides) and persists it as that Run's own
+// workspace-baseline.v1.json. Frozen: valid. Unrestorable / OtherGeneration: an artifact that must not be trusted.
+common::Result<WorkspaceBaselineSnapshot> captureFixtureBaseline(const fs::path& root, ArtifactService& artifacts,
+    const RunId& runId, PrepareRecorded recorded, WorkspaceReadPolicy& policy)
+{
+    policy = WorkspaceReadPolicy::secureDefaults(root);
+    if (recorded == PrepareRecorded::None) {
+        // An ordinary Run owns the baseline its ledger fingerprint was derived from: persist it like the Run did.
+        auto plain = WorkspaceBaselineProvenance::capture(policy);
+        req(plain.success(), "Could not capture the real workspace baseline");
+        req(RecordedBaselinePolicy::persist(artifacts, runId, std::nullopt, plain.value()).success(),
+            "Could not persist the source baseline artifact");
+        return plain;
+    }
+    if (recorded == PrepareRecorded::ArtifactMissing) {
+        // The frozen area is EMPTY, so the baseline's file fingerprint is the same with or without the exclusion: a lost artifact
+        // cannot be noticed as drift. No artifact is persisted.
+        fs::create_directories(root / "Out2");
+        policy.deniedPaths = {"Out2"};
+        return WorkspaceBaselineProvenance::capture(policy);
+    }
+
+    fs::create_directories(root / "Out2");
+    {
+        std::ofstream generated(root / "Out2" / "big.obj", std::ios::binary | std::ios::trunc);
+        generated << std::string(300 * 1024, 'x');
+    }
+    if (recorded == PrepareRecorded::FrozenLegacyDrift) {
+        // The pre-75afa2b shape: .qtcreator/ was part of the baseline, so the durable fingerprint F0 includes it. The live capture
+        // under today's defaults omits it (F1), and only legacy normalization may bridge the two.
+        fs::create_directories(root / ".qtcreator");
+        {
+            std::ofstream session(root / ".qtcreator" / "CMakeLists.txt.user", std::ios::binary | std::ios::trunc);
+            session << "<original-session/>";
+        }
+        policy.deniedDirectoryNames.erase(std::remove(policy.deniedDirectoryNames.begin(), policy.deniedDirectoryNames.end(),
+            std::string(".qtcreator")), policy.deniedDirectoryNames.end());
+    }
+    policy.deniedPaths = {"Out2"};
+    auto snapshot = WorkspaceBaselineProvenance::capture(policy);
+    req(snapshot.success(), "Could not capture the real workspace baseline");
+    auto artifactSnapshot = snapshot.value();
+    if (recorded == PrepareRecorded::Unrestorable) {
+        std::replace(artifactSnapshot.exclusions.begin(), artifactSnapshot.exclusions.end(),
+            std::string("path:Out2"), std::string("path:./Out2"));
+    } else if (recorded == PrepareRecorded::OtherGeneration) {
+        // A valid baseline of an earlier generation of the workspace: one more file than the ledger's baseline.
+        std::ofstream(root / "other.txt", std::ios::binary | std::ios::trunc) << "other";
+        const auto other = WorkspaceBaselineProvenance::capture(policy);
+        fs::remove(root / "other.txt");
+        req(other.success() && other.value().fingerprint != snapshot.value().fingerprint,
+            "Could not capture another generation of the baseline");
+        artifactSnapshot = other.value();
+    }
+    const auto artifactJson = WorkspaceBaselineProvenance::renderJson(artifactSnapshot);
+    req(artifactJson.success(), "Could not render the source baseline artifact");
+    req(artifacts.createArtifact(runId, std::nullopt, ArtifactKind::Report,
+            "workspace-baseline.v1.json", "application/json", artifactJson.value()).success(),
+        "Could not persist the source baseline artifact");
+    return snapshot;
+}
+
+void runPrepareScenario(const std::string& ephemeralScratchPadding, ScratchProviderStub* provider = nullptr,
+    PrepareRecorded recorded = PrepareRecorded::None)
 {
     TempDir workspace;
     TempDir scratch;
@@ -1403,8 +1525,8 @@ void runPrepareScenario(const std::string& ephemeralScratchPadding, ScratchProvi
     manifest.tasks = {component, integration};
     req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(workspace.path, artifacts, source.id, recorded, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     // Learn the real overlay/content-hash identity a durable verification
@@ -1479,6 +1601,18 @@ void runPrepareScenario(const std::string& ephemeralScratchPadding, ScratchProvi
     commandRunner.queuedOutcomes = {baselineOutsideOutcome, warningOutcome};
 
     const auto prepared = preparation.prepare(source.id);
+    if (recorded == PrepareRecorded::Unrestorable || recorded == PrepareRecorded::OtherGeneration
+        || recorded == PrepareRecorded::ArtifactMissing) {
+        // An artifact that cannot be trusted is a typed failure before anything is captured, copied or run - never "no dynamic
+        // rules" and never a baseline_drift produced by the wrong policy.
+        const char* expected = recorded == PrepareRecorded::Unrestorable ? kRecordedExclusionInvalidCode
+            : recorded == PrepareRecorded::ArtifactMissing ? kRecordedBaselineMissingCode
+                                                           : kRecordedBaselineIdentityMismatchCode;
+        req(!prepared.success() && prepared.error()->code == expected,
+            (std::string("prepare() must fail with ") + expected).c_str());
+        req(commandRunner.calls == 0, "a refused baseline artifact must stop prepare() before any command runs");
+        return;
+    }
     if (provider != nullptr && provider->refusal.has_value()) {
         // The Backend refused the verification folder: prepare() says so with the Backend's own words, BEFORE anything was copied or run.
         req(!prepared.success() && prepared.error()->code == provider->refusal->code
@@ -1516,6 +1650,10 @@ void runPrepareScenario(const std::string& ephemeralScratchPadding, ScratchProvi
             && prepared.value().input.orderedProposalContentHashes == contentHashes,
         "The frozen input must carry the exact real source proposal identity");
     req(!prepared.value().input.childRunId.empty(), "A child Run id must be generated");
+    if (recorded == PrepareRecorded::Frozen) {
+        req(prepared.value().input.baselineFingerprint == baselineSnapshot.value().fingerprint,
+            "The continuation must be pinned to the baseline captured under the Run's own frozen exclusions");
+    }
     if (provider != nullptr) {
         // Every temporary copy was built under the root the Backend validated - not under the constructor's root.
         req(!commandRunner.workingDirectories.empty(), "commands must have run in verification copies");
@@ -1566,6 +1704,31 @@ void testPrepareBuildsItsCopiesUnderTheRootTheBackendValidated()
     provider.root = providerRoot.path;
     runPrepareScenario("", &provider);
 }
+// P1: the live workspace is captured under the dynamic exclusions the source Run froze in its own baseline artifact. Before the
+// restoration prepare() captured it under today's static defaults, found the large generated Out2/big.obj and stopped with
+// workspace_baseline.file_limit.
+void testPrepareRestoresTheDynamicExclusionsTheSourceRunFroze()
+{
+    runPrepareScenario("", nullptr, PrepareRecorded::Frozen);
+}
+
+void testPrepareFailsClosedOnAnUnrestorableRecordedExclusion()
+{
+    runPrepareScenario("", nullptr, PrepareRecorded::Unrestorable);
+}
+
+void testPrepareFailsClosedWhenTheBaselineArtifactIsNotTheLedgerBaseline()
+{
+    runPrepareScenario("", nullptr, PrepareRecorded::OtherGeneration);
+}
+
+// A source Run has a durable baseline identity, so its baseline artifact is mandatory: with Out2 empty the loss cannot show up as
+// drift or file_limit, and restoring plain defaults would silently widen the area the Run froze.
+void testPrepareFailsClosedWhenTheMandatoryBaselineArtifactIsLost()
+{
+    runPrepareScenario("", nullptr, PrepareRecorded::ArtifactMissing);
+}
+
 void testPrepareNormalizesLegacyQtCreatorBaselineDriftAndPinsFreshIdentity()
 {
     TempDir workspace;
@@ -1959,8 +2122,9 @@ void testPrepareIsIdempotentAndNeverRepeatsVerificationOnRepeatCall()
     manifest.tasks = {component, integration};
     req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(
+        workspace.path, artifacts, source.id, PrepareRecorded::None, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     BuildManifestProposalOverlayRequest overlayRequest;
@@ -2686,7 +2850,8 @@ std::string repairCreateProposalJson(const std::string& path, const std::string&
 // non-repaired `integration` task as a Planner-declared requirement the policy
 // merely recognised - the repair subset does not contain it, so the record must
 // be omitted (never left dangling) while the child still freezes.
-void runRepairMaterializationScenario(bool anchorInsideRepairSet, bool rosterRouting = false)
+void runRepairMaterializationScenario(bool anchorInsideRepairSet, bool rosterRouting = false,
+    PrepareRecorded recorded = PrepareRecorded::None)
 {
     TempDir workspace;
     TempDir scratch;
@@ -2937,8 +3102,8 @@ void runRepairMaterializationScenario(bool anchorInsideRepairSet, bool rosterRou
     manifest.routing = ManifestRouting::fromAssignments(source.assignmentSnapshot);
     req(manifestRepository.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(workspace.path, artifacts, source.id, recorded, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     BuildManifestProposalOverlayRequest overlayRequest;
@@ -3033,6 +3198,26 @@ void runRepairMaterializationScenario(bool anchorInsideRepairSet, bool rosterRou
 
     const auto repaired = repairService.repair(childRunId);
     req(repaired.success(), "A fully prepared child Run must repair successfully");
+    if (recorded == PrepareRecorded::Frozen) {
+        // The child's own baseline artifact is captured under the SOURCE Run's frozen exclusions and records them again, so every
+        // later operation on the child inherits the same area.
+        const auto childArtifacts = artifacts.listArtifacts(childRunId);
+        req(childArtifacts.success(), "Could not list the child Run's artifacts");
+        const Artifact* childBaseline = nullptr;
+        for (const auto& artifact : childArtifacts.value()) {
+            if (artifact.name == "workspace-baseline.v1.json") childBaseline = &artifact;
+        }
+        req(childBaseline != nullptr, "The continuation child must persist its own baseline artifact");
+        const auto childContent = artifacts.getArtifactContent(childBaseline->id);
+        const auto childSnapshot = childContent.success()
+            ? WorkspaceBaselineProvenance::parseJson(childContent.value())
+            : common::Result<WorkspaceBaselineSnapshot>::failure(*childContent.error());
+        req(childSnapshot.success()
+                && std::count(childSnapshot.value().exclusions.begin(), childSnapshot.value().exclusions.end(),
+                       std::string("path:Out2")) == 1
+                && childSnapshot.value().fingerprint == baselineSnapshot.value().fingerprint,
+            "The child's baseline artifact must record the inherited dynamic exclusion and the same fingerprint");
+    }
     // PC-4C: the paid child bypasses RunManager::finishRun, so finishing it nudges the brief of the CHILD, once.
     req(outcomeBriefTrigger.runCalls(childRunId) == 1 && outcomeBriefTrigger.runs().size() == 2,
         "Finishing the continuation child must nudge its own Outcome Brief exactly once");
@@ -3275,7 +3460,34 @@ void runRepairMaterializationScenario(bool anchorInsideRepairSet, bool rosterRou
 // (never cleaned up), and allowedPaths restricted to the one owner finding's
 // Create target (qml/App.qml) - never the untouched integration proposal's
 // own qml/CMakeLists.txt target, which carries no finding at all.
+void runMaterializeScenario(PrepareRecorded recorded);
+
 void testMaterializeProducesDurableHandoffRestrictedToOwnerFindingTargets()
+{
+    runMaterializeScenario(PrepareRecorded::None);
+}
+
+void testMaterializeRestoresTheDynamicExclusionsTheAnchorFroze()
+{
+    runMaterializeScenario(PrepareRecorded::Frozen);
+}
+
+void testMaterializeFailsClosedOnAnUnrestorableRecordedExclusion()
+{
+    runMaterializeScenario(PrepareRecorded::Unrestorable);
+}
+
+void testMaterializeFailsClosedWhenTheBaselineArtifactIsNotTheLedgerBaseline()
+{
+    runMaterializeScenario(PrepareRecorded::OtherGeneration);
+}
+
+void testMaterializeFailsClosedWhenTheMandatoryBaselineArtifactIsLost()
+{
+    runMaterializeScenario(PrepareRecorded::ArtifactMissing);
+}
+
+void runMaterializeScenario(PrepareRecorded recorded)
 {
     TempDir workspace;
     TempDir scratch;
@@ -3360,8 +3572,8 @@ void testMaterializeProducesDurableHandoffRestrictedToOwnerFindingTargets()
     manifest.tasks = {component, integration};
     req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(workspace.path, artifacts, source.id, recorded, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     BuildManifestProposalOverlayRequest overlayRequest;
@@ -3426,8 +3638,26 @@ void testMaterializeProducesDurableHandoffRestrictedToOwnerFindingTargets()
     commandRunner.queuedOutcomes = {baselineOutsideOutcome, warningOutcome};
 
     const auto materialized = manualHandoffService.materialize(source.id);
+    if (recorded == PrepareRecorded::Unrestorable || recorded == PrepareRecorded::OtherGeneration
+        || recorded == PrepareRecorded::ArtifactMissing) {
+        // An artifact that cannot be trusted is a typed failure before anything is captured, copied or run - never "no dynamic
+        // rules" and never a baseline_drift produced by the wrong policy.
+        const char* expected = recorded == PrepareRecorded::Unrestorable ? kRecordedExclusionInvalidCode
+            : recorded == PrepareRecorded::ArtifactMissing ? kRecordedBaselineMissingCode
+                                                           : kRecordedBaselineIdentityMismatchCode;
+        req(!materialized.success() && materialized.error()->code == expected,
+            (std::string("materialize() must fail with ") + expected).c_str());
+        req(commandRunner.calls == 0, "a refused baseline artifact must stop the operation before any command runs");
+        return;
+    }
     req(materialized.success(), "A fully eligible source Run must materialize successfully");
     const auto& handoff = materialized.value().handoff;
+    if (recorded == PrepareRecorded::Frozen) {
+        req(handoff.baselineFingerprint == baselineSnapshot.value().fingerprint,
+            "The handoff must be frozen against the baseline captured under the anchor's own exclusions");
+        req(!std::filesystem::exists(materialized.value().candidateRoot / "Out2"),
+            "The frozen area must not be materialized into the candidate");
+    }
     req(handoff.originManifestRunId == source.id
             && handoff.verificationAnchorRunId == source.id
             && handoff.sourceProjectId == project.id,
@@ -3600,8 +3830,9 @@ void runMaterializeLongRootScenario(const std::string& ephemeralScratchPadding, 
     manifest.tasks = {component};
     req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(
+        workspace.path, artifacts, source.id, PrepareRecorded::None, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     BuildManifestProposalOverlayRequest overlayRequest;
@@ -3843,8 +4074,9 @@ void testImportAndReverifyVerifiesInShortScratchDespiteLongManualHandoffRoot()
     manifest.tasks = {component};
     req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(
+        workspace.path, artifacts, source.id, PrepareRecorded::None, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     BuildManifestProposalOverlayRequest overlayRequest;
@@ -4013,8 +4245,9 @@ void testMaterializeFailsClosedWhenExecutionScratchRootItselfExceedsPathBudget()
     manifest.tasks = {component};
     req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(
+        workspace.path, artifacts, source.id, PrepareRecorded::None, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     // scratch is now the deliberately-long root, so the reference overlay
@@ -4204,8 +4437,9 @@ void testMaterializeFailsClosedOnDurableCandidateDriftDuringVerification()
     manifest.tasks = {component};
     req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(
+        workspace.path, artifacts, source.id, PrepareRecorded::None, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     BuildManifestProposalOverlayRequest overlayRequest;
@@ -4313,8 +4547,15 @@ struct MultiFilePredecessorFixture {
     ChangeSetId predecessorId;
     ManifestVerificationManualHandoffMaterializeResult materialized;
 
-    MultiFilePredecessorFixture()
+    // Set when expectMaterialized is false and materialize() refused.
+    std::optional<common::Error> materializeError;
+
+    explicit MultiFilePredecessorFixture(PrepareRecorded recorded = PrepareRecorded::None,
+        std::function<void(const fs::path&)> duringVerification = {}, bool expectMaterialized = true)
     {
+        if (duringVerification) {
+            commandRunner.onRun = [this, duringVerification] { duringVerification(manualHandoffRoot.path); };
+        }
         auto storeResult = FileChangeProposalStore::open(proposalStore.path);
         req(storeResult.success(), "Could not open the real proposal store");
         store = std::move(storeResult.value());
@@ -4396,8 +4637,8 @@ struct MultiFilePredecessorFixture {
         manifest.tasks = {component};
         req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-        const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-        const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+        WorkspaceReadPolicy policy;
+        const auto baselineSnapshot = captureFixtureBaseline(workspace.path, artifacts, source.id, recorded, policy);
         req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
         BuildManifestProposalOverlayRequest overlayRequest;
@@ -4457,7 +4698,13 @@ struct MultiFilePredecessorFixture {
         commandRunner.queuedOutcomes = {cleanOutcome, warningOutcome};
 
         const auto result = service->materialize(source.id);
-        req(result.success(), "A fully eligible multi-file source Run must materialize successfully");
+        if (!expectMaterialized) {
+            if (!result.success()) materializeError = *result.error();
+            else materialized = result.value();
+            return;
+        }
+        req(result.success(), ("A fully eligible multi-file source Run must materialize successfully: "
+            + (result.success() ? std::string() : result.error()->code + ": " + result.error()->message)).c_str());
         req(result.value().handoff.allowedPaths.size() == 1
                 && result.value().handoff.allowedPaths.front().relativePath == "qml/A.qml",
             "Only A.qml (the file with a remaining owner finding) must be editable");
@@ -4701,7 +4948,47 @@ void testImportAndReverifyFailsClosedOnCorruptCarriedForwardDeleteHashEvidence()
 // Proves the real successor lineage, the real sibling attempt Run/Work
 // Ledger shape, and free-retry idempotency - never a hand-built
 // ManifestProposalSetVerification standing in for the real thing.
+// How the Apply of the attempt's real successor reaches its frozen write area.
+enum class AttemptApply {
+    Own,           // the attempt persisted its own baseline artifact (every attempt since P1)
+    OldAttempt,    // an attempt from before that: no artifact of its own, rules only through attempt -> handoff -> anchor
+    AmbiguousOwn,  // the attempt's own artifacts are ambiguous: refused, never bypassed through the valid anchor
+    BrokenLink     // the anchor Run no longer belongs to the attempt's workspace: refused before any write
+};
+
+// Hides one Run's artifacts from listings: what an attempt created before attempts persisted a baseline looks like.
+class HidingArtifactRepository final : public IArtifactRepository {
+public:
+    HidingArtifactRepository(IArtifactRepository& inner, RunId hiddenRun) : inner_(inner), hiddenRun_(std::move(hiddenRun)) {}
+    common::Result<Artifact> insertArtifact(Artifact artifact) override { return inner_.insertArtifact(std::move(artifact)); }
+    common::Result<std::optional<Artifact>> findArtifact(const ArtifactId& id) const override { return inner_.findArtifact(id); }
+    common::Result<std::vector<Artifact>> listArtifacts(const RunId& runId) const override
+    {
+        if (runId == hiddenRun_) return common::Result<std::vector<Artifact>>::ok({});
+        return inner_.listArtifacts(runId);
+    }
+
+private:
+    IArtifactRepository& inner_;
+    RunId hiddenRun_;
+};
+
+void runImportScenario(PrepareRecorded recorded, AttemptApply applyMode = AttemptApply::Own);
+
 void testImportAndReverifyProducesSuccessorAttemptAndIsIdempotent()
+{
+    runImportScenario(PrepareRecorded::None);
+}
+
+// P1: materialize() and importAndReverify() both compare the live workspace with the anchor's baseline under the dynamic
+// exclusions that baseline froze (the reset path shares the helper); the large generated Out2/big.obj used to stop both with
+// workspace_baseline.file_limit.
+void testImportAndReverifyRestoresTheDynamicExclusionsTheAnchorFroze()
+{
+    runImportScenario(PrepareRecorded::Frozen);
+}
+
+void runImportScenario(PrepareRecorded recorded, AttemptApply applyMode)
 {
     outcomebrief_hooks::RecordingTrigger outcomeBriefTrigger;   // PC-4C: records the nudges to the Outcome Brief
     TempDir workspace;
@@ -4786,8 +5073,8 @@ void testImportAndReverifyProducesSuccessorAttemptAndIsIdempotent()
     manifest.tasks = {component};
     req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(workspace.path, artifacts, source.id, recorded, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     BuildManifestProposalOverlayRequest overlayRequest;
@@ -4876,6 +5163,21 @@ void testImportAndReverifyProducesSuccessorAttemptAndIsIdempotent()
 
     const auto imported = manualHandoffService.importAndReverify(handoff.id);
     req(imported.success(), "A legitimate single-file edit must reverify successfully");
+    if (recorded == PrepareRecorded::Frozen) {
+        req(handoff.baselineFingerprint == baselineSnapshot.value().fingerprint,
+            "The handoff must be frozen against the baseline captured under the anchor's own exclusions");
+    }
+    if (recorded == PrepareRecorded::FrozenLegacyDrift) {
+        // F0 != F1 for real: the handoff is pinned to the normalised live fingerprint by an immutable proof, while the anchor's
+        // ledger identity and artifact still carry the original F0.
+        req(handoff.baselineFingerprint != baselineSnapshot.value().fingerprint,
+            "The legacy drift must have produced a different live fingerprint");
+        const auto proof = baselineNormalizations.findBySourceRun(source.id);
+        req(proof.success() && proof.value().has_value()
+                && proof.value()->durableBaselineFingerprint == baselineSnapshot.value().fingerprint
+                && proof.value()->normalizedBaselineFingerprint == handoff.baselineFingerprint,
+            "A normalisation proof must bridge exactly F0 -> the handoff's F1");
+    }
     req(outcomeBriefTrigger.runs() == (std::vector<std::string> {source.id, source.id}), "Reverifying must nudge the anchor once more");
     req(!imported.value().idempotentReplay, "The first call must do real work, not a replay");
     req(imported.value().finalStatus == RunStatus::Completed,
@@ -4937,6 +5239,91 @@ void testImportAndReverifyProducesSuccessorAttemptAndIsIdempotent()
             && replay.value().attemptRunId == imported.value().attemptRunId,
         "A repeat call against unchanged edited state must be an idempotent replay");
     req(outcomeBriefTrigger.runCalls(source.id) == 3, "Even a replay nudges (the nudge is idempotent)");
+
+    // The attempt owns the baseline it verified against: the original fingerprint with the anchor's frozen exclusions.
+    const auto attemptArtifacts = artifacts.listArtifacts(imported.value().attemptRunId);
+    req(attemptArtifacts.success(), "Could not list the attempt Run's artifacts");
+    const Artifact* attemptBaseline = nullptr;
+    for (const auto& artifact : attemptArtifacts.value()) {
+        if (artifact.name == "workspace-baseline.v1.json") attemptBaseline = &artifact;
+    }
+    req(attemptBaseline != nullptr, "The manual-handoff attempt must persist its own baseline artifact");
+    const auto attemptBaselineContent = artifacts.getArtifactContent(attemptBaseline->id);
+    const auto attemptBaselineSnapshot = attemptBaselineContent.success()
+        ? WorkspaceBaselineProvenance::parseJson(attemptBaselineContent.value())
+        : common::Result<WorkspaceBaselineSnapshot>::failure(*attemptBaselineContent.error());
+    req(attemptBaselineSnapshot.success()
+            && attemptBaselineSnapshot.value().fingerprint == handoff.baselineFingerprint
+            && std::count(attemptBaselineSnapshot.value().exclusions.begin(),
+                   attemptBaselineSnapshot.value().exclusions.end(), std::string("path:Out2"))
+                == ((recorded == PrepareRecorded::Frozen || recorded == PrepareRecorded::FrozenLegacyDrift) ? 1 : 0),
+        "The attempt's baseline must carry the handoff's fingerprint and the anchor's frozen exclusions");
+
+    // Approve and apply the REAL successor the attempt published, through the real authority gate. Only a permitted source file is
+    // written: the write-denial boundary under the frozen area is a separate package.
+    ManifestApplyVerificationGate applyGate(
+        proposals, ledger, runs, nullptr, &manifests, &continuations, &manualHandoffs);
+    RecordingApprovalRepository approvals;
+    InMemoryManifestTaskExecutionRepository taskExecutions;
+    ManifestWorkLedgerService ledgerService(ledger, runs, manifests, taskExecutions, proposalRepository, &artifacts);
+    HidingArtifactRepository hiddenAttemptArtifacts(artifactRepository, imported.value().attemptRunId);
+    ArtifactService oldAttemptArtifacts(hiddenAttemptArtifacts, artifactStore);
+    ArtifactService* applyArtifacts = (applyMode == AttemptApply::OldAttempt || applyMode == AttemptApply::BrokenLink)
+        ? &oldAttemptArtifacts : &artifacts;
+    if (applyMode == AttemptApply::AmbiguousOwn) {
+        req(RecordedBaselinePolicy::persist(artifacts, imported.value().attemptRunId, std::nullopt, attemptBaselineSnapshot.value())
+                .success(),
+            "Could not add the second attempt baseline artifact");
+    }
+    if (applyMode == AttemptApply::BrokenLink) {
+        auto anchorRun = runs.findRun(source.id);
+        req(anchorRun.success() && anchorRun.value().has_value(), "Could not read the anchor Run");
+        auto moved = *anchorRun.value();
+        moved.workspacePath = workspace.path / "elsewhere";
+        req(runs.updateRun(std::move(moved)).success(), "Could not move the anchor Run's workspace");
+    }
+    ChangeSetApplyService applyService(proposalRepository, *storeResult.value(), runs, projects, approvals, applyArtifacts,
+        &ledgerService, &applyGate, &manualHandoffs);
+    const ChangeSetId applySuccessorId = attemptLedger.value()->verification->orderedProposalIds.front();
+    req(applyService.approve(applySuccessorId).success(), "The real successor must be approvable");
+    const auto applied = applyService.apply(applySuccessorId);
+    if (applyMode == AttemptApply::AmbiguousOwn || applyMode == AttemptApply::BrokenLink) {
+        const char* expectedCode = applyMode == AttemptApply::AmbiguousOwn ? kRecordedBaselineAmbiguousCode
+                                                                           : "proposal.baseline_context_invalid";
+        req(!applied.success() && applied.error()->code == expectedCode,
+            (std::string("the Apply must be refused with ") + expectedCode).c_str());
+        req(!std::filesystem::exists(workspace.path / "qml" / "App.qml"), "a refused Apply must write nothing");
+        return;
+    }
+    req(applied.success(), "The real successor must apply");
+    if (applyMode == AttemptApply::OldAttempt) {
+        // The frozen area came from the anchor; only the old best-effort REPORT lacks the attempt's own baseline.
+        req(applied.value().provenanceErrorCode == std::optional<std::string>("workspace_provenance.baseline_missing"),
+            "an old attempt keeps the old best-effort report outcome");
+    } else {
+        req(!applied.value().provenanceErrorCode.has_value(),
+            "Apply must not lose the anchor's exclusions: no file_limit and no baseline_missing");
+    }
+    req(std::filesystem::exists(workspace.path / "qml" / "App.qml"), "The successor's source file must be written");
+    const auto auditedApproval = approvals.findApproval(applySuccessorId);
+    // Under TODAY's defaults plus the frozen path - not the legacy-visible policy the F0 baseline was taken under.
+    auto livePolicy = WorkspaceReadPolicy::secureDefaults(workspace.path);
+    if (recorded != PrepareRecorded::None) livePolicy.deniedPaths = {"Out2"};
+    const auto expectedPostApply = WorkspaceBaselineProvenance::capture(livePolicy);
+    req(expectedPostApply.success() && auditedApproval.success() && auditedApproval.value().has_value()
+            && auditedApproval.value()->postApplyWorkspaceFingerprint == expectedPostApply.value().fingerprint,
+        "The audit must retain the post-apply fingerprint taken under the anchor's frozen exclusions");
+    if (applyMode != AttemptApply::Own) return;
+    const auto attemptArtifactsAfter = artifacts.listArtifacts(imported.value().attemptRunId);
+    const Artifact* provenanceReport = nullptr;
+    for (const auto& artifact : attemptArtifactsAfter.value()) {
+        if (artifact.name == "manifest-workspace-apply-provenance.md") provenanceReport = &artifact;
+    }
+    req(provenanceReport != nullptr, "The post-apply provenance report must be stored on the attempt Run");
+    const auto provenanceContent = artifacts.getArtifactContent(provenanceReport->id);
+    req(provenanceContent.success()
+            && provenanceContent.value().find("Classification: applied_proposal_set") != std::string::npos,
+        "The frozen area must not appear as drift in the post-apply provenance");
 }
 
 // QML-P4R.3.4: a genuine CONTENT failure - ManifestProposalSetVerifier::
@@ -5021,8 +5408,9 @@ void testImportAndReverifyContentFailureReplaysWithoutReverifying()
     manifest.tasks = {component};
     req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(
+        workspace.path, artifacts, source.id, PrepareRecorded::None, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     BuildManifestProposalOverlayRequest overlayRequest;
@@ -5222,8 +5610,9 @@ void testImportAndReverifySameBytesAfterInfrastructureFailureAllocatesNewOrdinal
     manifest.tasks = {component};
     req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(
+        workspace.path, artifacts, source.id, PrepareRecorded::None, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     BuildManifestProposalOverlayRequest overlayRequest;
@@ -5431,8 +5820,9 @@ void testImportAndReverifyMissingTypedResultFailsClosed()
     manifest.tasks = {component};
     req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(
+        workspace.path, artifacts, source.id, PrepareRecorded::None, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     BuildManifestProposalOverlayRequest overlayRequest;
@@ -5627,8 +6017,9 @@ void testImportAndReverifyActiveAttemptBlocksConcurrentRetry()
     manifest.tasks = {component};
     req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(
+        workspace.path, artifacts, source.id, PrepareRecorded::None, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     BuildManifestProposalOverlayRequest overlayRequest;
@@ -5812,8 +6203,9 @@ void testImportAndReverifyResultAttemptRunIdMismatchFailsClosed()
     manifest.tasks = {component};
     req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(
+        workspace.path, artifacts, source.id, PrepareRecorded::None, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     BuildManifestProposalOverlayRequest overlayRequest;
@@ -6038,8 +6430,9 @@ void testImportAndReverifySameBytesAfterProposalSafetyRejectionReplayWithoutNewO
     manifest.tasks = {component};
     req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(
+        workspace.path, artifacts, source.id, PrepareRecorded::None, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     BuildManifestProposalOverlayRequest overlayRequest;
@@ -6239,8 +6632,9 @@ void testImportAndReverifyRejectsAnEditOutsideTheAllowedPath()
     manifest.tasks = {component, integration};
     req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(
+        workspace.path, artifacts, source.id, PrepareRecorded::None, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     BuildManifestProposalOverlayRequest overlayRequest;
@@ -6423,8 +6817,9 @@ void testManualHandoffAttemptAndUnmodifiedReferenceAreBothApplyEligible()
     manifest.tasks = {component, integration};
     req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(
+        workspace.path, artifacts, source.id, PrepareRecorded::None, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     BuildManifestProposalOverlayRequest overlayRequest;
@@ -6655,8 +7050,9 @@ void testMaterializeFailsClosedWhenNoOwnerFindingIsEditable()
     manifest.tasks = {component};
     req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(
+        workspace.path, artifacts, source.id, PrepareRecorded::None, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     BuildManifestProposalOverlayRequest overlayRequest;
@@ -6814,8 +7210,9 @@ void testMaterializeFailsClosedOnMissingLineagePredecessor()
     manifest.tasks = {component};
     req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(
+        workspace.path, artifacts, source.id, PrepareRecorded::None, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     BuildManifestProposalOverlayRequest overlayRequest;
@@ -6966,8 +7363,9 @@ void testMaterializeFailsClosedOnCyclicLineage()
     manifest.tasks = {component};
     req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(
+        workspace.path, artifacts, source.id, PrepareRecorded::None, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     BuildManifestProposalOverlayRequest overlayRequest;
@@ -7147,8 +7545,9 @@ void testMaterializeResolvesMultiHopLineageRootThroughPriorRepairGeneration()
     manifest.tasks = {component};
     req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(
+        workspace.path, artifacts, source.id, PrepareRecorded::None, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     BuildManifestProposalOverlayRequest overlayRequest;
@@ -7607,8 +8006,9 @@ void testMaterializeResolvesMixedRunOriginAndProducesEligibleHandoff()
     manifest.tasks = {component, integration};
     req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(
+        workspace.path, artifacts, source.id, PrepareRecorded::None, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     BuildManifestProposalOverlayRequest overlayRequest;
@@ -7765,6 +8165,9 @@ void testMaterializeResolvesMixedRunOriginAndProducesEligibleHandoff()
         {"component", "succeeded", successor.value().changeSetId, std::nullopt}};
     childEntry.createdAt = now;
     req(ledger.insertEntry(childEntry).success(), "Could not seed the child's own Work Ledger entry");
+    // The paid continuation child owns the baseline artifact its repair persisted; the anchor's ledger fingerprint is derived from it.
+    req(RecordedBaselinePolicy::persist(artifacts, childRun.id, std::nullopt, baselineSnapshot.value()).success(),
+        "Could not persist the child's own baseline artifact");
 
     // materialize()'s own baseline(clean) + candidate(still warning) verify.
     commandRunner.queuedOutcomes = {cleanOutcome, warningOutcome};
@@ -8156,6 +8559,9 @@ void testMaterializeResolvesMixedRunAfterLegacyBaselineNormalization()
         {"component", "succeeded", successor.value().changeSetId, std::nullopt}};
     childEntry.createdAt = now;
     req(ledger.insertEntry(childEntry).success(), "Could not seed the child's own Work Ledger entry");
+    // The paid continuation child owns the baseline artifact its repair persisted; the anchor's ledger fingerprint is derived from it.
+    req(RecordedBaselinePolicy::persist(artifacts, childRun.id, std::nullopt, currentBaseline.value()).success(),
+        "Could not persist the child's own baseline artifact");
 
     // materialize()'s own baseline(clean) + candidate(still warning) verify.
     commandRunner.queuedOutcomes = {cleanOutcome, warningOutcome};
@@ -8277,8 +8683,9 @@ void testMaterializeFailsClosedOnGenuineDriftForMixedRunAnchor()
     manifest.tasks = {component, integration};
     req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(
+        workspace.path, artifacts, source.id, PrepareRecorded::None, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     BuildManifestProposalOverlayRequest overlayRequest;
@@ -8420,6 +8827,9 @@ void testMaterializeFailsClosedOnGenuineDriftForMixedRunAnchor()
         {"component", "succeeded", successor.value().changeSetId, std::nullopt}};
     childEntry.createdAt = now;
     req(ledger.insertEntry(childEntry).success(), "Could not seed the child's own Work Ledger entry");
+    // The paid continuation child owns the baseline artifact its repair persisted; the anchor's ledger fingerprint is derived from it.
+    req(RecordedBaselinePolicy::persist(artifacts, childRun.id, std::nullopt, baselineSnapshot.value()).success(),
+        "Could not persist the child's own baseline artifact");
 
     // Genuine, real drift on disk since the child's own final verification -
     // never approved by any legacy-normalization prefix, and never covered
@@ -8533,8 +8943,9 @@ void testMaterializeRejectsReorderedLineageInExistingMixedRunHandoff()
     manifest.tasks = {component, integration};
     req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(
+        workspace.path, artifacts, source.id, PrepareRecorded::None, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     BuildManifestProposalOverlayRequest overlayRequest;
@@ -8676,6 +9087,9 @@ void testMaterializeRejectsReorderedLineageInExistingMixedRunHandoff()
         {"component", "succeeded", successor.value().changeSetId, std::nullopt}};
     childEntry.createdAt = now;
     req(ledger.insertEntry(childEntry).success(), "Could not seed the child's own Work Ledger entry");
+    // The paid continuation child owns the baseline artifact its repair persisted; the anchor's ledger fingerprint is derived from it.
+    req(RecordedBaselinePolicy::persist(artifacts, childRun.id, std::nullopt, baselineSnapshot.value()).success(),
+        "Could not persist the child's own baseline artifact");
 
     ManifestVerificationManualHandoff legacyHandoff;
     legacyHandoff.id = "manual-handoff:" + childRun.id;
@@ -8982,8 +9396,9 @@ void testMaterializeRevalidatesExistingCandidateHealthOnEveryLoad()
     manifest.tasks = {component, integration};
     req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(
+        workspace.path, artifacts, source.id, PrepareRecorded::None, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     BuildManifestProposalOverlayRequest overlayRequest;
@@ -9174,8 +9589,9 @@ void testDiscardHandoffReleasesProposalClaimAndRemovesCandidate()
     manifest.tasks = {component, integration};
     req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(
+        workspace.path, artifacts, source.id, PrepareRecorded::None, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     BuildManifestProposalOverlayRequest overlayRequest;
@@ -11101,8 +11517,9 @@ void testMaterializeFailsClosedWhenRetentionCapacityExhaustedByProtectedHandoffs
     manifest.tasks = {component};
     req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(
+        workspace.path, artifacts, source.id, PrepareRecorded::None, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     BuildManifestProposalOverlayRequest overlayRequest;
@@ -11548,8 +11965,9 @@ void testImportAndReverifyRejectsANewPathNotInFrozenSet()
     manifest.tasks = {component};
     req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(
+        workspace.path, artifacts, source.id, PrepareRecorded::None, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     BuildManifestProposalOverlayRequest overlayRequest;
@@ -11718,8 +12136,9 @@ void testImportAndReverifyRejectsADeletedFrozenPath()
     manifest.tasks = {component, integration};
     req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(
+        workspace.path, artifacts, source.id, PrepareRecorded::None, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     BuildManifestProposalOverlayRequest overlayRequest;
@@ -11883,8 +12302,9 @@ void testImportAndReverifyFailsClosedOnMissingCandidateStorage()
     manifest.tasks = {component};
     req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(
+        workspace.path, artifacts, source.id, PrepareRecorded::None, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     BuildManifestProposalOverlayRequest overlayRequest;
@@ -12058,8 +12478,9 @@ void testImportAndReverifyFailsClosedOnSymlinkIntroducedIntoCandidate()
     manifest.tasks = {component};
     req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(
+        workspace.path, artifacts, source.id, PrepareRecorded::None, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     BuildManifestProposalOverlayRequest overlayRequest;
@@ -12229,8 +12650,9 @@ void testFirstAttemptContentFailureSecondDifferentEditSucceeds()
     manifest.tasks = {component};
     req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(
+        workspace.path, artifacts, source.id, PrepareRecorded::None, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     BuildManifestProposalOverlayRequest overlayRequest;
@@ -12499,8 +12921,9 @@ void testMixedRunLegacyMissingFindingsWithFailThenPassAttemptSequence()
     manifest.tasks = {component, integration};
     req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(
+        workspace.path, artifacts, source.id, PrepareRecorded::None, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     BuildManifestProposalOverlayRequest overlayRequest;
@@ -12641,6 +13064,9 @@ void testMixedRunLegacyMissingFindingsWithFailThenPassAttemptSequence()
         {"component", "succeeded", successor.value().changeSetId, std::nullopt}};
     childEntry.createdAt = now;
     req(ledger.insertEntry(childEntry).success(), "Could not seed the child's own Work Ledger entry");
+    // The paid continuation child owns the baseline artifact its repair persisted; the anchor's ledger fingerprint is derived from it.
+    req(RecordedBaselinePolicy::persist(artifacts, childRun.id, std::nullopt, baselineSnapshot.value()).success(),
+        "Could not persist the child's own baseline artifact");
 
     commandRunner.queuedOutcomes = {cleanOutcome, warningOutcome};
 
@@ -12792,6 +13218,253 @@ void testMixedRunLegacyMissingFindingsWithFailThenPassAttemptSequence()
 // classify a candidate that has all four possible drift shapes at once -
 // an allowed edit, a forbidden edit, a brand-new path, and a deleted frozen
 // path - into exactly the two disjoint buckets the reset command consumes.
+// ---- P3b: the exclusions a handoff's candidate is read under ----------------------------------------------------------------------
+//
+// The anchor Run froze path:Out2 in its baseline artifact. The candidate copy of the workspace has no Out2 when it is made, but the
+// user's IDE may create one later (a CMake build folder of the preset). That output must neither read as an edit of the candidate nor
+// reach the successor - and a real source folder that merely looks similar (Out2-source) must stay visible. The area a candidate is
+// read under is the one its own originalSnapshot recorded, never the current approvals and never a fresh look at the anchor.
+
+std::vector<std::string> dynamicExclusionsOf(const WorkspaceBaselineSnapshot& snapshot)
+{
+    std::vector<std::string> paths;
+    for (const auto& entry : snapshot.exclusions) {
+        if (entry.rfind("path:", 0) == 0) paths.push_back(entry);
+    }
+    return paths;
+}
+
+void writeCandidateFile(const fs::path& candidateRoot, const std::string& relativePath, const std::string& content)
+{
+    const fs::path target = candidateRoot / fs::path(relativePath);
+    fs::create_directories(target.parent_path());
+    std::ofstream stream(target, std::ios::binary | std::ios::trunc);
+    req(static_cast<bool>(stream), "Could not write a candidate file");
+    stream << content;
+}
+
+std::string readCandidateFile(const fs::path& candidateRoot, const std::string& relativePath)
+{
+    std::ifstream stream(candidateRoot / fs::path(relativePath), std::ios::binary);
+    req(static_cast<bool>(stream), "Could not read a candidate file");
+    return std::string((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
+}
+
+// The fixture's own hook, used to make the IDE write while materialize() is verifying: the sole folder under the manual-handoff root is
+// the durable candidate.
+fs::path soleDirectoryOf(const fs::path& root)
+{
+    for (const auto& entry : fs::directory_iterator(root)) {
+        if (entry.is_directory()) return entry.path();
+    }
+    req(false, "The durable candidate directory is not there yet");
+    return {};
+}
+
+void testTheCandidateSnapshotCarriesTheExclusionsTheAnchorFroze()
+{
+    MultiFilePredecessorFixture frozen(PrepareRecorded::Frozen);
+    const auto& snapshot = frozen.materialized.handoff.originalSnapshot;
+    req(dynamicExclusionsOf(snapshot) == std::vector<std::string> {"path:Out2"},
+        "The candidate's first snapshot must record exactly the dynamic exclusions of the anchor's baseline");
+    for (const auto& file : snapshot.files) {
+        req(file.relativePath.rfind("Out2", 0) != 0, "No frozen-area file may be in the candidate snapshot");
+    }
+    const auto stored = frozen.manualHandoffs.findHandoffById(frozen.materialized.handoff.id);
+    req(stored.success() && stored.value().has_value()
+            && dynamicExclusionsOf(stored.value()->originalSnapshot) == std::vector<std::string> {"path:Out2"}
+            && stored.value()->originalSnapshot.fingerprint == snapshot.fingerprint,
+        "The stored handoff carries the same set and the same fingerprint");
+
+    // A legacy anchor froze nothing dynamic: the candidate snapshot records nothing dynamic either.
+    MultiFilePredecessorFixture legacy;
+    req(dynamicExclusionsOf(legacy.materialized.handoff.originalSnapshot).empty(),
+        "A handoff of an anchor without dynamic exclusions records none");
+    const auto defaults = WorkspaceReadPolicy::secureDefaults(legacy.materialized.candidateRoot);
+    const auto expected = WorkspaceBaselineProvenance::capture(defaults);
+    req(expected.success() && expected.value().fingerprint == legacy.materialized.handoff.originalSnapshot.fingerprint
+            && expected.value().exclusions == legacy.materialized.handoff.originalSnapshot.exclusions,
+        "...and its snapshot is exactly what today's defaults give");
+}
+
+// The functional red of P3b: output the IDE writes into the candidate AFTER materialize.
+void testOutputCreatedInTheCandidateAfterMaterializeIsNotAnEdit()
+{
+    MultiFilePredecessorFixture fx(PrepareRecorded::Frozen);
+    const fs::path candidate = fx.materialized.candidateRoot;
+    const auto before = fx.service->inspectCandidateEdits(fx.materialized.handoff);
+    req(before.success() && before.value().candidate.health == ManifestVerificationManualHandoffCandidateHealth::Unchanged,
+        "setup: the fresh candidate is unchanged");
+
+    writeCandidateFile(candidate, "Out2/generated.txt", "configure output");
+    writeCandidateFile(candidate, "Out2/nested/CMakeCache.txt", "cache");
+    writeCandidateFile(candidate, "Out2/big.obj", std::string(300 * 1024, 'x')); // above the 256 KiB read limit
+#ifdef _WIN32
+    writeCandidateFile(candidate, "OUT2/Upper.txt", "same folder, another spelling");
+#endif
+
+    const auto inspection = fx.service->inspectCandidateEdits(fx.materialized.handoff);
+    req(inspection.success(), "inspectCandidateEdits() must read a candidate that holds output");
+    req(inspection.value().candidate.health == ManifestVerificationManualHandoffCandidateHealth::Unchanged,
+        "Output inside the recorded area must not make the candidate 'edited'");
+    req(inspection.value().candidate.liveFingerprint.has_value()
+            && *inspection.value().candidate.liveFingerprint == fx.materialized.handoff.originalSnapshot.fingerprint,
+        "...the live fingerprint is the frozen one");
+    req(inspection.value().editableChangedPaths.empty() && inspection.value().resetRequiredPaths.empty(),
+        "...and nothing appears in the edit or reset lists (the big file does not cost the snapshot its limit)");
+
+    // A real source folder next to it stays visible.
+    writeCandidateFile(candidate, "Out2-source/real.txt", "real source");
+    const auto control = fx.service->inspectCandidateEdits(fx.materialized.handoff);
+    req(control.success() && control.value().candidate.health == ManifestVerificationManualHandoffCandidateHealth::Edited
+            && control.value().resetRequiredPaths == std::vector<std::string> {"Out2-source/real.txt"},
+        "A sibling with a similar name is not hidden: it is a new path that needs reset");
+}
+
+void testImportTakesTheRealEditAndNeverTheOutput()
+{
+    MultiFilePredecessorFixture fx(PrepareRecorded::Frozen);
+    const fs::path candidate = fx.materialized.candidateRoot;
+    writeCandidateFile(candidate, "qml/A.qml", "fixed-a-by-user");
+    writeCandidateFile(candidate, "Out2/generated.txt", "configure output");
+    writeCandidateFile(candidate, "Out2/big.obj", std::string(300 * 1024, 'x'));
+
+    ManifestVerificationCommandOutcome cleanOutcome;
+    cleanOutcome.started = true;
+    cleanOutcome.exitCode = 0;
+    cleanOutcome.boundedOutput = "Lint passed with no warnings.\n";
+    fx.commandRunner.queuedOutcomes = {cleanOutcome};
+
+    const auto imported = fx.service->importAndReverify(fx.materialized.handoff.id);
+    req(imported.success(), ("The real edit must import although the candidate also holds output: "
+        + (imported.success() ? std::string() : imported.error()->code + ": " + imported.error()->message)).c_str());
+    req(imported.value().finalStatus == RunStatus::Completed && imported.value().finalVerification.has_value()
+            && imported.value().finalVerification->orderedProposalIds.size() == 1,
+        "The attempt completes with the amended successor");
+    const ChangeSetId successorId = imported.value().finalVerification->orderedProposalIds.front();
+    const auto changes = fx.proposals->listChanges(successorId);
+    req(changes.success() && changes.value().size() == 3, "The successor carries exactly the three predecessor paths");
+    for (const auto& change : changes.value()) {
+        const auto path = change.relativePath.generic_string();
+        req(path.rfind("Out2", 0) != 0 && (path == "qml/A.qml" || path == "qml/B.qml" || path == "qml/C.qml"),
+            "No operation under the frozen area may be in the successor");
+        if (path == "qml/A.qml") {
+            const auto content = fx.proposals->readProposedContent(successorId, change.changeId);
+            req(content.success() && content.value() == "fixed-a-by-user", "...and the edit is the user's");
+        }
+    }
+    req(fs::exists(candidate / "Out2" / "generated.txt") && readCandidateFile(candidate, "Out2/generated.txt") == "configure output",
+        "The output in the candidate was neither read into the proposal nor removed");
+}
+
+void testResetFixesTheOutsideScopeEditAndLeavesTheOutputAlone()
+{
+    MultiFilePredecessorFixture fx(PrepareRecorded::Frozen);
+    const fs::path candidate = fx.materialized.candidateRoot;
+    writeCandidateFile(candidate, "qml/A.qml", "fixed-a-by-user");
+    writeCandidateFile(candidate, "qml/B.qml", "tampered-b");
+    writeCandidateFile(candidate, "Out2/generated.txt", "configure output");
+    const std::string originalFingerprint = fx.materialized.handoff.originalSnapshot.fingerprint;
+
+    const auto reset = fx.service->resetNonEditableChanges(fx.materialized.handoff.id);
+    req(reset.success(), ("reset must succeed: " + (reset.success() ? std::string() : reset.error()->code + ": " + reset.error()->message)).c_str());
+    req(reset.value().resetPaths == std::vector<std::string> {"qml/B.qml"},
+        "Only the outside-scope edit is reset - the output is not a reset path");
+    req(readCandidateFile(candidate, "qml/B.qml") == "fixed-b", "...restored to the frozen content");
+    req(readCandidateFile(candidate, "qml/A.qml") == "fixed-a-by-user", "...the authorised edit is preserved");
+    req(readCandidateFile(candidate, "Out2/generated.txt") == "configure output", "...and the output is neither read into the plan nor deleted");
+    const auto stored = fx.manualHandoffs.findHandoffById(fx.materialized.handoff.id);
+    req(stored.success() && stored.value().has_value() && stored.value()->originalSnapshot.fingerprint == originalFingerprint
+            && dynamicExclusionsOf(stored.value()->originalSnapshot) == std::vector<std::string> {"path:Out2"},
+        "The retained originalSnapshot is not rewritten");
+    const auto after = fx.service->inspectCandidateEdits(fx.materialized.handoff);
+    req(after.success() && after.value().resetRequiredPaths.empty()
+            && after.value().editableChangedPaths == std::vector<std::string> {"qml/A.qml"},
+        "After the reset only the authorised edit is visible");
+
+    // With nothing but output there is nothing to reset.
+    MultiFilePredecessorFixture onlyOutput(PrepareRecorded::Frozen);
+    writeCandidateFile(onlyOutput.materialized.candidateRoot, "Out2/generated.txt", "configure output");
+    const auto nothing = onlyOutput.service->resetNonEditableChanges(onlyOutput.materialized.handoff.id);
+    req(!nothing.success() && nothing.error()->code == "manual_handoff.no_non_editable_changes",
+        "Output alone leaves nothing to reset");
+    req(fs::exists(onlyOutput.materialized.candidateRoot / "Out2" / "generated.txt"), "...and the output stays");
+}
+
+void testOutputAppearingInTheRecordedAreaDuringMaterializeIsStable()
+{
+    MultiFilePredecessorFixture fx(PrepareRecorded::Frozen, [](const fs::path& manualHandoffRoot) {
+        const fs::path candidate = soleDirectoryOf(manualHandoffRoot);
+        writeCandidateFile(candidate, "Out2/appeared.txt", "written while the verification runs");
+    });
+    req(fs::exists(fx.materialized.candidateRoot / "Out2" / "appeared.txt"), "setup: the hook really wrote the output");
+    for (const auto& file : fx.materialized.handoff.originalSnapshot.files) {
+        req(file.relativePath.rfind("Out2", 0) != 0, "...and it is not in the frozen snapshot");
+    }
+    req(dynamicExclusionsOf(fx.materialized.handoff.originalSnapshot) == std::vector<std::string> {"path:Out2"},
+        "The pre-, post- and freeze captures all ran under the one recorded area");
+
+    // The same hook with a source outside the area is still instability.
+    MultiFilePredecessorFixture unstable(PrepareRecorded::Frozen, [](const fs::path& manualHandoffRoot) {
+        writeCandidateFile(soleDirectoryOf(manualHandoffRoot), "qml/Stray.qml", "a real change");
+    }, /*expectMaterialized=*/false);
+    req(unstable.materializeError.has_value() && unstable.materializeError->code == "manual_handoff.workspace_unstable",
+        "A change outside the recorded area while verifying is still workspace_unstable");
+}
+
+// A recorded area that is safe JSON but not a valid RecordedWorkspaceExclusions refuses before anything happens.
+void replaceStoredSnapshotExclusions(MultiFilePredecessorFixture& fx, const std::vector<std::string>& extra)
+{
+    auto stored = fx.manualHandoffs.findHandoffById(fx.materialized.handoff.id);
+    req(stored.success() && stored.value().has_value(), "setup: the handoff is stored");
+    auto handoff = *stored.value();
+    for (const auto& value : extra) handoff.originalSnapshot.exclusions.push_back(value);
+    req(fx.manualHandoffs.discardHandoff(handoff.id).success(), "setup: could not replace the stored handoff");
+    req(fx.manualHandoffs.insertHandoff(handoff).success(), "setup: could not store the corrupted handoff");
+}
+
+void testACorruptRecordedAreaRefusesBeforeAnythingChanges()
+{
+    const std::vector<std::vector<std::string>> corruptions = {
+        {"path:../Out2"}, {"bogus:thing"}, {"path:Out2"} /* duplicate of the recorded one */, {"path:Out2/inner"}, {"path:/abs"}};
+    for (const auto& extra : corruptions) {
+        MultiFilePredecessorFixture fx(PrepareRecorded::Frozen);
+        const fs::path candidate = fx.materialized.candidateRoot;
+        writeCandidateFile(candidate, "qml/A.qml", "fixed-a-by-user");
+        writeCandidateFile(candidate, "qml/B.qml", "tampered-b");
+        auto corrupted = fx.materialized.handoff;
+        for (const auto& value : extra) corrupted.originalSnapshot.exclusions.push_back(value);
+
+        const auto inspected = fx.service->inspectCandidateEdits(corrupted);
+        req(!inspected.success() && inspected.error()->code == "workspace_baseline.recorded_exclusion_invalid",
+            ("inspect must refuse the recorded area '" + extra.front() + "', not fall back to the defaults").c_str());
+
+        replaceStoredSnapshotExclusions(fx, extra);
+        const auto imported = fx.service->importAndReverify(fx.materialized.handoff.id);
+        req(!imported.success() && imported.error()->code == "workspace_baseline.recorded_exclusion_invalid",
+            "import must refuse a corrupt recorded area (and not report a path problem instead)");
+        const auto attempts = fx.manualHandoffs.listAttemptsForHandoff(fx.materialized.handoff.id);
+        req(attempts.success() && attempts.value().empty(), "...before an attempt or a successor exists");
+        const auto reset = fx.service->resetNonEditableChanges(fx.materialized.handoff.id);
+        req(!reset.success() && reset.error()->code == "workspace_baseline.recorded_exclusion_invalid",
+            "reset must refuse it too");
+        req(readCandidateFile(candidate, "qml/B.qml") == "tampered-b" && readCandidateFile(candidate, "qml/A.qml") == "fixed-a-by-user",
+            "...and the candidate files are untouched");
+    }
+}
+
+// A handoff that records no dynamic area keeps today's behaviour, also when the anchor's baseline artifact would say otherwise now.
+void testALegacyHandoffKeepsItsDefaults()
+{
+    MultiFilePredecessorFixture fx;
+    req(dynamicExclusionsOf(fx.materialized.handoff.originalSnapshot).empty(), "setup: a legacy handoff");
+    writeCandidateFile(fx.materialized.candidateRoot, "Out2/visible.txt", "no area was frozen, so this is a new path");
+    const auto inspection = fx.service->inspectCandidateEdits(fx.materialized.handoff);
+    req(inspection.success() && inspection.value().candidate.health == ManifestVerificationManualHandoffCandidateHealth::Edited
+            && inspection.value().resetRequiredPaths == std::vector<std::string> {"Out2/visible.txt"},
+        "Without a recorded area a new Out2 file is, as before, a path that needs reset");
+}
+
 void testInspectCandidateEditsClassifiesEditableAndResetRequiredPaths()
 {
     MultiFilePredecessorFixture fx;
@@ -12842,9 +13515,44 @@ void testInspectCandidateEditsClassifiesEditableAndResetRequiredPaths()
 // resetNonEditableChanges() must restore the forbidden edit and the deleted
 // frozen path, remove the stray new file, and leave the one authorized edit
 // byte-for-byte untouched.
+void runResetScenario(PrepareRecorded recorded);
+
 void testResetNonEditableChangesRestoresForbiddenNewAndDeletedPreservesEditable()
 {
-    MultiFilePredecessorFixture fx;
+    runResetScenario(PrepareRecorded::None);
+}
+
+// P1: reset compares the live workspace with the handoff's frozen baseline under the anchor's recorded exclusions.
+void testApplyOfAnOldAttemptTakesItsFrozenAreaFromTheAnchor()
+{
+    runImportScenario(PrepareRecorded::Frozen, AttemptApply::OldAttempt);
+}
+
+// F0 != F1: a real legacy normalisation pins the handoff to F1 while the anchor keeps F0. The old attempt (no artifact of its own)
+// must still take its frozen area from the anchor's F0 artifact, and Apply of the real successor must pass the real gate.
+void testApplyOfAnOldAttemptAfterLegacyNormalizationTakesItsFrozenAreaFromTheAnchor()
+{
+    runImportScenario(PrepareRecorded::FrozenLegacyDrift, AttemptApply::OldAttempt);
+}
+
+void testApplyDoesNotBypassAnAmbiguousOwnBaselineThroughTheAnchor()
+{
+    runImportScenario(PrepareRecorded::Frozen, AttemptApply::AmbiguousOwn);
+}
+
+void testApplyRefusesAnAttemptWhoseAnchorLinkDoesNotHold()
+{
+    runImportScenario(PrepareRecorded::Frozen, AttemptApply::BrokenLink);
+}
+
+void testResetNonEditableChangesRestoresTheDynamicExclusionsTheAnchorFroze()
+{
+    runResetScenario(PrepareRecorded::Frozen);
+}
+
+void runResetScenario(PrepareRecorded recorded)
+{
+    MultiFilePredecessorFixture fx(recorded);
 
     {
         std::ofstream editedA(fx.materialized.candidateRoot / "qml" / "A.qml",
@@ -13220,8 +13928,9 @@ void testImportAndReverifyOutsideManifestWarningBlocksThenBaselineDebtAlonePasse
     manifest.tasks = {component, integration};
     req(manifests.insert(manifest).success(), "Could not seed source Manifest");
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
-    const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
+    WorkspaceReadPolicy policy;
+    const auto baselineSnapshot = captureFixtureBaseline(
+        workspace.path, artifacts, source.id, PrepareRecorded::None, policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
 
     BuildManifestProposalOverlayRequest overlayRequest;
@@ -13399,6 +14108,13 @@ void testImportAndReverifyOutsideManifestWarningBlocksThenBaselineDebtAlonePasse
 void testRepairMaterializesSuccessorAndPassesFinalCombinedVerification()
 {
     runRepairMaterializationScenario(/*anchorInsideRepairSet=*/true);
+}
+
+// P1: prepare() and repair() capture the live workspace under the exclusions the SOURCE Run froze; repair() runs before the
+// child has a baseline artifact of its own and writes one that inherits them.
+void testRepairRestoresTheDynamicExclusionsTheSourceRunFroze()
+{
+    runRepairMaterializationScenario(/*anchorInsideRepairSet=*/true, /*rosterRouting=*/false, PrepareRecorded::Frozen);
 }
 
 // AG-17.0: the requirement the record names lives on a task that is NOT in the
@@ -13665,6 +14381,21 @@ int runManifestVerificationContinuationServiceTests()
     testPrepareNamesThePathBudgetWhenTheVerificationCopyCannotFit();
     testPrepareIsRefusedBeforeAnyCopyWhenTheVerificationFolderIsNotUsable();
     testPrepareBuildsItsCopiesUnderTheRootTheBackendValidated();
+    testPrepareRestoresTheDynamicExclusionsTheSourceRunFroze();
+    testPrepareFailsClosedOnAnUnrestorableRecordedExclusion();
+    testPrepareFailsClosedWhenTheBaselineArtifactIsNotTheLedgerBaseline();
+    testPrepareFailsClosedWhenTheMandatoryBaselineArtifactIsLost();
+    testMaterializeFailsClosedWhenTheMandatoryBaselineArtifactIsLost();
+    testMaterializeRestoresTheDynamicExclusionsTheAnchorFroze();
+    testMaterializeFailsClosedOnAnUnrestorableRecordedExclusion();
+    testMaterializeFailsClosedWhenTheBaselineArtifactIsNotTheLedgerBaseline();
+    testImportAndReverifyRestoresTheDynamicExclusionsTheAnchorFroze();
+    testApplyOfAnOldAttemptTakesItsFrozenAreaFromTheAnchor();
+    testApplyOfAnOldAttemptAfterLegacyNormalizationTakesItsFrozenAreaFromTheAnchor();
+    testApplyDoesNotBypassAnAmbiguousOwnBaselineThroughTheAnchor();
+    testApplyRefusesAnAttemptWhoseAnchorLinkDoesNotHold();
+    testResetNonEditableChangesRestoresTheDynamicExclusionsTheAnchorFroze();
+    testRepairRestoresTheDynamicExclusionsTheSourceRunFroze();
     testPrepareNormalizesLegacyQtCreatorBaselineDriftAndPinsFreshIdentity();
     testLegacyBaselineNormalizationRefusesWhenAProposalTouchesTheExcludedPrefix();
     testPrepareIsIdempotentAndNeverRepeatsVerificationOnRepeatCall();
@@ -13737,6 +14468,13 @@ int runManifestVerificationContinuationServiceTests()
     testFirstAttemptContentFailureSecondDifferentEditSucceeds();
     testMixedRunLegacyMissingFindingsWithFailThenPassAttemptSequence();
     testInspectCandidateEditsClassifiesEditableAndResetRequiredPaths();
+    testTheCandidateSnapshotCarriesTheExclusionsTheAnchorFroze();
+    testOutputCreatedInTheCandidateAfterMaterializeIsNotAnEdit();
+    testImportTakesTheRealEditAndNeverTheOutput();
+    testResetFixesTheOutsideScopeEditAndLeavesTheOutputAlone();
+    testOutputAppearingInTheRecordedAreaDuringMaterializeIsStable();
+    testACorruptRecordedAreaRefusesBeforeAnythingChanges();
+    testALegacyHandoffKeepsItsDefaults();
     testResetNonEditableChangesRestoresForbiddenNewAndDeletedPreservesEditable();
     testImportAndReverifySucceedsAfterResetNonEditableChanges();
     testResetNonEditableChangesFailsWhenNothingToReset();

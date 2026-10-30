@@ -21,6 +21,7 @@
 #include "ai/application/inmemory/InMemoryRunWorkspaceScopeRepository.hpp"
 #include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/verification/ManifestApplyVerificationGate.hpp"
+#include "ai/application/verification/RecordedBaselinePolicy.hpp"
 #include "ai/application/verification/ManifestProposalContentHash.hpp"
 #include "ai/application/verification/ManifestProposalOverlay.hpp"
 #include "ai/application/verification/ManifestVerificationAttributionService.hpp"
@@ -343,6 +344,9 @@ struct Fixture {
         const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
         const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
         req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
+        // The source Run owns the baseline artifact its ledger fingerprint is derived from.
+        req(RecordedBaselinePolicy::persist(*artifacts, source.id, std::nullopt, baselineSnapshot.value()).success(),
+            "Could not persist the source baseline artifact");
 
         BuildManifestProposalOverlayRequest overlayRequest;
         overlayRequest.workspaceRoot = workspace.path;
@@ -1527,6 +1531,9 @@ void testViewForRunSplitsStructuredFindingsIntoActionableAndOutsideScope()
     const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
     const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
+    // The source Run owns the baseline artifact its ledger fingerprint is derived from.
+    req(RecordedBaselinePolicy::persist(artifacts, source.id, std::nullopt, baselineSnapshot.value()).success(),
+        "Could not persist the source baseline artifact");
 
     BuildManifestProposalOverlayRequest overlayRequest;
     overlayRequest.workspaceRoot = workspace.path;
@@ -1739,6 +1746,9 @@ void testViewForRunProjectsBaselineAwareQmlLintDeltaIntoSegmentedBuckets()
     const auto policy = WorkspaceReadPolicy::secureDefaults(workspace.path);
     const auto baselineSnapshot = WorkspaceBaselineProvenance::capture(policy);
     req(baselineSnapshot.success(), "Could not capture the real workspace baseline");
+    // The source Run owns the baseline artifact its ledger fingerprint is derived from.
+    req(RecordedBaselinePolicy::persist(artifacts, source.id, std::nullopt, baselineSnapshot.value()).success(),
+        "Could not persist the source baseline artifact");
 
     BuildManifestProposalOverlayRequest overlayRequest;
     overlayRequest.workspaceRoot = workspace.path;

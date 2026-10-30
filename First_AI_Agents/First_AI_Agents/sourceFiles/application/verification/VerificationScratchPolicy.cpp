@@ -293,6 +293,24 @@ common::Result<fs::path> VerificationScratchPolicy::validate(
     bool adoptExistingDefault,
     bool probeWritable)
 {
+    return validateImpl(candidate, workspaceRoot, createIfMissing, adoptExistingDefault, probeWritable, /*readOnly=*/false);
+}
+
+common::Result<fs::path> VerificationScratchPolicy::locate(
+    const fs::path& candidate, const std::optional<fs::path>& workspaceRoot, bool adoptExistingDefault)
+{
+    return validateImpl(candidate, workspaceRoot, /*createIfMissing=*/false, adoptExistingDefault, /*probeWritable=*/false,
+        /*readOnly=*/true);
+}
+
+common::Result<fs::path> VerificationScratchPolicy::validateImpl(
+    const fs::path& candidate,
+    const std::optional<fs::path>& workspaceRoot,
+    bool createIfMissing,
+    bool adoptExistingDefault,
+    bool probeWritable,
+    bool readOnly)
+{
     if (candidate.empty() || !candidate.is_absolute()
         || std::any_of(candidate.begin(), candidate.end(), [](const fs::path& part) { return part == ".."; })) {
         return refuse(kVerificationScratchInvalidPathCode,
@@ -334,6 +352,22 @@ common::Result<fs::path> VerificationScratchPolicy::validate(
             return refuse(kVerificationScratchUnavailableCode, "The verification path is not a folder.");
         }
     } else {
+        if (readOnly) {
+            // Not there yet: the answer is the place a later validate() would create. Every check that does not need the folder to
+            // exist is made on that place; nothing is created.
+            const auto future = detail::canonicalizeWithMissingSuffix(candidate, error);
+            if (error) return refuse(kVerificationScratchUnavailableCode, "The verification folder could not be resolved.");
+#ifdef _WIN32
+            if (future.native().size() > kMaxVerificationScratchRootLength) {
+                return refuse(kVerificationScratchTooLongCode,
+                    "The verification folder path is " + std::to_string(future.native().size())
+                        + " characters long; at most " + std::to_string(kMaxVerificationScratchRootLength)
+                        + " are allowed so that the build tools stay within the Windows path limit.");
+            }
+#endif
+            if (overlapsWorkspace(future)) return refuse(kVerificationScratchOverlapCode, overlapMessage);
+            return common::Result<fs::path>::ok(future);
+        }
         if (!createIfMissing) {
             return refuse(kVerificationScratchUnavailableCode, "The verification folder does not exist.");
         }
@@ -365,7 +399,10 @@ common::Result<fs::path> VerificationScratchPolicy::validate(
     std::string reason;
     if (!isPrivateToCurrentUser(canonical, reason)) {
         // Only OUR default folder is adopted: a folder the user picked is never re-permissioned behind their back.
-        if (!(adoptExistingDefault && tightenToPrivate(canonical) && isPrivateToCurrentUser(canonical, reason))) {
+        // A read-only caller does not tighten: the default folder is reported as it would be once a real use has adopted it.
+        const bool adopted = adoptExistingDefault
+            && (readOnly || (tightenToPrivate(canonical) && isPrivateToCurrentUser(canonical, reason)));
+        if (!adopted) {
             return refuse(kVerificationScratchNotPrivateCode,
                 "The verification folder is not private: " + reason
                     + ". The project's sources are copied there, so only you may be able to write to it. "

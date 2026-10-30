@@ -733,9 +733,14 @@ WorkflowResult ExecutionProfileWorkflowRunner::run(
             }
         }
 
+        // One read policy instance feeds both the tools' loop and the write envelope, so the dynamic exclusions a Run froze can
+        // never differ between what the agent may read and what it may propose. (This workflow still has no Run baseline of the
+        // Manifest kind; nothing here claims a replay of approvals for it.)
+        const WorkspaceReadPolicy readPolicy = AgentToolExecutionService::buildPolicy(workspaceRoot);
         ProjectWritePolicy writePolicy;
         writePolicy.projectRoot = workspaceRoot;
         writePolicy.allowedRoots = allocationFound->second.ownedPaths;
+        writePolicy.deniedPaths = readPolicy.deniedPaths;
         writePolicy.allowDelete = true;
         writePolicy.allowRename = true;
 
@@ -743,7 +748,7 @@ WorkflowResult ExecutionProfileWorkflowRunner::run(
         loopRequest.sessionRequest = std::move(sessionRequest);
         loopRequest.runId = context.run.id;
         loopRequest.providerKind = provider.value()->kind;
-        loopRequest.policy = AgentToolExecutionService::buildPolicy(workspaceRoot);
+        loopRequest.policy = readPolicy;
         loopRequest.proposalTemplate.runId = context.run.id;
         loopRequest.proposalTemplate.projectId = context.project.id;
         loopRequest.proposalTemplate.providerId = assignment.providerId;

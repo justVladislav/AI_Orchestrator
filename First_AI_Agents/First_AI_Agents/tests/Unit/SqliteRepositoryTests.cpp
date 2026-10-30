@@ -2872,7 +2872,7 @@ std::string schemaVersionIs(const fs::path& databasePath, int version)
 }
 
 // The schema version a database that opened successfully ends at.
-constexpr int kLatestSchemaVersion = 70;
+constexpr int kLatestSchemaVersion = 71;
 
 // The same probe for a single numeric value: empty when `expression` evaluates to `expected`.
 std::string sqlValueIs(const fs::path& databasePath, const std::string& expression, long long expected)
@@ -3702,7 +3702,7 @@ PRAGMA user_version = 64;
     require(recoveredModel.success() && recoveredModel.value().has_value()
             && recoveredModel.value()->providerId == "partial-duration-provider",
         "The seeded model did not survive the recovered upgrade");
-    require(schemaVersionIs(partial.databasePath, 70).empty(),
+    require(schemaVersionIs(partial.databasePath, 71).empty(),
         "The recovered database did not reach the current schema version");
 }
 

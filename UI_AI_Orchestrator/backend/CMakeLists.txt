@@ -2,6 +2,7 @@ qt_add_library(AIOrchestrator_Backend STATIC
     src/BackendBridge.cpp
     src/ProjectController.cpp
     src/ProjectVerificationSetupController.cpp
+    src/ProjectOutputApprovalController.cpp
     src/ProjectListModel.cpp
     src/TaskController.cpp
     src/TaskListModel.cpp
@@ -40,6 +41,7 @@ qt_add_library(AIOrchestrator_Backend STATIC
     include/ai/ui/BackendBridge.hpp
     include/ai/ui/ProjectController.hpp
     include/ai/ui/ProjectVerificationSetupController.hpp
+    include/ai/ui/ProjectOutputApprovalController.hpp
     include/ai/ui/ProjectListModel.hpp
     include/ai/ui/TaskController.hpp
     include/ai/ui/TaskListModel.hpp
@@ -98,6 +100,7 @@ target_link_libraries(AIOrchestrator_Backend
 # only and therefore does not require a display server or QML scene.
 add_executable(AIOrchestrator_QtAdapter_tests
     tests/QtAdapterTests.cpp
+    tests/ProjectOutputApprovalControllerTests.cpp
 )
 
 # Keep the Core-only test runtime away from the GUI executable. A partial Qt

@@ -51,12 +51,25 @@ common::Result<VerificationScratchRoot> VerificationScratchService::set(const st
 common::Result<VerificationScratchRoot> VerificationScratchService::resolve(
     const std::optional<fs::path>& workspaceRoot) const
 {
+    return select(workspaceRoot, /*readOnly=*/false);
+}
+
+common::Result<VerificationScratchRoot> VerificationScratchService::locate(
+    const std::optional<fs::path>& workspaceRoot) const
+{
+    return select(workspaceRoot, /*readOnly=*/true);
+}
+
+common::Result<VerificationScratchRoot> VerificationScratchService::select(
+    const std::optional<fs::path>& workspaceRoot, bool readOnly) const
+{
     const auto configured = repository_.load();
     if (!configured.success()) return common::Result<VerificationScratchRoot>::failure(*configured.error());
     if (configured.value().has_value()) {
         // The user chose this folder: if it no longer passes, the verification is refused, never moved somewhere else.
-        const auto validated = VerificationScratchPolicy::validate(
-            *configured.value(), workspaceRoot, /*createIfMissing=*/true);
+        const auto validated = readOnly
+            ? VerificationScratchPolicy::locate(*configured.value(), workspaceRoot)
+            : VerificationScratchPolicy::validate(*configured.value(), workspaceRoot, /*createIfMissing=*/true);
         if (!validated.success()) {
             return common::Result<VerificationScratchRoot>::failure({validated.error()->code,
                 "The verification folder chosen in Settings cannot be used. " + validated.error()->message});
@@ -67,8 +80,9 @@ common::Result<VerificationScratchRoot> VerificationScratchService::resolve(
         return common::Result<VerificationScratchRoot>::failure({kVerificationScratchUnavailableCode,
             std::string("The system's temporary folder is unknown. ") + kVerificationScratchChoosePrompt});
     }
-    const auto validated = VerificationScratchPolicy::validate(
-        defaultRoot_, workspaceRoot, /*createIfMissing=*/true, /*adoptExistingDefault=*/true);
+    const auto validated = readOnly
+        ? VerificationScratchPolicy::locate(defaultRoot_, workspaceRoot, /*adoptExistingDefault=*/true)
+        : VerificationScratchPolicy::validate(defaultRoot_, workspaceRoot, /*createIfMissing=*/true, /*adoptExistingDefault=*/true);
     if (!validated.success()) {
         return common::Result<VerificationScratchRoot>::failure({validated.error()->code,
             "The system's temporary folder cannot be used for verification. " + validated.error()->message});

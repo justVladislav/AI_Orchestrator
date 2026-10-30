@@ -190,4 +190,14 @@ ColumnLayout {
             }
         }
     }
+
+    // P3e: the folders the user declares to hold generated output. Its own lifecycle (it follows this panel's visibility, which is the
+    // Projects page's, since pages are kept alive when left).
+    ProjectOutputFoldersSection {
+        hostWindow: panel.hostWindow
+        colors: panel.colors
+        backend: panel.backend
+        projectId: panel.projectId
+        projectPath: panel.projectPath
+    }
 }

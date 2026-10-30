@@ -7,6 +7,10 @@
 
 namespace ai::infrastructure::sqlite_detail {
 
+// The ONE source of the schema version this build supports. ensureSchema() migrates up to it and refuses anything newer; the
+// pre-migration backup decides from it whether an existing database needs a copy and names that copy by it.
+inline constexpr int supportedSchemaVersion = 71;
+
 // Brings a freshly opened database to the supported schema version.
 //
 // The handle is non-null, already configured (foreign keys, WAL, busy timeout)

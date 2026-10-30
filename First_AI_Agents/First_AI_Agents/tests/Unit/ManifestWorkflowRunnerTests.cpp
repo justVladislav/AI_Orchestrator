@@ -19,6 +19,7 @@
 #include "ai/application/inmemory/InMemoryExecutionManifestRepository.hpp"
 #include "ai/application/inmemory/InMemoryManifestTaskExecutionRepository.hpp"
 #include "ai/application/inmemory/InMemoryManifestWorkLedgerRepository.hpp"
+#include "ai/application/inmemory/InMemoryProjectOutputApprovalRepository.hpp"
 #include "ai/application/execution/ManifestMemberUsage.hpp"
 #include "ai/application/inmemory/InMemoryRepositories.hpp"
 #include "ai/application/inmemory/InMemoryVerificationBootstrapRepository.hpp"
@@ -31,6 +32,7 @@
 #include "ai/application/execution/OrchestrationService.hpp"
 #include "ai/application/verification/ProjectReadinessService.hpp"
 #include "ai/application/projects/ProjectService.hpp"
+#include "ai/application/workspace/ProjectOutputApprovalService.hpp"
 #include "ai/application/catalog/ProviderCatalogService.hpp"
 #include "ai/application/execution/RunManager.hpp"
 #include "ai/application/execution/WorkflowRouter.hpp"
@@ -103,8 +105,15 @@ void writeFile(const fs::path& path, std::string_view content)
 
 class AlwaysSucceedExecutor final : public IWorkspaceToolExecutor {
 public:
-    common::Result<AgentToolResult> execute(const AgentToolCall& call, const WorkspaceReadPolicy&) override
+    // P3c: the policy of every call, to prove which read area the Run's tools were really given.
+    std::vector<WorkspaceReadPolicy> policies;
+
+    common::Result<AgentToolResult> execute(const AgentToolCall& call, const WorkspaceReadPolicy& policy) override
     {
+        {
+            std::lock_guard lock(policyMutex_);
+            policies.push_back(policy);
+        }
         AgentToolResult r;
         r.callId = call.callId;
         r.toolName = call.toolName;
@@ -137,6 +146,9 @@ public:
         r.returnedBytes = r.contentJson.size();
         return common::Result<AgentToolResult>::ok(std::move(r));
     }
+
+private:
+    std::mutex policyMutex_;
 };
 
 class FakeChangeProposalRepository final : public IChangeProposalRepository {
@@ -5866,6 +5878,441 @@ void testPlanningFingerprintCoversTheWholeRoster()
         "The worker order (the order the Planner is shown) must change planning identity");
 }
 
+// ---------------------------------------------------------------------
+// P3c: the read policy of a NEW Manifest Run comes from the user's output approvals
+// ---------------------------------------------------------------------
+
+// Records every question (project, root) and answers through `answer`, else through `inner`, else with today's secureDefaults.
+class RecordingPolicySource final : public IOutputApprovalPolicySource {
+public:
+    const IOutputApprovalPolicySource* inner {nullptr};
+    std::function<common::Result<WorkspaceReadPolicy>(const ProjectId&, const fs::path&)> answer;
+    mutable std::mutex mu;
+    mutable std::vector<std::pair<ProjectId, fs::path>> calls;
+
+    common::Result<WorkspaceReadPolicy> policyFor(const ProjectId& projectId, const fs::path& root) const override
+    {
+        {
+            std::lock_guard lock(mu);
+            calls.emplace_back(projectId, root);
+        }
+        if (answer) return answer(projectId, root);
+        if (inner != nullptr) return inner->policyFor(projectId, root);
+        return common::Result<WorkspaceReadPolicy>::ok(WorkspaceReadPolicy::secureDefaults(root));
+    }
+    [[nodiscard]] std::size_t callCount() const
+    {
+        std::lock_guard lock(mu);
+        return calls.size();
+    }
+};
+
+// The real P3a service over the harness' project repository and the in-memory approvals; the application's own storage is not part
+// of these fixtures, so its protected list is empty.
+struct ApprovalRig {
+    InMemoryProjectOutputApprovalRepository approvals;
+    FunctionProtectedStoragePathSource protectedPaths {[](const fs::path&) {
+        return common::Result<std::vector<ProtectedStoragePath>>::ok({});
+    }};
+    FilesystemOutputDirectoryInspector inspector;
+    ProjectOutputApprovalService service;
+
+    explicit ApprovalRig(IProjectRepository& projects) : service(projects, approvals, protectedPaths, inspector) {}
+};
+
+// A repository whose reads fail: the durable store is gone.
+class UnreadableApprovalRepository final : public IProjectOutputApprovalRepository {
+public:
+    common::Result<ProjectOutputApprovalCommitResult> commit(
+        const ProjectOutputApproval&, const ProjectOutputApprovalSetValidator&) override
+    {
+        return common::Result<ProjectOutputApprovalCommitResult>::failure({kOutputApprovalStorageFailedCode, "disk is gone"});
+    }
+    common::Result<std::vector<ProjectOutputApproval>> listForWorkspace(const ProjectId&, const std::string&) const override
+    {
+        return common::Result<std::vector<ProjectOutputApproval>>::failure({kOutputApprovalStorageFailedCode, "disk is gone"});
+    }
+    common::Result<std::vector<ProjectOutputApproval>> listForProject(const ProjectId&) const override
+    {
+        return common::Result<std::vector<ProjectOutputApproval>>::failure({kOutputApprovalStorageFailedCode, "disk is gone"});
+    }
+    common::Result<bool> revoke(const ProjectId&, const std::string&) override
+    {
+        return common::Result<bool>::failure({kOutputApprovalStorageFailedCode, "disk is gone"});
+    }
+};
+
+void approveOutputFolder(ApprovalRig& rig, const Project& project, const std::string& relativePath)
+{
+    OutputApprovalRequest request;
+    request.projectId = project.id;
+    request.relativePath = relativePath;
+    request.approvedBy = "tester";
+    const auto approved = rig.service.approve(request);
+    require(approved.success(),
+        ("The fixture approval was refused: " + (approved.success() ? std::string {} : approved.error()->code + " " + approved.error()->message)).c_str());
+}
+
+nlohmann::json readRunBaseline(Harness& harness, const RunId& runId)
+{
+    const auto artifacts = harness.artifactService.listArtifacts(runId);
+    require(artifacts.success(), "Could not list the Run's artifacts");
+    const auto found = std::find_if(artifacts.value().begin(), artifacts.value().end(),
+        [](const Artifact& artifact) { return artifact.name == "workspace-baseline.v1.json"; });
+    require(found != artifacts.value().end(), "The Run has no workspace baseline artifact");
+    const auto content = harness.artifactService.getArtifactContent(found->id);
+    require(content.success(), "Could not read the workspace baseline artifact");
+    return nlohmann::json::parse(content.value());
+}
+
+bool hasBaseline(Harness& harness, const RunId& runId)
+{
+    const auto artifacts = harness.artifactService.listArtifacts(runId);
+    require(artifacts.success(), "Could not list the Run's artifacts");
+    return std::any_of(artifacts.value().begin(), artifacts.value().end(),
+        [](const Artifact& artifact) { return artifact.name == "workspace-baseline.v1.json"; });
+}
+
+std::vector<std::string> baselinePaths(const nlohmann::json& baseline)
+{
+    std::vector<std::string> paths;
+    for (const auto& file : baseline.at("files")) paths.push_back(file.at("path").get<std::string>());
+    return paths;
+}
+
+bool baselineRecordsExclusion(const nlohmann::json& baseline, const std::string& exclusion)
+{
+    for (const auto& item : baseline.at("exclusions")) {
+        if (item.get<std::string>() == exclusion) return true;
+    }
+    return false;
+}
+
+bool containsPath(const std::vector<std::string>& paths, const std::string& path)
+{
+    return std::find(paths.begin(), paths.end(), path) != paths.end();
+}
+
+bool startsWithPrefix(const std::vector<std::string>& paths, const std::string& prefix)
+{
+    return std::any_of(paths.begin(), paths.end(), [&](const std::string& path) { return path.rfind(prefix, 0) == 0; });
+}
+
+// A planner that reads one file with the tools and submits; `afterBaseline` runs once, after the Run's baseline is frozen and before
+// the planner's first answer - the moment an IDE / a configure step would create output in the workspace.
+void scriptPlannerReadingOneFile(Harness& harness, std::function<void()> afterBaseline, const char* ownedPath = "notes",
+    const char* workerPath = "notes/file.md")
+{
+    auto plannerSession = std::make_unique<ScriptedProviderAgentSession>();
+    plannerSession->beforeNextResponse = std::move(afterBaseline);
+    plannerSession->responses.push(common::Result<ProviderAgentTurnResponse>::ok(
+        toolCallResponse("call-1", "workspace_read_file", R"({"path":"README.md"})")));
+    plannerSession->responses.push(common::Result<ProviderAgentTurnResponse>::ok(
+        toolCallResponse("submit-1", kSubmitExecutionManifestDraftToolName, manifestSubmission(ownedPath, "propose"))));
+    harness.sessionFactory.preparedSessions.push(std::move(plannerSession));
+    auto workerSession = std::make_unique<ScriptedProviderAgentSession>();
+    workerSession->responses.push(common::Result<ProviderAgentTurnResponse>::ok(
+        stopResponse(proposalSubmission(workerPath))));
+    harness.sessionFactory.preparedSessions.push(std::move(workerSession));
+}
+
+RunId startOutputRun(Harness& harness, const ReadinessRunSetup& setup)
+{
+    return startReadinessRun(harness, setup, PlanningCompletionPolicy::RequireManifest);
+}
+
+void writeBigObject(const fs::path& path)
+{
+    writeFile(path, std::string(300 * 1024, 'x')); // over the 256 KiB read limit: visible, it is a file_limit refusal
+}
+
+void writeOutputFixtureTree(const fs::path& root)
+{
+    writeFile(root / "README.md", "readme");
+    writeFile(root / "src" / "a.cpp", "int a;");
+    writeFile(root / "Out2-source" / "real.txt", "a neighbour that only shares the name prefix");
+}
+
+// A Run on a project whose output folder the user approved: its baseline carries path:Out2, the folder is invisible to the planner's
+// tools and to provenance, and output that appears there after the baseline is no external drift. Without the producer the same
+// fixture is an external drift.
+void runWithAnApprovedOutputFolder(bool withProducer)
+{
+    Harness harness;
+    giveWorkspaceAnExistingCmakePreset(harness);
+    ApprovalRig rig(harness.projects);
+    RecordingPolicySource producer;
+    producer.inner = &rig.service;
+    if (withProducer) harness.manifestRunner.setOutputApprovalPolicySource(&producer);
+    const auto setup = prepareReadinessRun(harness);
+    const fs::path root = harness.workspace.path;
+    writeOutputFixtureTree(root);
+    approveOutputFolder(rig, setup.project, "Out2"); // the folder does not exist yet: a first configure creates it
+
+    scriptPlannerReadingOneFile(harness, [root] {
+        writeFile(root / "Out2" / "generated.txt", "output");
+        writeFile(root / "Out2" / "nested" / "CMakeCache.txt", "cache");
+        writeBigObject(root / "Out2" / "big.obj");
+    });
+    const auto runId = startOutputRun(harness, setup);
+    const auto finished = waitForTerminalRun(harness.runs, runId);
+
+    if (!withProducer) {
+        require(finished.status == RunStatus::Failed
+                && (finished.errorMessage.find("workspace_provenance.external_drift") != std::string::npos
+                    || finished.errorMessage.find("workspace_baseline.file_limit") != std::string::npos),
+            ("Control: without the producer the output is seen by the Run (a drift, or a file the defaults refuse): "
+                + finished.errorMessage).c_str());
+        return;
+    }
+    require(finished.status == RunStatus::Completed, ("The Run must complete: " + finished.errorMessage).c_str());
+    require(producer.callCount() == 1, "The Run asks for its policy exactly once");
+    require(producer.calls.front().first == setup.project.id && finished.workspacePath.has_value()
+            && producer.calls.front().second == *finished.workspacePath,
+        "...for its own project and the workspace the Run froze");
+
+    const auto baseline = readRunBaseline(harness, runId);
+    const auto paths = baselinePaths(baseline);
+    require(baselineRecordsExclusion(baseline, "path:Out2"), "The baseline artifact freezes the approved folder as path:Out2");
+    require(containsPath(paths, "README.md") && containsPath(paths, "src/a.cpp"), "The sources stay in the baseline");
+    require(containsPath(paths, "Out2-source/real.txt"), "A neighbour sharing only the name prefix is not hidden");
+    require(!startsWithPrefix(paths, "Out2/"), "Nothing under the approved folder is in the baseline");
+
+    // The policy the planner's tools actually got is the very same: Out2 is refused, the neighbour is not.
+    require(!harness.readOnlyExecutor.policies.empty(), "The planner's tool call reached the executor");
+    for (const auto& policy : harness.readOnlyExecutor.policies) {
+        require(!WorkspaceReadPolicyValidator::validateRelativePath("Out2/generated.txt", policy).success()
+                && !WorkspaceReadPolicyValidator::validateRelativePath("Out2/nested/CMakeCache.txt", policy).success(),
+            "The tools cannot read the approved output folder");
+        require(WorkspaceReadPolicyValidator::validateRelativePath("Out2-source/real.txt", policy).success()
+                && WorkspaceReadPolicyValidator::validateRelativePath("src/a.cpp", policy).success(),
+            "The tools can read the sources, also the neighbour of the folder");
+    }
+}
+
+void testAnApprovedOutputFolderIsFrozenInTheRunsBaselineAndPolicy()
+{
+    runWithAnApprovedOutputFolder(/*withProducer=*/false);
+    runWithAnApprovedOutputFolder(/*withProducer=*/true);
+}
+
+// The Run's own workspace (which is not the project's root) is what the producer is asked about, and the baseline is taken from it.
+void testTheProducerIsAskedOnceForTheWorkspaceTheRunFroze()
+{
+    Harness harness;
+    giveWorkspaceAnExistingCmakePreset(harness);
+    TempDir other;
+    RecordingPolicySource producer;
+    producer.answer = [](const ProjectId&, const fs::path& root) {
+        auto policy = WorkspaceReadPolicy::secureDefaults(root);
+        policy.deniedPaths.push_back("Out2");
+        return common::Result<WorkspaceReadPolicy>::ok(std::move(policy));
+    };
+    harness.manifestRunner.setOutputApprovalPolicySource(&producer);
+    const auto setup = prepareReadinessRun(harness);
+    writeFile(harness.workspace.path / "project-only.txt", "belongs to the project root");
+    writeFile(other.path / "README.md", "readme");
+    writeFile(other.path / "src" / "b.cpp", "int b;");
+    writeFile(other.path / "Out2" / "gen.txt", "output of the other workspace");
+    fs::copy_file(harness.workspace.path / "CMakePresets.json", other.path / "CMakePresets.json");
+
+    scriptPlannerReadingOneFile(harness, [] {});
+    StartRunRequest request;
+    request.projectId = setup.project.id;
+    request.title = "Manifest run in its own workspace";
+    request.task = "Add a notes file";
+    request.executionProfileId = setup.profileId;
+    request.workspacePath = other.path;
+    const auto started = harness.orchestration.startRun(request);
+    require(started.success(), "Could not start the Run");
+    const auto finished = waitForTerminalRun(harness.runs, started.value());
+    require(finished.status == RunStatus::Completed, ("The Run must complete: " + finished.errorMessage).c_str());
+    require(finished.workspacePath.has_value() && *finished.workspacePath != setup.project.rootPath,
+        "The Run's workspace is not the project's root");
+    require(producer.callCount() == 1, "One question per Run");
+    require(producer.calls.front().first == setup.project.id && producer.calls.front().second == *finished.workspacePath,
+        "It names the project and the Run's own workspace, not the project root");
+    const auto baseline = readRunBaseline(harness, started.value());
+    const auto paths = baselinePaths(baseline);
+    require(containsPath(paths, "src/b.cpp") && !containsPath(paths, "project-only.txt"),
+        "The baseline is taken from the Run's workspace");
+    require(baselineRecordsExclusion(baseline, "path:Out2") && !startsWithPrefix(paths, "Out2/"),
+        "...under the policy the producer answered for that workspace");
+}
+
+// An error of the source is the Run's failure before the baseline and before any provider session: not the defaults (here a file
+// that the defaults would refuse as file_limit proves the producer's error has priority), not NoChangesNeeded, not a warning.
+void expectTheRunFailsBeforeTheProviderWith(
+    const IOutputApprovalPolicySource& source, const std::string& expectedCode)
+{
+    Harness harness;
+    giveWorkspaceAnExistingCmakePreset(harness);
+    harness.manifestRunner.setOutputApprovalPolicySource(&source);
+    const auto setup = prepareReadinessRun(harness);
+    writeOutputFixtureTree(harness.workspace.path);
+    writeBigObject(harness.workspace.path / "Out2" / "big.obj"); // the defaults would refuse the Run on this file
+    auto sentinel = std::make_unique<ScriptedProviderAgentSession>();
+    sentinel->responses.push(common::Result<ProviderAgentTurnResponse>::ok(stopResponse("SENTINEL_SESSION_MUST_NOT_RUN")));
+    harness.sessionFactory.preparedSessions.push(std::move(sentinel));
+
+    const auto runId = startOutputRun(harness, setup);
+    const auto finished = waitForTerminalRun(harness.runs, runId);
+    require(finished.status == RunStatus::Failed, "A Run whose policy cannot be determined must fail");
+    require(finished.errorMessage.find(expectedCode) != std::string::npos,
+        ("The Run's error is the source's own: " + finished.errorMessage).c_str());
+    require(finished.errorMessage.find("file_limit") == std::string::npos,
+        "The defaults were not used to look at the workspace");
+    require(harness.sessionFactory.invocations.empty() && harness.sessionFactory.remainingSessions() == 1,
+        "No provider session may have been created");
+    require(harness.clientFactory.client->callCount() == 0, "No billable provider client call");
+    require(harness.verificationCommandRunner.requests.empty(), "No command was run");
+    require(!hasBaseline(harness, runId), "No baseline was taken or stored under a policy nobody determined");
+    const auto stages = harness.runs.listStages(runId);
+    require(stages.success() && stages.value().size() == 2 && stages.value()[0].status == StageStatus::Failed
+            && stages.value()[1].status == StageStatus::Skipped,
+        "The planning stage fails and the execution stage is skipped");
+}
+
+void testAFailingPolicySourceStopsTheRunBeforeAnyProviderOrBaseline()
+{
+    {   // an invalid approval, as a typed error of the source
+        RecordingPolicySource invalid;
+        invalid.answer = [](const ProjectId&, const fs::path&) {
+            return common::Result<WorkspaceReadPolicy>::failure(
+                {kOutputApprovalInvalidCode, "The approval of 'Out2' is not usable: it became a link"});
+        };
+        expectTheRunFailsBeforeTheProviderWith(invalid, kOutputApprovalInvalidCode);
+    }
+    {   // the real service over a store that cannot be read
+        InMemoryProjectRepository projects;
+        UnreadableApprovalRepository broken;
+        FunctionProtectedStoragePathSource noPaths {[](const fs::path&) {
+            return common::Result<std::vector<ProtectedStoragePath>>::ok({});
+        }};
+        FilesystemOutputDirectoryInspector inspector;
+        ProjectOutputApprovalService service(projects, broken, noPaths, inspector);
+        expectTheRunFailsBeforeTheProviderWith(service, kOutputApprovalStorageFailedCode);
+    }
+    {   // no durable storage at all
+        UnavailableOutputApprovalPolicySource unavailable("no database");
+        expectTheRunFailsBeforeTheProviderWith(unavailable, kOutputApprovalStorageFailedCode);
+    }
+    {   // a source that answers with the policy of ANOTHER folder
+        TempDir elsewhere;
+        RecordingPolicySource foreign;
+        foreign.answer = [root = elsewhere.path](const ProjectId&, const fs::path&) {
+            return common::Result<WorkspaceReadPolicy>::ok(WorkspaceReadPolicy::secureDefaults(root));
+        };
+        expectTheRunFailsBeforeTheProviderWith(foreign, "workspace_policy.root_mismatch");
+    }
+}
+
+// The baseline is still mandatory: a store that refuses it stops the Run before the provider, with a source in place.
+void testABaselinePersistenceFailureStillStopsTheRunBeforeTheProvider()
+{
+    Harness harness;
+    giveWorkspaceAnExistingCmakePreset(harness);
+    RecordingPolicySource producer;
+    harness.manifestRunner.setOutputApprovalPolicySource(&producer);
+    harness.artifactStore.rejectedNames.push_back("workspace-baseline.v1.json");
+    const auto setup = prepareReadinessRun(harness);
+    writeOutputFixtureTree(harness.workspace.path);
+    auto sentinel = std::make_unique<ScriptedProviderAgentSession>();
+    sentinel->responses.push(common::Result<ProviderAgentTurnResponse>::ok(stopResponse("SENTINEL_SESSION_MUST_NOT_RUN")));
+    harness.sessionFactory.preparedSessions.push(std::move(sentinel));
+
+    const auto runId = startOutputRun(harness, setup);
+    const auto finished = waitForTerminalRun(harness.runs, runId);
+    require(finished.status == RunStatus::Failed
+            && finished.errorMessage.find("workspace_baseline.persistence_failed") != std::string::npos,
+        ("The Run must fail with the baseline's own code: " + finished.errorMessage).c_str());
+    require(producer.callCount() == 1, "The policy was asked for before the baseline");
+    require(harness.sessionFactory.invocations.empty() && harness.clientFactory.client->callCount() == 0,
+        "No provider session and no client call");
+}
+
+// An approval revoked after the Run froze its baseline changes nothing for that Run - not for the planner's tools, not for the
+// provenance check - and the NEXT Run reads the new set. The folder was empty at the freeze and holds a file the defaults would
+// refuse only afterwards: the file fingerprint alone could not tell which policy the Run is under.
+void testARevocationAfterTheFreezeIsForTheNextRunOnly()
+{
+    Harness harness;
+    giveWorkspaceAnExistingCmakePreset(harness);
+    ApprovalRig rig(harness.projects);
+    RecordingPolicySource producer;
+    producer.inner = &rig.service;
+    harness.manifestRunner.setOutputApprovalPolicySource(&producer);
+    const auto setup = prepareReadinessRun(harness);
+    const fs::path root = harness.workspace.path;
+    writeOutputFixtureTree(root);
+    fs::create_directories(root / "Out2");
+    approveOutputFolder(rig, setup.project, "Out2");
+    const auto approvals = rig.service.list(setup.project.id);
+    require(approvals.success() && approvals.value().size() == 1, "One approval exists");
+    const std::string approvalId = approvals.value().front().approval.id;
+
+    scriptPlannerReadingOneFile(harness, [&rig, root, projectId = setup.project.id, approvalId] {
+        const auto revoked = rig.service.revoke(projectId, approvalId);
+        require(revoked.success() && revoked.value(), "The approval is revoked while the Run is in flight");
+        writeBigObject(root / "Out2" / "big.obj");
+    });
+    const auto first = startOutputRun(harness, setup);
+    const auto finishedFirst = waitForTerminalRun(harness.runs, first);
+    require(finishedFirst.status == RunStatus::Completed,
+        ("The Run in flight keeps the area it froze: " + finishedFirst.errorMessage).c_str());
+    require(producer.callCount() == 1, "...and does not ask again");
+    require(baselineRecordsExclusion(readRunBaseline(harness, first), "path:Out2"), "Its baseline still carries path:Out2");
+    for (const auto& policy : harness.readOnlyExecutor.policies) {
+        require(!WorkspaceReadPolicyValidator::validateRelativePath("Out2/big.obj", policy).success(),
+            "The planner's tools stayed under the frozen area");
+    }
+
+    // The next Run asks again: the folder is no longer excluded, so its big file is seen (and refused) by the defaults.
+    auto sentinel = std::make_unique<ScriptedProviderAgentSession>();
+    sentinel->responses.push(common::Result<ProviderAgentTurnResponse>::ok(stopResponse("SENTINEL_SESSION_MUST_NOT_RUN")));
+    harness.sessionFactory.preparedSessions.push(std::move(sentinel));
+    const auto invocationsBefore = harness.sessionFactory.invocations.size();
+    const auto second = startOutputRun(harness, setup);
+    const auto finishedSecond = waitForTerminalRun(harness.runs, second);
+    require(producer.callCount() == 2, "The next Run asks for its own policy");
+    require(finishedSecond.status == RunStatus::Failed
+            && finishedSecond.errorMessage.find("workspace_baseline.file_limit") != std::string::npos,
+        ("The next Run sees the revocation: " + finishedSecond.errorMessage).c_str());
+    require(harness.sessionFactory.invocations.size() == invocationsBefore, "...before any provider session");
+}
+
+// P2 with the real producer: the frozen area reaches the executor, so a proposal under the approved folder is refused as a denied
+// path, while the same manifest is an ordinary Run when nothing was approved.
+void runAWriteIntoTheOutputFolder(bool approved)
+{
+    Harness harness;
+    giveWorkspaceAnExistingCmakePreset(harness);
+    ApprovalRig rig(harness.projects);
+    harness.manifestRunner.setOutputApprovalPolicySource(&rig.service);
+    const auto setup = prepareReadinessRun(harness);
+    writeOutputFixtureTree(harness.workspace.path);
+    if (approved) approveOutputFolder(rig, setup.project, "Out2");
+
+    scriptPlannerReadingOneFile(harness, [] {}, "Out2", "Out2/file.md");
+    const auto runId = startOutputRun(harness, setup);
+    const auto finished = waitForTerminalRun(harness.runs, runId);
+    if (!approved) {
+        require(finished.status == RunStatus::Completed,
+            ("Control: without an approval the write is an ordinary one: " + finished.errorMessage).c_str());
+        return;
+    }
+    require(finished.status != RunStatus::Completed, "A write under the approved output folder must not complete");
+    require(finished.errorMessage.find("denied") != std::string::npos || finished.errorMessage.find("Out2") != std::string::npos,
+        ("The refusal names the denied path: " + finished.errorMessage).c_str());
+    require(!fs::exists(harness.workspace.path / "Out2" / "file.md"), "Nothing was written under the approved folder");
+}
+
+void testTheFrozenAreaRefusesAWriteUnderTheApprovedFolder()
+{
+    runAWriteIntoTheOutputFolder(/*approved=*/false);
+    runAWriteIntoTheOutputFolder(/*approved=*/true);
+}
+
 } // namespace
 
 int main()
@@ -5938,6 +6385,12 @@ int main()
         testIntegrationCallIsSkippedWhenItsAccountingRowCannotBeStarted();
         testCommandVerificationFailureDiagnosticSurvivesPastOldTruncationCap();
         testUnchangedPlanningFailureBlocksBeforeSecondProviderSession();
+        testAnApprovedOutputFolderIsFrozenInTheRunsBaselineAndPolicy();
+        testTheProducerIsAskedOnceForTheWorkspaceTheRunFroze();
+        testAFailingPolicySourceStopsTheRunBeforeAnyProviderOrBaseline();
+        testABaselinePersistenceFailureStillStopsTheRunBeforeTheProvider();
+        testARevocationAfterTheFreezeIsForTheNextRunOnly();
+        testTheFrozenAreaRefusesAWriteUnderTheApprovedFolder();
         return 0;
     } catch (const std::exception& exception) {
         std::cerr << "ManifestWorkflowRunner tests failed: " << exception.what() << '\n';

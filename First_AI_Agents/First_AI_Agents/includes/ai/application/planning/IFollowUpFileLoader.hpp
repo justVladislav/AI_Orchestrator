@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ai/application/planning/FollowUpComposerContext.hpp"
+#include "ai/application/workspace/WorkspaceReadPolicy.hpp"
 #include "ai/common/Result.hpp"
 
 #include <filesystem>
@@ -18,14 +19,26 @@ namespace ai::application {
 // kFollowUpComposerMaximumCandidateBytes) and the sha256 of exactly those bytes.
 //
 // Failure is reserved for what makes EVERY file unreadable: `follow_up.workspace_unavailable` (the trusted root is not an absolute
-// readable directory). `workspaceRoot` must come from trusted configuration (the Run's frozen workspace or the project root), never from
-// a model.
+// readable directory). The root comes from trusted configuration (the Run's frozen workspace or the project root), never from a model.
+//
+// P3c: what may be read is decided by a WHOLE read policy - today's secureDefaults plus the output folders the user approved - handed in
+// by the caller, so that the catalogue of one follow-up read and its candidate files are judged under one and the same area. A path
+// under policy.deniedPaths is a candidate whose `safety` is UnsafePath, without content or digest, and is never opened. The root is the
+// policy's own workspaceRoot. There is deliberately no default that turns a policy back into a root: that would drop its deniedPaths.
 class IFollowUpFileLoader {
 public:
     virtual ~IFollowUpFileLoader() = default;
 
     [[nodiscard]] virtual common::Result<std::vector<FollowUpFileCandidate>> load(
-        const std::filesystem::path& workspaceRoot, const std::vector<std::string>& relativePaths) const = 0;
+        const WorkspaceReadPolicy& policy, const std::vector<std::string>& relativePaths) const = 0;
+
+    // The previous call, for a caller that has no approvals to apply (a standalone use, a fixture): exactly today's secureDefaults of
+    // that root.
+    [[nodiscard]] common::Result<std::vector<FollowUpFileCandidate>> load(
+        const std::filesystem::path& workspaceRoot, const std::vector<std::string>& relativePaths) const
+    {
+        return load(WorkspaceReadPolicy::secureDefaults(workspaceRoot), relativePaths);
+    }
 };
 
 } // namespace ai::application

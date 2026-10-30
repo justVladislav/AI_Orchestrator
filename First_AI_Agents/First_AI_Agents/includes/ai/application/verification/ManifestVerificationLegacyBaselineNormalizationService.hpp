@@ -60,6 +60,27 @@ public:
         const WorkspaceBaselineSnapshot& currentBaseline,
         const std::vector<ChangeSetId>& sourceProposalIds);
 
+    // The read policy under which a live capture is comparable with the
+    // baseline `ownerRunId` recorded: current static defaults plus the
+    // dynamic `path:` exclusions frozen in that Run's own baseline artifact
+    // (see RecordedBaselinePolicy for the owner/identity contract and the
+    // distinct outcomes). Lives here only because this service already owns
+    // the durable-baseline artifact access of the continuation and handoff
+    // flows. It does not change normalization: `expectedFingerprint` is the
+    // ORIGINAL fingerprint the artifact carries, never a normalised or
+    // pinned one.
+    [[nodiscard]] common::Result<WorkspaceReadPolicy> policyForRecordedBaseline(
+        const RunId& ownerRunId,
+        const std::string& expectedFingerprint,
+        std::filesystem::path workspaceRoot) const;
+
+    // Stores a baseline snapshot as `runId`'s own baseline artifact (see
+    // RecordedBaselinePolicy::persist); same access reason as above.
+    [[nodiscard]] common::Result<void> persistRecordedBaseline(
+        const RunId& runId,
+        const std::optional<StageId>& stageId,
+        const WorkspaceBaselineSnapshot& snapshot) const;
+
 private:
     IManifestVerificationBaselineNormalizationRepository& normalizations_;
     ArtifactService& artifacts_;

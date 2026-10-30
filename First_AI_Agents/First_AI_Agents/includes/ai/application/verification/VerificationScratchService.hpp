@@ -45,10 +45,18 @@ public:
     [[nodiscard]] common::Result<VerificationScratchRoot> resolve(
         const std::optional<std::filesystem::path>& workspaceRoot) const override;
 
+    // Where resolve() would put the root - the same selection (the setting, else the default) and the same checks - but only LOCATES
+    // it: no folder is created, no access list is changed, no probe file is written (see VerificationScratchPolicy::locate). For a
+    // caller that has to protect the location and may not leave a trace. Refusals are those of resolve().
+    [[nodiscard]] common::Result<VerificationScratchRoot> locate(const std::optional<std::filesystem::path>& workspaceRoot) const;
+
     // What the Settings page shows. Creates no folder.
     [[nodiscard]] Status status() const;
 
 private:
+    [[nodiscard]] common::Result<VerificationScratchRoot> select(
+        const std::optional<std::filesystem::path>& workspaceRoot, bool readOnly) const;
+
     IVerificationScratchSettingRepository& repository_;
     std::filesystem::path defaultRoot_;
 };

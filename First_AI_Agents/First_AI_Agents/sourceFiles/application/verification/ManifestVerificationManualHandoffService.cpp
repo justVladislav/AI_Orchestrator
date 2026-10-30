@@ -12,12 +12,15 @@
 #include "ai/application/proposals/ProposedChangeSetParser.hpp"
 #include "ai/application/verification/QmlLintDiagnosticPolicy.hpp"
 #include "ai/application/Sha256.hpp"
+#include "ai/application/workspace/RecordedWorkspaceExclusions.hpp"
 #include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 #include "ai/application/workspace/WorkspaceReadPolicy.hpp"
 
 #include <algorithm>
 #include <fstream>
 #include <functional>
+#include <optional>
+#include <set>
 #include <system_error>
 #include <unordered_map>
 #include <unordered_set>
@@ -300,6 +303,69 @@ common::Result<bool> containsReparsePoint(const std::filesystem::path& root)
     return common::Result<bool>::ok(false);
 }
 
+// The read policy under which the live workspace is comparable with this handoff's baseline: the dynamic exclusions recorded
+// by the ANCHOR Run's own baseline artifact, identified by the anchor's Work Ledger fingerprint. handoff.baselineFingerprint is
+// deliberately not used for the identity: it is the fingerprint of the capture taken at materialize time, which is a normalised
+// one when legacy normalization applied, while the artifact still carries the original.
+common::Result<WorkspaceReadPolicy> recordedHandoffPolicy(
+    IManifestWorkLedgerRepository& workLedger,
+    const ManifestVerificationLegacyBaselineNormalizationService& baselineNormalization,
+    const ManifestVerificationManualHandoff& handoff,
+    const std::filesystem::path& workspaceRoot)
+{
+    const auto entry = workLedger.findEntry(handoff.verificationAnchorRunId);
+    if (!entry.success()) return common::Result<WorkspaceReadPolicy>::failure(*entry.error());
+    if (!entry.value().has_value() || !entry.value()->verification.has_value()) {
+        return common::Result<WorkspaceReadPolicy>::failure({"manual_handoff.source_corrupt",
+            "The anchor Run's durable verification identity is missing"});
+    }
+    return baselineNormalization.policyForRecordedBaseline(
+        handoff.verificationAnchorRunId, entry.value()->verification->baselineFingerprint, workspaceRoot);
+}
+
+// P3b: the read policy of a CANDIDATE copy - today's secureDefaults for that root plus the dynamic exclusions (path:) a handoff
+// froze. The dynamic part is a set of relative prefixes, so it moves to the candidate's root unchanged; the static part is whatever
+// secureDefaults gives now, exactly as before. A recorded entry that is not a valid RecordedWorkspaceExclusions entry (unsafe path,
+// unknown kind, duplicate, nesting) is an error - never a silent fall back to the defaults, which would let the area read as edited.
+// Pure: no file is touched, so a refusal always comes before any capture or mutation.
+common::Result<WorkspaceReadPolicy> candidatePolicyFromRecorded(
+    const std::filesystem::path& candidateRoot, const std::vector<std::string>& recordedExclusions)
+{
+    return RecordedWorkspaceExclusions::policyFor(candidateRoot, recordedExclusions);
+}
+
+// An existing handoff is read under what ITS OWN originalSnapshot recorded: not the anchor's artifact again, not the parent chain and
+// never the current approvals - so nothing that happens to those later changes how this candidate is judged.
+common::Result<WorkspaceReadPolicy> candidatePolicyForHandoff(
+    const ManifestVerificationManualHandoff& handoff, const std::filesystem::path& candidateRoot)
+{
+    return candidatePolicyFromRecorded(candidateRoot, handoff.originalSnapshot.exclusions);
+}
+
+// The dynamic exclusions of a policy as recorded entries (path:<prefix>); what materialize() hands to the helper for its candidate.
+std::vector<std::string> dynamicExclusionsOf(const WorkspaceReadPolicy& policy)
+{
+    std::vector<std::string> recorded;
+    for (const auto& prefix : policy.deniedPaths) recorded.push_back("path:" + detail::genericUtf8(prefix));
+    return recorded;
+}
+
+// Whether two recorded lists freeze the same dynamic set. Compared component by component with the policy's own case rule; the
+// fingerprint of a snapshot is computed from its files alone, so it can never stand in for this comparison.
+bool sameDynamicSet(const std::vector<std::string>& left, const std::vector<std::string>& right)
+{
+    const auto keysOf = [](const std::vector<std::string>& recorded) -> std::optional<std::set<std::string>> {
+        const auto parsed = RecordedWorkspaceExclusions::parsePaths(recorded);
+        if (!parsed.success()) return std::nullopt;
+        std::set<std::string> keys;
+        for (const auto& path : parsed.value()) keys.insert(detail::normalizedPathKey(path));
+        return keys;
+    };
+    const auto a = keysOf(left);
+    const auto b = keysOf(right);
+    return a.has_value() && b.has_value() && *a == *b;
+}
+
 } // namespace
 
 ManifestVerificationManualHandoffService::ManifestVerificationManualHandoffService(
@@ -402,6 +468,13 @@ ManifestVerificationManualHandoffService::inspectCandidateEdits(
         return common::Result<ManifestVerificationManualHandoffCandidateEditInspection>::ok(
             std::move(inspection));
     }
+    // The area the candidate is read under is the handoff's own recorded one; an invalid record is an error of its own, distinct from
+    // an unavailable candidate, and is found before the candidate is looked at.
+    const auto candidatePolicy = candidatePolicyForHandoff(handoff, root.value());
+    if (!candidatePolicy.success()) {
+        return common::Result<ManifestVerificationManualHandoffCandidateEditInspection>::failure(
+            *candidatePolicy.error());
+    }
     std::error_code existsError;
     const bool exists = std::filesystem::exists(root.value(), existsError);
     if (existsError || !exists) {
@@ -409,8 +482,7 @@ ManifestVerificationManualHandoffService::inspectCandidateEdits(
         return common::Result<ManifestVerificationManualHandoffCandidateEditInspection>::ok(
             std::move(inspection));
     }
-    const auto snapshot = WorkspaceBaselineProvenance::capture(
-        WorkspaceReadPolicy::secureDefaults(root.value()));
+    const auto snapshot = WorkspaceBaselineProvenance::capture(candidatePolicy.value());
     if (!snapshot.success()) {
         inspection.candidate.health = ManifestVerificationManualHandoffCandidateHealth::Unreadable;
         return common::Result<ManifestVerificationManualHandoffCandidateEditInspection>::ok(
@@ -787,7 +859,12 @@ ManifestVerificationManualHandoffService::materialize(
             {handoff, root.value()});
     }
 
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspaceRoot);
+    // Dynamic exclusions frozen by the anchor Run's own baseline artifact; the fingerprint compared below is that artifact's.
+    const auto recordedPolicy = baselineNormalization_.policyForRecordedBaseline(
+        verificationAnchorRunId, durable.baselineFingerprint, workspaceRoot);
+    if (!recordedPolicy.success()) return fail<ManifestVerificationManualHandoffMaterializeResult>(
+        recordedPolicy.error()->code, recordedPolicy.error()->message);
+    const auto& policy = recordedPolicy.value();
     const auto currentBaseline = WorkspaceBaselineProvenance::capture(policy);
     if (!currentBaseline.success()) return fail<ManifestVerificationManualHandoffMaterializeResult>(
         currentBaseline.error()->code, currentBaseline.error()->message);
@@ -945,8 +1022,16 @@ ManifestVerificationManualHandoffService::materialize(
     // durable directory's own raw bytes (which the user may start editing as
     // soon as this call returns, and which this function must never move,
     // rename, or replace).
-    const auto durablePreVerifySnapshot = WorkspaceBaselineProvenance::capture(
-        WorkspaceReadPolicy::secureDefaults(candidateOverlay.value().root));
+    // P3b: ONE candidate area for every capture of this durable candidate - before verification, after it and at the final freeze:
+    // the dynamic exclusions the anchor's own (already verified) recorded policy carries, moved to the candidate's root. It is
+    // decided here once, not again during a long verification.
+    const std::vector<std::string> frozenDynamicExclusions = dynamicExclusionsOf(policy);
+    const auto candidatePolicyResult =
+        candidatePolicyFromRecorded(candidateOverlay.value().root, frozenDynamicExclusions);
+    if (!candidatePolicyResult.success()) return fail<ManifestVerificationManualHandoffMaterializeResult>(
+        candidatePolicyResult.error()->code, candidatePolicyResult.error()->message);
+    const WorkspaceReadPolicy& candidatePolicy = candidatePolicyResult.value();
+    const auto durablePreVerifySnapshot = WorkspaceBaselineProvenance::capture(candidatePolicy);
     if (!durablePreVerifySnapshot.success()) {
         return fail<ManifestVerificationManualHandoffMaterializeResult>(
             "manual_handoff.workspace_unstable",
@@ -986,8 +1071,7 @@ ManifestVerificationManualHandoffService::materialize(
     // real CMake build) - the durable directory itself is never read FOR
     // verification, only re-hashed here to prove it is still exactly what
     // materialize() itself just produced.
-    const auto durablePostVerifySnapshot = WorkspaceBaselineProvenance::capture(
-        WorkspaceReadPolicy::secureDefaults(candidateOverlay.value().root));
+    const auto durablePostVerifySnapshot = WorkspaceBaselineProvenance::capture(candidatePolicy);
     if (!durablePostVerifySnapshot.success()
         || durablePostVerifySnapshot.value().fingerprint != durablePreVerifySnapshot.value().fingerprint) {
         return fail<ManifestVerificationManualHandoffMaterializeResult>(
@@ -1075,13 +1159,19 @@ ManifestVerificationManualHandoffService::materialize(
     // Defence against a concurrent writer touching the just-materialized
     // candidate directory mid-freeze: two consecutive captures must agree
     // before this handoff is ever considered durable.
-    const auto candidatePolicy = WorkspaceReadPolicy::secureDefaults(candidateOverlay.value().root);
     const auto firstSnapshot = WorkspaceBaselineProvenance::capture(candidatePolicy);
     const auto secondSnapshot = WorkspaceBaselineProvenance::capture(candidatePolicy);
     if (!firstSnapshot.success() || !secondSnapshot.success()) {
         return fail<ManifestVerificationManualHandoffMaterializeResult>(
             "manual_handoff.workspace_unstable",
             "The materialized candidate directory could not be captured");
+    }
+    // The snapshot that becomes the handoff's originalSnapshot must record the SAME dynamic set as the anchor's policy: compared as a
+    // set (its fingerprint covers files only), and a mismatch refuses the creation instead of correcting what is recorded.
+    if (!sameDynamicSet(firstSnapshot.value().exclusions, frozenDynamicExclusions)) {
+        return fail<ManifestVerificationManualHandoffMaterializeResult>(
+            "manual_handoff.recorded_exclusions_mismatch",
+            "The candidate snapshot does not record the dynamic exclusions of the anchor's baseline");
     }
     if (firstSnapshot.value().fingerprint != secondSnapshot.value().fingerprint) {
         return fail<ManifestVerificationManualHandoffMaterializeResult>(
@@ -1457,7 +1547,11 @@ ManifestVerificationManualHandoffService::importAndReverify(
     // A capture failure here also fails closed on a symlink/reparse point
     // introduced into the candidate directory since materialize() - capture()
     // itself already refuses those; this call never re-derives that check.
-    const auto candidatePolicy = WorkspaceReadPolicy::secureDefaults(candidateRoot.value());
+    // The candidate is read under the area its own handoff recorded; an invalid record refuses here, before any attempt exists.
+    const auto candidatePolicyResult = candidatePolicyForHandoff(handoff, candidateRoot.value());
+    if (!candidatePolicyResult.success()) return fail<ManifestVerificationManualHandoffImportOutcome>(
+        candidatePolicyResult.error()->code, candidatePolicyResult.error()->message);
+    const WorkspaceReadPolicy& candidatePolicy = candidatePolicyResult.value();
     const auto firstLive = WorkspaceBaselineProvenance::capture(candidatePolicy);
     const auto secondLive = WorkspaceBaselineProvenance::capture(candidatePolicy);
     if (!firstLive.success() || !secondLive.success()) {
@@ -1697,7 +1791,11 @@ ManifestVerificationManualHandoffService::importAndReverify(
     // recaptured. The trusted proposal store lives beside the app's own
     // database (BackendRuntime::openProposalStorage), never inside the real
     // project workspace, so a successor's own publish never perturbs this.
-    const auto finalBaselinePolicy = WorkspaceReadPolicy::secureDefaults(workspaceRoot);
+    const auto recordedFinalPolicy = recordedHandoffPolicy(
+        workLedger_, baselineNormalization_, handoff, workspaceRoot);
+    if (!recordedFinalPolicy.success()) return fail<ManifestVerificationManualHandoffImportOutcome>(
+        recordedFinalPolicy.error()->code, recordedFinalPolicy.error()->message);
+    const auto& finalBaselinePolicy = recordedFinalPolicy.value();
     const auto finalBaseline = WorkspaceBaselineProvenance::capture(finalBaselinePolicy);
     if (!finalBaseline.success()) return fail<ManifestVerificationManualHandoffImportOutcome>(
         finalBaseline.error()->code, finalBaseline.error()->message);
@@ -1847,6 +1945,18 @@ ManifestVerificationManualHandoffService::importAndReverify(
             static_cast<void>(ensureIncompleteAttemptResult(attempt.id, attemptRunId));
         }
     });
+
+    // The attempt owns the baseline it verifies against, exactly like a continuation child: the live baseline just captured under
+    // the anchor's recorded exclusions (and proven equal to the handoff's frozen fingerprint above) becomes the attempt Run's own
+    // workspace-baseline.v1.json BEFORE any successor exists. Apply of a successor then restores the same excluded area from
+    // its own Run and createPostApplyProvenance finds the baseline it compares against. A failure here leaves the attempt
+    // Incomplete (retryable) through the ScopeExit above; no blind parent-chain lookup is involved.
+    {
+        const auto persisted = baselineNormalization_.persistRecordedBaseline(
+            attemptRunId, attemptRun.currentStageId, finalBaseline.value());
+        if (!persisted.success()) return fail<ManifestVerificationManualHandoffImportOutcome>(
+            persisted.error()->code, persisted.error()->message);
+    }
 
     // Group by owning proposal - one materializeRepairSuccessor call per
     // amended proposal, never per file, so two edited files belonging to
@@ -2347,7 +2457,12 @@ ManifestVerificationManualHandoffService::resetNonEditableChanges(
     const auto candidateRoot = resolveCandidateRoot(handoff);
     if (!candidateRoot.success()) return fail<ManifestVerificationManualHandoffResetResult>(
         candidateRoot.error()->code, candidateRoot.error()->message);
-    const auto candidatePolicy = WorkspaceReadPolicy::secureDefaults(candidateRoot.value());
+    // Read under the recorded area of the handoff itself: output outside the editable scope is not something to reset, and an
+    // invalid record refuses before any file is touched.
+    const auto candidatePolicyResult = candidatePolicyForHandoff(handoff, candidateRoot.value());
+    if (!candidatePolicyResult.success()) return fail<ManifestVerificationManualHandoffResetResult>(
+        candidatePolicyResult.error()->code, candidatePolicyResult.error()->message);
+    const WorkspaceReadPolicy& candidatePolicy = candidatePolicyResult.value();
     const auto firstLive = WorkspaceBaselineProvenance::capture(candidatePolicy);
     const auto secondLive = WorkspaceBaselineProvenance::capture(candidatePolicy);
     if (!firstLive.success() || !secondLive.success()
@@ -2387,7 +2502,11 @@ ManifestVerificationManualHandoffService::resetNonEditableChanges(
     const auto ephemeralRoot = resolveVerificationScratchRoot(scratchProvider_, ephemeralScratchRoot_, workspaceRoot);
     if (!ephemeralRoot.success()) return fail<ManifestVerificationManualHandoffResetResult>(
         ephemeralRoot.error()->code, ephemeralRoot.error()->message);
-    const auto baselinePolicy = WorkspaceReadPolicy::secureDefaults(workspaceRoot);
+    const auto recordedResetPolicy = recordedHandoffPolicy(
+        workLedger_, baselineNormalization_, handoff, workspaceRoot);
+    if (!recordedResetPolicy.success()) return fail<ManifestVerificationManualHandoffResetResult>(
+        recordedResetPolicy.error()->code, recordedResetPolicy.error()->message);
+    const auto& baselinePolicy = recordedResetPolicy.value();
     const auto baseline = WorkspaceBaselineProvenance::capture(baselinePolicy);
     if (!baseline.success()) return fail<ManifestVerificationManualHandoffResetResult>(
         baseline.error()->code, baseline.error()->message);
@@ -2419,8 +2538,11 @@ ManifestVerificationManualHandoffService::resetNonEditableChanges(
             "manual_handoff.reset_source_mismatch",
             "The reconstructed frozen candidate no longer matches the handoff identity");
     }
-    const auto pristineSnapshot = WorkspaceBaselineProvenance::capture(
-        WorkspaceReadPolicy::secureDefaults(pristine.value().root));
+    // The restored copy is compared with originalSnapshot under the same recorded area, moved to the copy's root.
+    const auto pristinePolicy = candidatePolicyForHandoff(handoff, pristine.value().root);
+    if (!pristinePolicy.success()) return fail<ManifestVerificationManualHandoffResetResult>(
+        pristinePolicy.error()->code, pristinePolicy.error()->message);
+    const auto pristineSnapshot = WorkspaceBaselineProvenance::capture(pristinePolicy.value());
     if (!pristineSnapshot.success()
         || pristineSnapshot.value().fingerprint != handoff.originalSnapshot.fingerprint) {
         return fail<ManifestVerificationManualHandoffResetResult>(

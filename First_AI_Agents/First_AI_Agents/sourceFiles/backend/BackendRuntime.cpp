@@ -1329,11 +1329,22 @@ struct BackendRuntime::Impl {
             "This runtime is a guest of a database that another runtime owns, so it does not compose follow-up plans"};
     }
 
+    // The owner path always asks SQLite for a verified copy of an existing database BEFORE it is upgraded, in a folder next to the
+    // database (the same convention as "artifacts", "proposals" and "manual-handoff"). It is not a setting: nothing in the UI, a
+    // preset or an agent can switch it off. A guest (test fixtures only) goes through the same call.
+    static infrastructure::SqliteOpenOptions productionOpenOptions(const std::filesystem::path& databasePath)
+    {
+        infrastructure::SqliteOpenOptions options;
+        const std::filesystem::path parent = databasePath.has_parent_path() ? databasePath.parent_path() : std::filesystem::path(".");
+        options.preMigrationBackupDirectory = parent / "backups";
+        return options;
+    }
+
     static StorageBundle openStorage(const std::filesystem::path& databasePath, const DatabaseOwnership& ownership)
     {
         auto opened = ownership.error.has_value()
             ? common::Result<std::shared_ptr<infrastructure::SqliteDatabase>>::failure(*ownership.error)
-            : infrastructure::SqliteDatabase::open(databasePath);
+            : infrastructure::SqliteDatabase::open(databasePath, productionOpenOptions(databasePath));
         if (!opened.success()) {
             const std::string reason = opened.error()->message;
             return StorageBundle {
@@ -1480,6 +1491,23 @@ struct BackendRuntime::Impl {
         return std::make_unique<infrastructure::SqliteProjectReadinessRepository>(storage.database);
     }
 
+    // Null when the durable storage is unavailable: the approvals never fall back to memory.
+    static std::unique_ptr<application::IProjectOutputApprovalRepository> openProjectOutputApprovalRepository(
+        const StorageBundle& storage)
+    {
+        if (storage.database == nullptr) return nullptr;
+        return std::make_unique<infrastructure::SqliteProjectOutputApprovalRepository>(storage.database);
+    }
+
+    static std::unique_ptr<application::ProjectOutputApprovalService> makeProjectOutputApprovalService(
+        const StorageBundle& storage, application::IProjectOutputApprovalRepository* repository,
+        const application::IProtectedStoragePathSource& protectedPaths, const application::IOutputDirectoryInspector& inspector)
+    {
+        if (storage.database == nullptr || repository == nullptr) return nullptr;
+        return std::make_unique<application::ProjectOutputApprovalService>(
+            *storage.projectRepository, *repository, protectedPaths, inspector);
+    }
+
     struct ProposalBundle {
         std::unique_ptr<application::IChangeProposalStore> store;
     };
@@ -1548,6 +1576,16 @@ struct BackendRuntime::Impl {
         , verificationScratchService(*scratchSettingRepository)
         , projectReadinessRepository(openProjectReadinessRepository(storage))
         , projectReadinessService(*projectReadinessRepository)
+        , projectOutputApprovalRepository(openProjectOutputApprovalRepository(storage))
+        , outputApprovalProtectedPaths(makeOutputApprovalProtectedStorageSource(config, verificationScratchService))
+        , projectOutputApprovalService(makeProjectOutputApprovalService(
+              storage, projectOutputApprovalRepository.get(), outputApprovalProtectedPaths, outputDirectoryInspector))
+        , unavailableOutputApprovalPolicySource(
+              storage.error.has_value() ? storage.error->message : std::string("durable storage is not available"))
+        , outputApprovalPolicySource(
+              projectOutputApprovalService != nullptr
+                  ? static_cast<const application::IOutputApprovalPolicySource*>(projectOutputApprovalService.get())
+                  : static_cast<const application::IOutputApprovalPolicySource*>(&unavailableOutputApprovalPolicySource))
         // AG-14: declared here (after storage and artifactService, both
         // already constructed above) and before every service that takes a
         // pointer to it (changeSetApplyService, proposalReviewService below,
@@ -1633,7 +1671,8 @@ struct BackendRuntime::Impl {
               *storage.changeProposalRepository, *proposals.store,
               *storage.runRepository, *storage.projectRepository,
               *storage.changeApprovalRepository, &artifactService, &manifestWorkLedgerService,
-              &manifestApplyVerificationGate)
+              &manifestApplyVerificationGate,
+              storage.manifestVerificationManualHandoffRepository.get())
         , proposalReviewService(
               *storage.changeProposalRepository, *storage.proposalReviewRepository,
               &manifestWorkLedgerService)
@@ -1824,6 +1863,12 @@ struct BackendRuntime::Impl {
         // The durable per-project readiness (AG-18.4B-R1): a Run proves or reuses the project's configured setup before it spends
         // provider money.
         manifestWorkflowRunner.setProjectReadinessService(&projectReadinessService);
+        // P3c: the read policy of every NEW Manifest Run comes from the user's output approvals - from the durable service, or, when
+        // there is no database, from a source that answers every question with a typed storage failure. Never null, never "defaults".
+        manifestWorkflowRunner.setOutputApprovalPolicySource(outputApprovalPolicySource);
+        // The CURRENT policy of a workspace for a new context and a follow-up read comes from the same source.
+        projectContextSnapshotService.setOutputApprovalPolicySource(outputApprovalPolicySource);
+        followUpSourceReader.setOutputApprovalPolicySource(outputApprovalPolicySource);
         manifestVerificationContinuationPreparationService.setVerificationScratchProvider(&verificationScratchService);
         manifestVerificationContinuationRepairService.setVerificationScratchProvider(&verificationScratchService);
         manifestVerificationManualHandoffService.setVerificationScratchProvider(&verificationScratchService);
@@ -1930,6 +1975,16 @@ struct BackendRuntime::Impl {
     // every service that is handed it in the constructor body.
     std::unique_ptr<application::IProjectReadinessRepository> projectReadinessRepository;
     application::ProjectReadinessService projectReadinessService;
+    // P3a: the user's approvals of output folders; declared after the scratch provider that its protected-storage list asks. P3c hands
+    // their policy to the consumers of a workspace through outputApprovalPolicySource (below); no controller or tool creates one yet.
+    std::unique_ptr<application::IProjectOutputApprovalRepository> projectOutputApprovalRepository;
+    application::FilesystemOutputDirectoryInspector outputDirectoryInspector;
+    application::FunctionProtectedStoragePathSource outputApprovalProtectedPaths;
+    std::unique_ptr<application::ProjectOutputApprovalService> projectOutputApprovalService;
+    // P3c: the ONE source every consumer is given (a new Manifest Run, the project context, the follow-up read): the durable service when
+    // there is one, else this adapter whose every answer is a typed failure. Both outlive every consumer (declared before them).
+    application::UnavailableOutputApprovalPolicySource unavailableOutputApprovalPolicySource;
+    const application::IOutputApprovalPolicySource* outputApprovalPolicySource {nullptr};
     // AG-14: declared here (see the matching constructor init-list comment)
     // so it already exists for changeSetApplyService/proposalReviewService
     // just below, and for runManager/manifestWorkflowRunner much later.
@@ -2205,6 +2260,65 @@ application::VerificationScratchService& BackendRuntime::verificationScratchServ
 application::ProjectReadinessService& BackendRuntime::projectReadinessService() noexcept
 {
     return impl_->projectReadinessService;
+}
+
+bool BackendRuntime::projectOutputApprovalsAvailable() const noexcept
+{
+    return impl_->projectOutputApprovalService != nullptr;
+}
+
+application::ProjectOutputApprovalService* BackendRuntime::projectOutputApprovalService() noexcept
+{
+    return impl_->projectOutputApprovalService.get();
+}
+
+application::FunctionProtectedStoragePathSource makeOutputApprovalProtectedStorageSource(
+    const BackendRuntimeConfig& config, const application::VerificationScratchService& scratch)
+{
+    BackendRuntimeConfig paths;
+    paths.databasePath = config.databasePath;
+    paths.artifactRoot = config.artifactRoot;
+    return application::FunctionProtectedStoragePathSource(
+        [paths, &scratch](const std::filesystem::path& workspaceRoot)
+            -> common::Result<std::vector<application::ProtectedStoragePath>> {
+            using Listed = common::Result<std::vector<application::ProtectedStoragePath>>;
+            auto listed = trustedStoragePaths(paths);
+            // The scratch root is LOCATED, never resolved: resolving creates the folder, may tighten its access list and writes a probe
+            // file, none of which a read-only preview or policy may do. An absent scratch is a valid, protected future path; a root that
+            // cannot be located is a refusal, not an empty list.
+            const auto scratchRoot = scratch.locate(workspaceRoot);
+            if (!scratchRoot.success()) return Listed::failure(*scratchRoot.error());
+            listed.push_back({scratchRoot.value().path, true});
+            return Listed::ok(std::move(listed));
+        });
+}
+
+std::vector<application::ProtectedStoragePath> trustedStoragePaths(const BackendRuntimeConfig& config)
+{
+    namespace fs = std::filesystem;
+    const auto absolute = [](const fs::path& path) {
+        std::error_code error;
+        const fs::path result = fs::absolute(path, error);
+        return error ? path : result;
+    };
+    const fs::path database = absolute(config.databasePath);
+    const fs::path directory = database.parent_path();
+    const fs::path artifactRoot = config.artifactRoot.empty() ? directory / "artifacts" : absolute(config.artifactRoot);
+    const auto sibling = [&database](const char* suffix) {
+        fs::path path = database;
+        path += suffix;
+        return path;
+    };
+    return {
+        {database, false},
+        {sibling("-wal"), false},
+        {sibling("-shm"), false},
+        {sibling(".owner"), false},
+        {directory / "backups", true},
+        {artifactRoot, true},
+        {directory / "proposals", true},
+        {directory / "manual-handoff", true},
+    };
 }
 
 application::WorkspaceContextService& BackendRuntime::workspaceContextService() noexcept

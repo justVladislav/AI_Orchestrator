@@ -1,5 +1,6 @@
 #include "ai/application/verification/ManifestVerificationLegacyBaselineNormalizationService.hpp"
 
+#include "ai/application/verification/RecordedBaselinePolicy.hpp"
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
 
 #include <algorithm>
@@ -164,6 +165,25 @@ ManifestVerificationLegacyBaselineNormalizationService::normalizeOrEvaluate(
         return ReturnT::failure(*inserted.error());
     }
     return ReturnT::ok(std::move(proof));
+}
+
+common::Result<WorkspaceReadPolicy>
+ManifestVerificationLegacyBaselineNormalizationService::policyForRecordedBaseline(
+    const RunId& ownerRunId,
+    const std::string& expectedFingerprint,
+    std::filesystem::path workspaceRoot) const
+{
+    return RecordedBaselinePolicy::forRun(
+        artifacts_, ownerRunId, expectedFingerprint, std::move(workspaceRoot));
+}
+
+common::Result<void>
+ManifestVerificationLegacyBaselineNormalizationService::persistRecordedBaseline(
+    const RunId& runId,
+    const std::optional<StageId>& stageId,
+    const WorkspaceBaselineSnapshot& snapshot) const
+{
+    return RecordedBaselinePolicy::persist(artifacts_, runId, stageId, snapshot);
 }
 
 } // namespace ai::application

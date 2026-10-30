@@ -955,7 +955,7 @@ COMMIT;
             "A group inserts into the migrated database");
         requireDraft(drafts.update(*manual.value()).success(), "A pre-existing draft still updates");
         RawConnection raw(workspace.database);
-        requireDraft(raw.scalar("PRAGMA user_version") == 70, "The migrated database is at the latest schema");
+        requireDraft(raw.scalar("PRAGMA user_version") == 71, "The migrated database is at the latest schema");
         requireDraft(raw.scalar("SELECT COUNT(*) FROM pragma_foreign_key_check") == 0, "No foreign key is broken");
         requireDraft(raw.scalar("SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name LIKE 'run_draft%'") == 6
                 && raw.scalar("SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name LIKE 'run_drafts_group_%'") == 2,
@@ -983,7 +983,7 @@ COMMIT;
                 && members.value()[1].provenance.has_value() && members.value()[1].provenance->dependsOn.size() == 1,
             "A re-run migration keeps the group and the provenance of its drafts");
         RawConnection raw(workspace.database);
-        requireDraft(raw.scalar("PRAGMA user_version") == 70, "...and ends at the latest schema again");
+        requireDraft(raw.scalar("PRAGMA user_version") == 71, "...and ends at the latest schema again");
     }
 }
 

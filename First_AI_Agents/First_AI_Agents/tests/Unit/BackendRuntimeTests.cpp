@@ -1,6 +1,9 @@
 #include "ai/backend/BackendRuntime.hpp"
 #include "ai/application/proposals/ChangeProposalService.hpp"
 #include "ai/application/Sha256.hpp"
+#include "ai/application/inmemory/InMemoryProjectOutputApprovalRepository.hpp"
+#include "ai/application/inmemory/InMemoryRepositories.hpp"
+#include "ai/application/workspace/ProjectOutputApprovalService.hpp"
 #include "ai/infrastructure/DatabaseOwnerLock.hpp"
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/infrastructure/FileChangeProposalStore.hpp"
@@ -1697,6 +1700,247 @@ void testTheRuntimeIsTheOneLiveOwnerOfItsDatabase()
         "The Outcome Brief repository is handed out read-only: the reconciler is the only writer");
 }
 
+// P3-0: the production owner path asks SQLite for a verified copy of an existing database before it is upgraded. The database here is
+// a freshly migrated one whose step-70 table is dropped and whose version is rewound to 69 (the schema stays 70).
+void makeVersion69Database(const fs::path& databasePath, int projects)
+{
+    {
+        const auto opened = ai::infrastructure::SqliteDatabase::open(databasePath);
+        require(opened.success(), "Could not create the fixture database");
+    }
+    sqlite3* handle = nullptr;
+    const std::string utf8 = databasePath.generic_string();
+    require(sqlite3_open_v2(utf8.c_str(), &handle, SQLITE_OPEN_READWRITE, nullptr) == SQLITE_OK, "Could not open the fixture");
+    for (int index = 1; index <= projects; ++index) {
+        const std::string sql = "INSERT INTO projects(id,name,description,root_path,status,created_at_ms,updated_at_ms) VALUES('p"
+            + std::to_string(index) + "','Fixture','d','C:/fixture/" + std::to_string(index) + "','active',1,1);";
+        require(sqlite3_exec(handle, sql.c_str(), nullptr, nullptr, nullptr) == SQLITE_OK, "Could not seed the fixture");
+    }
+    require(sqlite3_exec(handle, "DROP TABLE project_output_approvals; DROP TABLE project_verification_readiness; PRAGMA user_version = 69;",
+                nullptr, nullptr, nullptr)
+            == SQLITE_OK,
+        "Could not rewind the fixture to version 69");
+    sqlite3_close_v2(handle);
+}
+
+// The same, one step later: a real previous-release (version 70) database without the step-71 table.
+void makeVersion70Database(const fs::path& databasePath, int projects)
+{
+    makeVersion69Database(databasePath, projects);
+    {
+        // Bring the fixture to 70 the way the schema itself does (step 70 creates its table), then remove the step-71 objects again.
+        const auto opened = ai::infrastructure::SqliteDatabase::open(databasePath);
+        require(opened.success(), "Could not upgrade the fixture to the current version");
+    }
+    sqlite3* handle = nullptr;
+    const std::string utf8 = databasePath.generic_string();
+    require(sqlite3_open_v2(utf8.c_str(), &handle, SQLITE_OPEN_READWRITE, nullptr) == SQLITE_OK, "Could not open the fixture");
+    require(sqlite3_exec(handle, "DROP TABLE project_output_approvals; PRAGMA user_version = 70;", nullptr, nullptr, nullptr) == SQLITE_OK,
+        "Could not rewind the fixture to version 70");
+    sqlite3_close_v2(handle);
+}
+
+long long scalarOf(const fs::path& databasePath, const char* sql, int flags)
+{
+    sqlite3* handle = nullptr;
+    const std::string utf8 = databasePath.generic_string();
+    require(sqlite3_open_v2(utf8.c_str(), &handle, flags, nullptr) == SQLITE_OK, "Could not open the database for a probe");
+    sqlite3_stmt* statement = nullptr;
+    require(sqlite3_prepare_v2(handle, sql, -1, &statement, nullptr) == SQLITE_OK, "Could not prepare the probe");
+    require(sqlite3_step(statement) == SQLITE_ROW, "The probe returned no row");
+    const long long value = sqlite3_column_int64(statement, 0);
+    sqlite3_finalize(statement);
+    sqlite3_close_v2(handle);
+    return value;
+}
+
+std::vector<fs::path> filesIn(const fs::path& directory)
+{
+    std::vector<fs::path> files;
+    std::error_code ignored;
+    for (const auto& entry : fs::directory_iterator(directory, ignored)) files.push_back(entry.path());
+    return files;
+}
+
+void testTheProductionOwnerTakesAVerifiedCopyBeforeUpgrading()
+{
+    using ai::infrastructure::DatabaseOwnerLock;
+    {   // the owner path really turns the protection on
+        TemporaryPersistenceWorkspace workspace;
+        makeVersion69Database(workspace.databasePath, 2);
+        const fs::path backups = workspace.databasePath.parent_path() / "backups";
+        {
+            BackendRuntime owner({workspace.databasePath});
+            require(owner.storageAvailable(), "The owner upgrades the database");
+            const auto copies = filesIn(backups);
+            require(copies.size() == 1, "...after taking exactly one copy next to the database");
+            require(scalarOf(copies.front(), "PRAGMA user_version;", SQLITE_OPEN_READONLY) == 69,
+                "...of the version before the upgrade (read raw, not through open())");
+            require(scalarOf(copies.front(), "SELECT count(*) FROM projects;", SQLITE_OPEN_READONLY) == 2, "...with its data");
+
+            // A guest of the same file (test fixtures only) goes through the same call and, finding it current, takes no copy.
+            BackendRuntimeConfig guestConfig {workspace.databasePath};
+            guestConfig.exclusiveDatabaseOwnership = false;
+            BackendRuntime guest(guestConfig);
+            require(guest.storageAvailable(), "A guest opens the file");
+            require(filesIn(backups).size() == 1, "...and creates no copy");
+        }
+        require(scalarOf(workspace.databasePath, "PRAGMA user_version;", SQLITE_OPEN_READWRITE) == 71, "The database is upgraded");
+    }
+    {   // the real previous release: version 70 -> 71, the copy stays version 70 with the old data and without the new table
+        TemporaryPersistenceWorkspace workspace;
+        makeVersion70Database(workspace.databasePath, 2);
+        const fs::path backups = workspace.databasePath.parent_path() / "backups";
+        {
+            BackendRuntime owner({workspace.databasePath});
+            require(owner.storageAvailable(), "The owner upgrades the version 70 database");
+            const auto copies = filesIn(backups);
+            require(copies.size() == 1, "...after exactly one copy");
+            require(scalarOf(copies.front(), "PRAGMA user_version;", SQLITE_OPEN_READONLY) == 70, "...of version 70 (raw read-only)");
+            require(scalarOf(copies.front(), "SELECT count(*) FROM projects;", SQLITE_OPEN_READONLY) == 2, "...with its data");
+            require(scalarOf(copies.front(), "SELECT count(*) FROM sqlite_master WHERE name = 'project_output_approvals';",
+                        SQLITE_OPEN_READONLY) == 0,
+                "...and without the new table");
+        }
+        require(scalarOf(workspace.databasePath, "PRAGMA user_version;", SQLITE_OPEN_READWRITE) == 71, "The working database is 71");
+        require(scalarOf(workspace.databasePath, "SELECT count(*) FROM sqlite_master WHERE name = 'project_output_approvals';",
+                    SQLITE_OPEN_READWRITE) == 1,
+            "...with the new table");
+    }
+    {   // a refused ownership never opens or migrates the file
+        TemporaryPersistenceWorkspace workspace;
+        makeVersion69Database(workspace.databasePath, 1);
+        auto held = DatabaseOwnerLock::acquire(workspace.databasePath);
+        require(held.success() && held.value() != nullptr, "Another owner holds the file");
+        {
+            BackendRuntime intruder({workspace.databasePath});
+            require(!intruder.storageAvailable() && intruder.storageError().has_value()
+                    && intruder.storageError()->code == "persistence.owned_by_another_instance",
+                "The second runtime gets unavailable storage");
+        }
+        require(scalarOf(workspace.databasePath, "PRAGMA user_version;", SQLITE_OPEN_READWRITE) == 69,
+            "...and the database is neither opened nor upgraded");
+        require(!fs::exists(workspace.databasePath.parent_path() / "backups"), "...and no copy is made");
+    }
+}
+
+// P3a: the approvals' backend rules are composed only over durable storage and protect the application's own storage paths.
+void testTheOutputApprovalServiceIsComposedOnlyOverDurableStorage()
+{
+    {
+        TemporaryPersistenceWorkspace workspace;
+        BackendRuntime owner({workspace.databasePath});
+        require(owner.storageAvailable() && owner.projectOutputApprovalsAvailable(),
+            "With durable storage the approval service is composed");
+        BackendRuntime intruder({workspace.databasePath});
+        require(!intruder.storageAvailable() && !intruder.projectOutputApprovalsAvailable(),
+            "Without durable storage it is not composed - there is no in-memory stand-in");
+        // P3d: the Qt composition gets the very service the runtime composed - and nothing when there is none.
+        require(owner.projectOutputApprovalService() != nullptr && intruder.projectOutputApprovalService() == nullptr,
+            "The accessor hands out the composed service, and null without durable storage");
+    }
+    {   // the protected list is derived from the configuration exactly as the runtime opens its storage
+        TemporaryPersistenceWorkspace workspace;
+        const auto contains = [](const std::vector<ai::application::ProtectedStoragePath>& list, const fs::path& path, bool directory) {
+            return std::any_of(list.begin(), list.end(), [&](const ai::application::ProtectedStoragePath& entry) {
+                return entry.path == path && entry.directory == directory;
+            });
+        };
+        BackendRuntimeConfig defaults {workspace.databasePath};
+        const fs::path database = fs::absolute(workspace.databasePath);
+        const fs::path directory = database.parent_path();
+        const auto list = ai::backend::trustedStoragePaths(defaults);
+        require(contains(list, database, false), "The database file is protected");
+        require(contains(list, fs::path(database).concat("-wal"), false) && contains(list, fs::path(database).concat("-shm"), false)
+                && contains(list, fs::path(database).concat(".owner"), false),
+            "...with its write-ahead log, shared memory and owner-lock companions");
+        require(contains(list, directory / "backups", true) && contains(list, directory / "artifacts", true)
+                && contains(list, directory / "proposals", true) && contains(list, directory / "manual-handoff", true),
+            "...and the backup, artifact, proposal and manual-handoff folders");
+        require(!contains(list, directory, true), "The whole parent of the database is NOT protected");
+        require(std::all_of(list.begin(), list.end(), [](const auto& entry) { return entry.path.is_absolute(); }),
+            "Every entry is absolute");
+
+        BackendRuntimeConfig overridden {workspace.databasePath};
+        overridden.artifactRoot = workspace.root / "custom-artifacts";
+        const auto custom = ai::backend::trustedStoragePaths(overridden);
+        require(contains(custom, fs::absolute(workspace.root / "custom-artifacts"), true) && !contains(custom, directory / "artifacts", true),
+            "An explicit artifact root replaces the default one");
+    }
+}
+
+// R2 of the P3a review: the protected-storage source the runtime really uses asks the REAL scratch service where the scratch root is,
+// and doing so - through a preview of the approval service, which is what the future UI will do - leaves no trace on the file system.
+void testTheRuntimesProtectedStorageSourceLocatesScratchWithoutTouchingIt()
+{
+    TemporaryPersistenceWorkspace workspace;
+    const fs::path settingsDatabase = workspace.root / "scratch-settings.sqlite3";
+    const auto opened = ai::infrastructure::SqliteDatabase::open(settingsDatabase);
+    require(opened.success(), "Could not open the scratch setting database");
+    ai::infrastructure::SqliteVerificationScratchSettingRepository settings(opened.value());
+    // A short default root (the policy limits its length on Windows) that does not exist yet.
+    const fs::path defaultRoot = fs::temp_directory_path()
+        / ("aio-s" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count() % 1000000));
+    struct Cleanup {
+        fs::path path;
+        ~Cleanup()
+        {
+            std::error_code ignored;
+            fs::remove_all(path, ignored);
+        }
+    } cleanup {defaultRoot};
+    ai::application::VerificationScratchService scratch(settings, defaultRoot);
+
+    BackendRuntimeConfig config {workspace.databasePath};
+    const auto source = ai::backend::makeOutputApprovalProtectedStorageSource(config, scratch);
+    require(!fs::exists(defaultRoot), "setup: the scratch folder does not exist");
+
+    const auto listed = source.protectedPaths(workspace.projectRoot);
+    require(listed.success(), "The source answers while the scratch folder does not exist");
+    const auto located = scratch.locate(workspace.projectRoot);
+    require(located.success(), "The scratch service locates its default");
+    const bool listsScratch = std::any_of(listed.value().begin(), listed.value().end(),
+        [&](const ai::application::ProtectedStoragePath& entry) { return entry.directory && entry.path == located.value().path; });
+    require(listsScratch, "The list carries the effective scratch root, as a folder");
+    require(!fs::exists(defaultRoot), "...and building it created nothing");
+
+    // Through the service, the way a preview does.
+    ai::application::InMemoryProjectRepository projects;
+    ai::application::InMemoryProjectOutputApprovalRepository approvals;
+    ai::application::FilesystemOutputDirectoryInspector inspector;
+    ai::application::ProjectOutputApprovalService service(projects, approvals, source, inspector);
+    ai::application::Project project;
+    project.id = "p1";
+    project.name = "Fixture";
+    project.rootPath = fs::canonical(workspace.projectRoot);
+    require(projects.insert(project).success(), "Could not create the project");
+    const auto preview = service.preview("p1", "Out");
+    require(preview.success(), "A preview succeeds");
+    require(!fs::exists(defaultRoot), "A preview created no scratch folder (nor changed one)");
+    const auto policy = service.policyFor("p1", project.rootPath);
+    require(policy.success() && !fs::exists(defaultRoot), "policyFor created none either");
+
+    // The scratch folder is protected from becoming an output folder, also while it is only a future path: put it inside the workspace's
+    // reach by making the workspace its parent... a scratch root that lies INSIDE the workspace is refused by the scratch policy itself,
+    // so the source fails and an approval is refused (an unknown list is not an empty list).
+    ai::application::VerificationScratchService overlapping(settings, workspace.projectRoot / "scratch");
+    const auto overlappingSource = ai::backend::makeOutputApprovalProtectedStorageSource(config, overlapping);
+    ai::application::ProjectOutputApprovalService refusing(projects, approvals, overlappingSource, inspector);
+    const auto refused = refusing.preview("p1", "Out");
+    require(!refused.success() && refused.error()->code == ai::application::kOutputApprovalProtectedUnavailableCode,
+        "A scratch root that cannot be located makes the approval refuse");
+    require(!fs::exists(workspace.projectRoot / "scratch"), "...and nothing was created in the workspace");
+
+    // The old behaviour is kept: a real verification still creates its private scratch folder, and then the source names that folder.
+    const auto resolved = scratch.resolve(workspace.projectRoot);
+    require(resolved.success() && fs::is_directory(defaultRoot), "resolve() still creates the scratch folder");
+    const auto after = source.protectedPaths(workspace.projectRoot);
+    require(after.success() && std::any_of(after.value().begin(), after.value().end(),
+                [&](const ai::application::ProtectedStoragePath& entry) { return entry.path == resolved.value().path; }),
+        "...and the source names the same folder afterwards");
+    require(fs::is_empty(defaultRoot), "...and locating it again left nothing in it");
+}
+
 // PC-4C (review 2), test fixtures only: a fixture that seeds a database through a short-lived second runtime while the first is alive
 // builds the second one as a GUEST (BackendRuntimeConfig::exclusiveDatabaseOwnership = false). A guest opens the file the owner holds,
 // but it is not the owner: it takes no lock and writes no brief - none of its producers is wired to its reconciler and its history pass
@@ -2070,6 +2314,249 @@ void testALiveAuthorizedRequestIsProcessedOnceAfterTheSharedStartupPass()
         "...it ended as a free stale (no Outcome Brief), never reaching a provider");
 }
 
+// P3c: the production composition really hands the user's output approvals to a NEW Manifest Run. The approval is seeded through the
+// backend's own service over a raw connection to the temporary database (there is no user-facing way to create one yet); the observable
+// is the baseline artifact of a Run the runtime itself starts. Being wired is not "the service exists": a Run that is not given the
+// policy fails on the output file (workspace_baseline.file_limit) and leaves no baseline at all.
+void testTheRuntimeGivesTheOutputApprovalsToNewManifestRuns()
+{
+    TemporaryPersistenceWorkspace workspace;
+    const auto writeText = [](const fs::path& path, const std::string& text) {
+        fs::create_directories(path.parent_path());
+        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        out << text;
+    };
+    BackendRuntime runtime({workspace.databasePath});
+    require(runtime.storageAvailable() && runtime.projectOutputApprovalsAvailable(), "Durable storage with the approval service");
+    const Project project = createProject(runtime.projectService(), workspace.projectRoot);
+
+    const auto provider = runtime.providerCatalogService().createProvider(
+        {"Approval Provider", "anthropic", "https://api.anthropic.invalid", true, std::nullopt});
+    require(provider.success(), "provider");
+    const auto model = runtime.providerCatalogService().createModel(
+        {provider.value(), "claude-test", "Claude Test", 200000, 8192, 1000000, 5000000, true});
+    require(model.success(), "model");
+    StageModelAssignment architect {"architect", provider.value(), model.value(), 4000ms};
+    const auto profile = runtime.executionProfileService().createProfile(
+        {"Approval Profile", kExecutionManifestWorkflowId, true, {architect}});
+    require(profile.success(), "Could not create the Manifest profile");
+
+    writeText(workspace.projectRoot / "README.md", "readme");
+    writeText(workspace.projectRoot / "src" / "a.cpp", "int a;");
+    writeText(workspace.projectRoot / "Out2-source" / "real.txt", "a neighbour that only shares the prefix");
+    writeText(workspace.projectRoot / "Out2" / "big.obj", std::string(300 * 1024, 'x')); // the defaults refuse a Run on this file
+
+    // Seed the user's approval of the folder through the backend service, over its own connection to the same file.
+    std::string approvalId;
+    {
+        const auto opened = ai::infrastructure::SqliteDatabase::open(workspace.databasePath);
+        require(opened.success(), "Could not open a raw connection to seed the approval");
+        ai::infrastructure::SqliteProjectRepository rawProjects(opened.value());
+        ai::infrastructure::SqliteProjectOutputApprovalRepository rawApprovals(opened.value());
+        ai::application::FunctionProtectedStoragePathSource noProtectedPaths {[](const fs::path&) {
+            return ai::common::Result<std::vector<ai::application::ProtectedStoragePath>>::ok({});
+        }};
+        ai::application::FilesystemOutputDirectoryInspector inspector;
+        ai::application::ProjectOutputApprovalService seeding(rawProjects, rawApprovals, noProtectedPaths, inspector);
+        ai::application::OutputApprovalRequest request;
+        request.projectId = project.id;
+        request.relativePath = "Out2";
+        request.approvedBy = "tester";
+        const auto approved = seeding.approve(request);
+        require(approved.success(), approved.success() ? "" : approved.error()->message.c_str());
+        approvalId = approved.value().approval.id;
+    }
+
+    const auto baselineOf = [&](const RunId& runId) -> std::optional<std::string> {
+        const auto artifacts = runtime.artifactService().listArtifacts(runId);
+        require(artifacts.success(), "listArtifacts");
+        for (const auto& artifact : artifacts.value()) {
+            if (artifact.name != "workspace-baseline.v1.json") continue;
+            const auto content = runtime.artifactService().getArtifactContent(artifact.id);
+            require(content.success(), "baseline content");
+            return content.value();
+        }
+        return std::nullopt;
+    };
+    const auto startManifestRun = [&] {
+        StartRunRequest request;
+        request.projectId = project.id;
+        request.title = "Manifest run under an approval";
+        request.task = "Add a notes file";
+        request.executionProfileId = profile.value();
+        const auto started = runtime.orchestrationService().startRun(request);
+        require(started.success(), started.success() ? "" : started.error()->message.c_str());
+        return waitForTerminalRun(runtime.orchestrationService(), started.value());
+    };
+
+    // The Run reaches the provider stage only as far as this build has providers; what matters is the baseline it froze first.
+    const Run first = startManifestRun();
+    const auto frozen = baselineOf(first.id);
+    require(frozen.has_value(), ("The Run must have frozen its baseline under the approved policy: " + first.errorMessage).c_str());
+    require(frozen->find("\"path:Out2\"") != std::string::npos, "The baseline records the approved folder as path:Out2");
+    require(frozen->find("Out2/big.obj") == std::string::npos && frozen->find("src/a.cpp") != std::string::npos
+            && frozen->find("Out2-source/real.txt") != std::string::npos,
+        "The output is not in the baseline; the sources and the neighbour of the folder are");
+    require(first.errorMessage.find("workspace_baseline.file_limit") == std::string::npos, "The output file was not looked at");
+
+    // After the revocation the NEXT Run reads the new set: the folder is seen again, and its file refuses the Run.
+    {
+        const auto opened = ai::infrastructure::SqliteDatabase::open(workspace.databasePath);
+        require(opened.success(), "raw connection");
+        ai::infrastructure::SqliteProjectOutputApprovalRepository rawApprovals(opened.value());
+        const auto revoked = rawApprovals.revoke(project.id, approvalId);
+        require(revoked.success() && revoked.value(), "The approval is revoked");
+    }
+    const Run second = startManifestRun();
+    require(second.status == RunStatus::Failed && second.errorMessage.find("workspace_baseline.file_limit") != std::string::npos,
+        ("After the revocation the next Run sees the output folder: " + second.errorMessage).c_str());
+    require(!baselineOf(second.id).has_value(), "...and froze no baseline");
+}
+
+// P3c: the production composition hands the CURRENT output approvals to the project-context snapshot and to the follow-up read. The
+// approval is seeded through the backend's own service over a raw connection (there is no user-facing way to create one yet); the
+// observables are the catalogue of the context a runtime builds and the candidate list the runtime's follow-up service describes.
+void testTheRuntimeGivesTheCurrentApprovalsToContextAndFollowUpReads()
+{
+    namespace oc = outcomebrief_contract;
+    TemporaryPersistenceWorkspace workspace;
+    const auto writeText = [](const fs::path& path, const std::string& text) {
+        fs::create_directories(path.parent_path());
+        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        out << text;
+    };
+    ProjectId projectId;
+    const RunId runId = "approval-follow-up-run";
+    std::string approvalId;
+    ChangeSetId changeSetId;
+    {
+        BackendRuntime runtime({workspace.databasePath});
+        require(runtime.storageAvailable(), "Fresh database");
+        projectId = createProject(runtime.projectService(), workspace.projectRoot).id;
+    }
+    {
+        const auto opened = ai::infrastructure::SqliteDatabase::open(workspace.databasePath);
+        require(opened.success(), "Could not open a raw connection to seed the finished Run");
+        ai::infrastructure::SqliteRunRepository rawRuns(opened.value());
+        ai::infrastructure::SqliteProjectRepository rawProjects(opened.value());
+        ai::infrastructure::SqliteChangeProposalRepository rawProposalRepository(opened.value());
+        ai::infrastructure::SqliteManifestWorkLedgerRepository rawLedger(opened.value());
+        ai::infrastructure::SqliteProjectOutputApprovalRepository rawApprovals(opened.value());
+        auto proposalStore = ai::infrastructure::FileChangeProposalStore::open(workspace.databasePath.parent_path() / "proposals");
+        require(proposalStore.success(), "Could not open the real proposal store at BackendRuntime's own path");
+        ChangeProposalService rawProposals(rawProposalRepository, *proposalStore.value());
+
+        Run run;
+        run.id = runId;
+        run.projectId = projectId;
+        run.title = "Follow-up source";
+        run.task = "Produce a reviewable proposal";
+        run.workflowId = kExecutionManifestWorkflowId;
+        run.status = RunStatus::Completed;
+        run.createdAt = std::chrono::system_clock::now();
+        require(rawRuns.insertRun(run).success(), "Could not seed the finished Run");
+
+        CreateChangeProposalRequest request;
+        request.runId = runId;
+        request.projectId = projectId;
+        request.providerId = "openai";
+        request.modelId = "gpt-4";
+        request.agentRole = "worker";
+        request.rawModelOutput =
+            R"({"schemaVersion":"proposal-submission.v2","summary":"Fixture","changes":[)"
+            R"({"change_id":"chg-1","operation":"create","relative_path":"src/a.cpp","source_path":null,"proposed_content":"int a() { return 2; }\n"},)"
+            R"({"change_id":"chg-2","operation":"create","relative_path":"Out2/gen.txt","source_path":null,"proposed_content":"changed\n"}]})";
+        request.policy.projectRoot = workspace.projectRoot;
+        request.baseRevision = "main";
+        const auto proposal = rawProposals.createFromModelOutput(request);
+        require(proposal.success() && proposal.value().state == ChangeSetState::ReadyForReview,
+            proposal.success() ? "The proposal is not reviewable" : proposal.error()->message.c_str());
+
+        changeSetId = proposal.value().changeSetId;
+        auto built = oc::terminalFacts(runId, projectId, RunStatus::Completed, {oc::ready(proposal.value().changeSetId)});
+        require(built.ledgerEntry.has_value(), "setup: a ledger entry");
+        ManifestProposalSetVerification verification = *built.ledgerEntry->verification;
+        verification.workspaceIdentity = projectId;
+        verification.baselineFingerprint = std::string(64, 'b');
+        verification.overlayFingerprint = std::string(64, 'd');
+        verification.orderedProposalIds = {proposal.value().changeSetId};
+        verification.orderedProposalContentHashes = {std::string(64, 'c')};
+        built.ledgerEntry->verification = verification;
+        require(rawLedger.insertEntry(*built.ledgerEntry).success(), "Could not seed the Work Ledger entry");
+
+        // The user's approval of the output folder, through the backend service.
+        ai::application::FunctionProtectedStoragePathSource noProtectedPaths {[](const fs::path&) {
+            return ai::common::Result<std::vector<ai::application::ProtectedStoragePath>>::ok({});
+        }};
+        ai::application::FilesystemOutputDirectoryInspector inspector;
+        ai::application::ProjectOutputApprovalService seeding(rawProjects, rawApprovals, noProtectedPaths, inspector);
+        ai::application::OutputApprovalRequest approval;
+        approval.projectId = projectId;
+        approval.relativePath = "Out2";
+        approval.approvedBy = "tester";
+        const auto approved = seeding.approve(approval);
+        require(approved.success(), approved.success() ? "" : approved.error()->message.c_str());
+        approvalId = approved.value().approval.id;
+    }
+
+    // The files exist only now: a Create proposal is made for files that are not there yet.
+    writeText(workspace.projectRoot / "src" / "a.cpp", "int a() { return 1; }\n");
+    writeText(workspace.projectRoot / "Out2" / "gen.txt", "generated output\n");
+    writeText(workspace.projectRoot / "Out2" / "big.obj", std::string(300 * 1024, 'x')); // the defaults refuse a whole read on this file
+
+    BackendRuntime runtime({workspace.databasePath});
+    require(runtime.storageAvailable() && runtime.projectOutputApprovalsAvailable(), "The seeded database opens with the service");
+    runtime.startOutcomeBriefBackfill();
+    const auto pass = runtime.waitForOutcomeBriefBackfill();
+    require(pass.has_value() && !pass->stopped && pass->failed == 0 && pass->appended == 1, "The finished Run gets its Outcome head");
+
+    // A follow-up needs a RESOLVED source outcome: the real review service rejects the proposal, and its nudge resolves the brief.
+    require(runtime.proposalReviewService().reject(changeSetId, std::string("reviewer"), std::string("not wanted")).success(),
+        "The review service rejects the proposal");
+
+    const auto catalogOf = [&](const ProjectContextSnapshot& snapshot) -> std::string {
+        for (const auto& section : snapshot.sections) {
+            if (section.category == ProjectContextCategory::WorkspaceCatalog) return section.text;
+        }
+        return {};
+    };
+
+    // The context of the project is built under the approval: the folder with its big file is not in the catalogue.
+    const auto context = runtime.projectContextSnapshotService().build({projectId, std::nullopt, false});
+    require(context.success(), context.success() ? "" : (context.error()->code + ": " + context.error()->message).c_str());
+    const std::string catalogue = catalogOf(context.value());
+    require(catalogue.find("src/a.cpp") != std::string::npos && catalogue.find("Out2/") == std::string::npos,
+        "The runtime's context reads the sources and not the approved folder");
+
+    // The follow-up read judges the candidate files under the same area: the file under the folder is unsafe and was not read.
+    const auto described = runtime.followUpPlanService().describeFiles(projectId, runId, FollowUpPlanKind::NextRun);
+    require(described.success(), described.success() ? "" : (described.error()->code + ": " + described.error()->message).c_str());
+    const auto viewOf = [&](const std::string& path) -> const FollowUpFileView* {
+        for (const auto& view : described.value()) {
+            if (view.relativePath == path) return &view;
+        }
+        return nullptr;
+    };
+    require(viewOf("Out2/gen.txt") != nullptr && viewOf("Out2/gen.txt")->safety == FollowUpFileSafety::UnsafePath
+            && viewOf("Out2/gen.txt")->contentSha256.empty() && viewOf("src/a.cpp") != nullptr
+            && viewOf("src/a.cpp")->safety == FollowUpFileSafety::Eligible,
+        "The follow-up read refuses the file under the approved folder without reading it, and reads the source");
+
+    // After the revocation both reads see the folder again - and the file the defaults refuse refuses them.
+    {
+        const auto opened = ai::infrastructure::SqliteDatabase::open(workspace.databasePath);
+        require(opened.success(), "raw connection");
+        ai::infrastructure::SqliteProjectOutputApprovalRepository rawApprovals(opened.value());
+        const auto revoked = rawApprovals.revoke(projectId, approvalId);
+        require(revoked.success() && revoked.value(), "The approval is revoked");
+    }
+    const auto later = runtime.projectContextSnapshotService().build({projectId, std::nullopt, false});
+    require(!later.success() && later.error()->code == "workspace_baseline.file_limit", "The next context sees the revocation");
+    const auto laterFollowUp = runtime.followUpPlanService().describeFiles(projectId, runId, FollowUpPlanKind::NextRun);
+    require(!laterFollowUp.success() && laterFollowUp.error()->code == "workspace_baseline.file_limit",
+        "...and so does the next follow-up read");
+}
+
 } // namespace
 
 int runBackendRuntimeTests()
@@ -2093,6 +2580,11 @@ int runBackendRuntimeTests()
     testOutcomeBriefIsReconciledThroughBackendRuntime();
     testTheProducersAreWiredToTheOutcomeBriefReconciler();
     testTheRuntimeIsTheOneLiveOwnerOfItsDatabase();
+    testTheProductionOwnerTakesAVerifiedCopyBeforeUpgrading();
+    testTheOutputApprovalServiceIsComposedOnlyOverDurableStorage();
+    testTheRuntimeGivesTheOutputApprovalsToNewManifestRuns();
+    testTheRuntimeGivesTheCurrentApprovalsToContextAndFollowUpReads();
+    testTheRuntimesProtectedStorageSourceLocatesScratchWithoutTouchingIt();
     testAGuestRuntimeOwnsNothingAndWritesNoBrief();
     testFollowUpAccountingOwnsItsExecutionsDuringProductionStartupRecovery();
     testAnOwnedFollowUpStartupReportsNoError();

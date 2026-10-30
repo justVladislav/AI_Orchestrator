@@ -42,6 +42,7 @@ qt_add_qml_module(UI_AI_Orchestrator_Content
         pages/Projects/Projects_Objets/ProjectTasksPanel.qml
         pages/Projects/Projects_Objets/ProjectMemoryPanel.qml
         pages/Projects/Projects_Objets/ProjectSetupPanel.qml
+        pages/Projects/Projects_Objets/ProjectOutputFoldersSection.qml
         pages/Chats/ChatsPage.qml
         pages/Chats/Chat_Objects/ChatActionButton.qml
         pages/Chats/Chat_Objects/ChatComposer.qml

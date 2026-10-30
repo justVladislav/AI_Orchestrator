@@ -45,6 +45,7 @@
 #include "ai/application/projects/TaskService.hpp"
 #include "ai/application/catalog/ProviderCatalogService.hpp"
 #include "ai/application/projects/WorkspaceContextService.hpp"
+#include "ai/application/workspace/ProjectOutputApprovalService.hpp"
 #include "ai/common/Error.hpp"
 
 #include <chrono>
@@ -52,6 +53,7 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <vector>
 
 namespace ai::backend {
 
@@ -117,6 +119,23 @@ struct BackendRuntimeConfig {
     /// positional aggregate-init call sites keep compiling.
     std::shared_ptr<ai::application::IMockWorkflowGate> mockWorkflowGate;
 };
+
+/**
+ * The files and folders of the application's own storage that no output approval may equal, cover or (for folders) lie under, derived
+ * from the configuration exactly as the runtime opens them: the database file with its -wal, -shm and .owner companions, the
+ * pre-migration backups, the artifact root (the explicit override or "artifacts" next to the database), the proposal and the
+ * manual-handoff folders. Absolute paths; the scratch root is added by the runtime from its provider. Never from QML or a project.
+ */
+[[nodiscard]] std::vector<ai::application::ProtectedStoragePath> trustedStoragePaths(const BackendRuntimeConfig& config);
+
+/**
+ * The protected-storage source the runtime gives the approval service: trustedStoragePaths(config) plus the effective scratch root of
+ * the asked workspace, taken from the real scratch service by its READ-ONLY locate() at the moment of each check (nothing is created,
+ * tightened or probed). An unlocatable scratch makes the source fail, and a failing source makes an approval refuse. Public so that the
+ * very same helper the runtime uses can be tested against a real scratch service; it opens no approval operation.
+ */
+[[nodiscard]] ai::application::FunctionProtectedStoragePathSource makeOutputApprovalProtectedStorageSource(
+    const BackendRuntimeConfig& config, const ai::application::VerificationScratchService& scratch);
 
 /**
  * Backend-owned composition root over persistence, repositories, the Mock
@@ -208,6 +227,15 @@ public:
     /// The durable, machine-local readiness of each project's verification setup (is it configured and buildable here?), reused
     /// across Runs and restarts. Without a database every check ends with a typed "storage.unavailable" error.
     [[nodiscard]] ai::application::ProjectReadinessService& projectReadinessService() noexcept;
+
+    /// P3a: the backend rules for the user's approvals of output folders exist (the durable storage is available).
+    [[nodiscard]] bool projectOutputApprovalsAvailable() const noexcept;
+
+    /// P3d: the runtime-owned approval service for the Qt composition (the asynchronous controller), or nullptr when there is no
+    /// durable storage - then the controller is simply unavailable; nothing stands in for it. The service is the same object whose
+    /// policy a new Run, the project context and the follow-up read already use (P3c). Raw repositories are never handed out. It is
+    /// not a tool: the model's tool surface has no way to reach it.
+    [[nodiscard]] ai::application::ProjectOutputApprovalService* projectOutputApprovalService() noexcept;
 
     /// Owns the single globally-active-project value the desktop UI's
     /// future "Continue" action will set. Same always-constructible,

@@ -562,6 +562,18 @@ ProjectContextSnapshotService::ProjectContextSnapshotService(
 common::Result<ProjectContextSnapshot> ProjectContextSnapshotService::build(
     const ProjectContextSnapshotRequest& request) const
 {
+    return buildWith(request, nullptr);
+}
+
+common::Result<ProjectContextSnapshot> ProjectContextSnapshotService::build(
+    const ProjectContextSnapshotRequest& request, const WorkspaceReadPolicy& policy) const
+{
+    return buildWith(request, &policy);
+}
+
+common::Result<ProjectContextSnapshot> ProjectContextSnapshotService::buildWith(
+    const ProjectContextSnapshotRequest& request, const WorkspaceReadPolicy* provided) const
+{
     if (request.projectId.empty()) {
         return fail<ProjectContextSnapshot>(
             "project_context.invalid_request", "Project id is required");
@@ -599,7 +611,18 @@ common::Result<ProjectContextSnapshot> ProjectContextSnapshotService::build(
     std::vector<std::string> forbiddenFragments = projectContextPathFragments(project.rootPath);
     appendUnique(forbiddenFragments, projectContextPathFragments(workspaceRoot));
 
-    const WorkspaceReadPolicy policy = WorkspaceReadPolicy::secureDefaults(workspaceRoot);
+    // The area the files are read under: the policy the caller already holds for this very operation (checked to be the policy of THIS
+    // root), else the current one, asked once. Either way it is decided before the workspace is touched.
+    std::optional<WorkspaceReadPolicy> ownPolicy;
+    if (provided != nullptr) {
+        const auto bound = checkReadPolicyBoundToRoot(*provided, workspaceRoot);
+        if (!bound.success()) return fail<ProjectContextSnapshot>(bound.error()->code, bound.error()->message);
+    } else {
+        auto resolved = resolveReadPolicy(outputApprovals_, project.id, workspaceRoot);
+        if (!resolved.success()) return fail<ProjectContextSnapshot>(resolved.error()->code, resolved.error()->message);
+        ownPolicy = std::move(resolved.value());
+    }
+    const WorkspaceReadPolicy& policy = provided != nullptr ? *provided : *ownPolicy;
     const auto baseline = WorkspaceBaselineProvenance::capture(policy);
     if (!baseline.success()) {
         return fail<ProjectContextSnapshot>(baseline.error()->code, baseline.error()->message);
