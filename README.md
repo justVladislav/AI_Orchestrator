@@ -66,6 +66,8 @@ The model generates a plan; drafts are saved only after your confirmation. Plann
 
 Version 1.0 supports **MSVC x64 projects using CMake presets**. Install the project's compiler, Windows SDK, Qt kit if applicable, and other dependencies.
 
+The target project does not need to use Qt; install a Qt kit only if that project depends on it. The verified build path is Windows with MSVC x64, CMake presets and the **Ninja** generator. The application uses your presets without rewriting them or selecting a generator for you. A resolved preset or configured build cache naming another generator, such as Visual Studio or Ninja Multi-Config, is refused with `project_setup.generator_unsupported`. If the preset does not specify a generator, CMake makes the selection; the application accepts the result only when its build cache confirms Ninja. A missing or unreadable generator entry gives `project_setup.generator_unconfirmed`. Other build systems, generators and platforms are outside this verified path.
+
 In the project card, use **Verification setup** to select a configure/build preset pair and check it. The Backend performs a real configure and confirms the target catalog. If several pairs are available, select one explicitly. The preset's build directory must be inside the project source directory.
 
 A successful result is stored and reused. Configuration/preset/toolchain changes or removal of the build directory invalidate it; ordinary QML/C++ source edits do not. Readiness does not replace verification of the exact proposed changes before Apply.
@@ -73,6 +75,18 @@ A successful result is stored and reused. Configuration/preset/toolchain changes
 For a verification folder, choose a short, private, writable path in **Settings > Data and privacy > Verification folder**. On Windows the root is limited to 64 characters to leave room for external build tools. It must not overlap the project or use links/junctions.
 
 The application prepares MSVC/SDK environment variables only for its child build processes. It neither installs an SDK nor changes your global environment. Creating a Qt Quick/Widgets project from a template remains a user/IDE step in 1.0.
+
+### Output folders
+
+Generated results, such as a build folder, should not be read into Runs or edited by proposals. In the project card, **Output folders** lets you declare them yourself:
+
+1. Type a folder path relative to the project folder and choose **Preview**. The Backend checks the path and reports what it found, including whether the folder exists yet. A folder that does not exist yet can be approved; the whole project folder, links, application-protected paths and a folder that itself contains a `CMakeLists.txt` are refused.
+2. If the preview finds `CMakeLists.txt` files below the folder, or the inspection was only partial (its figures are then lower bounds), tick the matching confirmation. The two confirmations are separate and neither overrides a hard refusal.
+3. Choose **Approve**. The list shows each approved folder, the project folder it was approved for and whether it still applies. **Check again** inspects a folder without changing its record; **Revoke** removes the approval. If a project's folder changes, the old approval is shown as not active and can still be revoked.
+
+The approval is your explicit decision. The application does not infer it from CMake presets, cache files or `.gitignore`, and a folder that also holds sources will hide those sources from project context. Nothing is deleted and `.gitignore` is not changed.
+
+An approved folder is left out of the files read for new Manifest Runs, project context and follow-up planning, and proposed changes cannot write into it. A Run that has already started, its repair or continuation, a manual handoff and Apply keep using the area that was recorded when the Run started, so revoking an approval affects new work and does not rewrite earlier records. The exclusion covers the application's own supported reading and writing; it is not a sandbox against external build tools. The approvals are not yet used by every workflow (the execution-profile path does not read them), and the built-in default exclusions are separate: do not assume that other build folders are excluded without an approval.
 
 ## Data, credentials and updates
 
@@ -99,6 +113,8 @@ To update:
 4. Start it and keep the backup until you have checked your projects and history.
 
 Database migrations run on startup. A database upgraded by a newer application is not automatically compatible with an older executable. Versions 1.0.0 and 1.0.1 both use schema **70**; this update adds no database migration.
+
+Source builds newer than the published 1.0.1 package use schema **71** (output-folder approvals); the published 1.0.1 package is unchanged. Before such a build upgrades an existing database it takes a verified SQLite online backup, including committed content still held in the write-ahead log, into a `backups` folder next to the database, named like `orchestrator.sqlite.pre-migration-v70-to-v71.<UTC time>.sqlite`. If that copy cannot be made, the migration does not run. Backups are never deleted or rotated automatically, and a crash during a copy can leave an unfinished `.attempt` folder behind; remove such files yourself only when you are sure you no longer need them. A backup is a copy to restore deliberately, not an automatic rollback, and an older executable may not open an upgraded database. Keep making your own backup of the whole application-data folder before updating.
 
 ## Architecture
 
