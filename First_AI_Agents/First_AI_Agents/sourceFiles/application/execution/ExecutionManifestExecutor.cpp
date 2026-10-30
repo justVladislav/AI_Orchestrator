@@ -957,6 +957,9 @@ ExecutionManifestExecutor::TaskAttemptResult ExecutionManifestExecutor::runOneTa
     writePolicy.allowedRoots.insert(writePolicy.allowedRoots.end(),
         task.plannedCreatePaths.begin(), task.plannedCreatePaths.end());
     writePolicy.allowedRootsAreExactPaths = true;
+    // The Run's frozen dynamic exclusions (the same instance the workers read under): a proposal may not target them, on either
+    // side of a rename. Only the dynamic list - the static read/write lists are deliberately not unified here.
+    writePolicy.deniedPaths = request.inspectPolicy.deniedPaths;
     writePolicy.allowDelete = true;
     writePolicy.allowRename = true;
 

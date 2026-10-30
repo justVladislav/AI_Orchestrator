@@ -1221,6 +1221,44 @@ void testExecutorOwnershipViolationNeverReachesClaimRegistry()
     require(claim.claimed, "RunPathClaimRegistry must never have claimed the rejected task's path");
 }
 
+// P2: the Run's frozen dynamic exclusions reach the write envelope. The task OWNS the path, so only the denied prefix can refuse it.
+void testExecutorWriteEnvelopeRefusesTheFrozenExclusion()
+{
+    Fixture fx;
+    auto toolExecution = fx.makeToolExecution();
+    auto changeProposals = fx.makeChangeProposals();
+    ExecutionManifestExecutor executorUnderTest(fx.sessionFactory, toolExecution, changeProposals);
+    fx.sessionFactory.preparedSessions.push(sessionEndingWith(proposalJson("Out2/gen.md")));
+
+    auto manifest = makeManifest({makeTask("a", {}, {"Out2/gen.md"})}, 1);
+    auto request = makeExecutionRequest(fx, std::move(manifest), /*maxAttempts=*/1);
+    request.inspectPolicy.deniedPaths = {"Out2"};
+
+    std::stop_source ss;
+    const auto outcome = executorUnderTest.execute(std::move(request), ss.get_token());
+    require(outcome.status == ManifestExecutionStatus::Failed, "A proposal under the frozen exclusion must fail the task");
+    require(outcome.taskStates.at("a").errorCode == "proposal.denied_path",
+        "The real validator finding for the denied path must surface");
+}
+
+void testExecutorWriteEnvelopeStillAllowsAPermittedSourceUnderADeniedPrefix()
+{
+    Fixture fx;
+    auto toolExecution = fx.makeToolExecution();
+    auto changeProposals = fx.makeChangeProposals();
+    ExecutionManifestExecutor executorUnderTest(fx.sessionFactory, toolExecution, changeProposals);
+    fx.sessionFactory.preparedSessions.push(sessionEndingWith(proposalJson("src/ok.md")));
+
+    auto manifest = makeManifest({makeTask("a", {}, {"src/ok.md"})}, 1);
+    auto request = makeExecutionRequest(fx, std::move(manifest), /*maxAttempts=*/1);
+    request.inspectPolicy.deniedPaths = {"Out2"};
+
+    std::stop_source ss;
+    const auto outcome = executorUnderTest.execute(std::move(request), ss.get_token());
+    require(outcome.status == ManifestExecutionStatus::Completed,
+        "A permitted source outside the frozen prefix must stay writable");
+}
+
 void testExecutorClaimRegistryIsFinalRaceGuardBetweenTasks()
 {
     Fixture fx;
@@ -7188,6 +7226,8 @@ int main()
         testPrimaryPromptIncludesOwnedPathEnvelope();
         testPrimaryPromptOmitsSiblingOwnedPath();
         testExecutorOwnershipViolationNeverReachesClaimRegistry();
+        testExecutorWriteEnvelopeRefusesTheFrozenExclusion();
+        testExecutorWriteEnvelopeStillAllowsAPermittedSourceUnderADeniedPrefix();
         testExecutorClaimRegistryIsFinalRaceGuardBetweenTasks();
         testExecutorCancellationBeforeDispatchStopsImmediately();
         testExecutorRetryRecoversTransientFailureThenSucceeds();

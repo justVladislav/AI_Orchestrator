@@ -1,6 +1,7 @@
 #include "../../test_support/QtTestSupport.hpp"
 
 #include <ai/application/projects/ProjectService.hpp>
+#include <ai/application/workspace/ProjectOutputApprovalService.hpp>
 #include <ai/backend/BackendRuntime.hpp>
 #include <ai/ui/BackendBridge.hpp>
 #include <ai/ui/ChatController.hpp>
@@ -276,13 +277,25 @@ void testAFailureLeavesNoSnapshot()
             && controller.selectedRunId() == QStringLiteral("no-such-run"),
         "The selected Run id reaches the Backend");
 
-    // An unreadable workspace is reported with the Backend's own code, never as a partial context.
+    // The production policy source checks the root before capture. Its refusal is reported unchanged, never as a partial context.
     std::error_code ignored;
     fs::remove_all(workspace.projectPath, ignored);
-    require(controller.preview(projectId, QString(), false) != 0, "Preview is accepted");
+    require(!ignored && !fs::exists(workspace.projectPath), "The workspace root was removed");
+    const quint64 missingRootId = controller.preview(projectId, QString(), false);
+    require(missingRootId != 0, "Preview is accepted");
     waitNotBusy(controller);
-    require(!controller.hasSnapshot() && controller.errorCode() == QStringLiteral("workspace_baseline.invalid_root"),
-        "A missing workspace root fails with the capture error and no snapshot");
+    const QString expectedRootError = QString::fromLatin1(ai::application::kOutputApprovalWorkspaceUnavailableCode);
+    if (controller.errorCode() != expectedRootError) {
+        std::cerr << "Missing workspace refusal: " << controller.errorCode().toStdString()
+                  << ": " << controller.errorText().toStdString() << '\n';
+    }
+    require(controller.errorCode() == expectedRootError && !controller.errorText().isEmpty(),
+        "A missing workspace root publishes the policy source's authoritative refusal");
+    require(!controller.hasSnapshot() && controller.fingerprint().isEmpty() && controller.sections().isEmpty()
+            && controller.usedTokens() == 0 && controller.sourceCount() == 0,
+        "A missing workspace root leaves no snapshot or partial metadata");
+    require(events.count == 4 && events.lastId == missingRootId && !events.lastSuccess,
+        "The missing-root request finishes once with failure and its original id");
 }
 
 void testTruncationIsPublishedAsMetadata()

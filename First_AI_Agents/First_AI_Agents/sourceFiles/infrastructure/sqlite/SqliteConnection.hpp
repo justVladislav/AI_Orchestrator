@@ -19,6 +19,8 @@ namespace ai::infrastructure {
 struct SqliteDatabase::Impl {
     sqlite3* handle {nullptr};
     std::filesystem::path databasePath;
+    // The verified copy open() took before upgrading an existing database, if it did.
+    std::optional<PreMigrationBackupInfo> preMigrationBackup;
     mutable std::mutex mutex;
 
     ~Impl()

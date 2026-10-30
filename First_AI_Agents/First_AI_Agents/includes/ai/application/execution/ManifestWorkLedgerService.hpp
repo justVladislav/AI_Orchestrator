@@ -195,6 +195,17 @@ public:
         std::string_view planningInputFingerprint,
         bool explicitlyConfirmedPaidRetry) const;
 
+    // The durable baseline identity a Run's ledger row carries: who it belongs to and which baseline fingerprint it was derived
+    // from (the verification record's, else the row's own; both present and different is a conflict, not a choice). An empty
+    // fingerprint means the row records no baseline; a non-empty one makes the Run's baseline artifact mandatory. std::nullopt: no
+    // row. Read-only; exposes neither the row nor the repository.
+    struct BaselineIdentity {
+        RunId runId;
+        ProjectId projectId;
+        std::string durableBaselineFingerprint;
+    };
+    [[nodiscard]] common::Result<std::optional<BaselineIdentity>> findBaselineIdentity(const RunId& runId) const;
+
 private:
     IManifestWorkLedgerRepository& ledger_;
     IRunRepository& runs_;

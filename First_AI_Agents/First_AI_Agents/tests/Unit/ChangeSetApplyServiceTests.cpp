@@ -8,13 +8,21 @@
 #include "ai/application/proposals/IChangeApprovalRepository.hpp"
 #include "ai/application/proposals/IChangeProposalRepository.hpp"
 #include "ai/application/execution/IWorkflowRunner.hpp"
+#include "ai/application/inmemory/InMemoryExecutionManifestRepository.hpp"
+#include "ai/application/inmemory/InMemoryManifestTaskExecutionRepository.hpp"
+#include "ai/application/inmemory/InMemoryManifestWorkLedgerRepository.hpp"
 #include "ai/application/inmemory/InMemoryRepositories.hpp"
+#include "ai/application/execution/ManifestWorkLedgerService.hpp"
+#include "ai/application/verification/RecordedBaselinePolicy.hpp"
 #include "ai/application/Sha256.hpp"
+#include "ai/application/workspace/RecordedWorkspaceExclusions.hpp"
 #include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 #include "ai/infrastructure/FileChangeProposalStore.hpp"
 #include "RecordingOutcomeBriefTrigger.hpp"
 
 #include <algorithm>
+#include <cstdlib>
+#include <iostream>
 #include <cassert>
 #include <cctype>
 #include <chrono>
@@ -746,6 +754,434 @@ void testApplyPersistsTruthfulPostApplyWorkspaceProvenance()
         "applied proposal lineage missing from provenance report");
 }
 
+// P1: the post-apply capture uses the dynamic exclusions the Run froze in its OWN baseline artifact. Before the restoration it
+// used today's static defaults, met the large generated Out2/big.obj and recorded no fingerprint at all.
+void testApplyRestoresTheRunsFrozenExclusionsForThePostApplyFingerprint()
+{
+    Fixture f;
+    writeFile(f.projectDir.path / "existing.txt", "baseline\n");
+    writeFile(f.projectDir.path / "Out2" / "big.obj", std::string(300 * 1024, 'x'));
+    auto frozen = WorkspaceReadPolicy::secureDefaults(f.projectDir.path);
+    frozen.deniedPaths = {"Out2"};
+    const auto baseline = WorkspaceBaselineProvenance::capture(frozen);
+    req(baseline.success(), "baseline capture under the frozen exclusion failed");
+    const auto baselineJson = WorkspaceBaselineProvenance::renderJson(baseline.value());
+    req(baselineJson.success(), "baseline rendering failed");
+    req(f.artifactService.createArtifact(
+            "r1", std::nullopt, ArtifactKind::ContextSnapshot,
+            "workspace-baseline.v1.json", "application/json", baselineJson.value()).success(),
+        "baseline artifact persistence failed");
+
+    auto proposalService = f.makeProposalService();
+    CreateChangeProposalRequest request;
+    request.runId = "r1";
+    request.projectId = "p1";
+    request.providerId = "prov1";
+    request.modelId = "m1";
+    request.agentRole = "test";
+    request.rawModelOutput = makeCreateProposal("created.txt", "created by proposal");
+    request.policy = f.defaultPolicy();
+    const auto proposal = proposalService.createFromModelOutput(std::move(request));
+    req(proposal.success(), "proposal creation failed");
+
+    auto applyService = f.makeApplyServiceWithArtifacts();
+    req(applyService.approve(proposal.value().changeSetId).success(), "approve failed");
+    const auto applied = applyService.apply(proposal.value().changeSetId);
+    req(applied.success(), "apply failed");
+    req(!applied.value().provenanceErrorCode,
+        "the post-apply capture must use the Run's frozen exclusions and succeed");
+    const auto postApply = WorkspaceBaselineProvenance::capture(frozen);
+    const auto approval = f.approvals.findApproval(proposal.value().changeSetId);
+    req(postApply.success() && approval.success() && approval.value().has_value()
+            && approval.value()->postApplyWorkspaceFingerprint == postApply.value().fingerprint,
+        "the audit must retain the post-apply fingerprint taken under the frozen exclusions");
+    const auto artifacts = f.artifactService.listArtifacts("r1");
+    const Artifact* report = nullptr;
+    for (const auto& artifact : artifacts.value()) {
+        if (artifact.name == "manifest-workspace-apply-provenance.md") report = &artifact;
+    }
+    req(report != nullptr, "post-apply provenance artifact missing");
+    const auto content = f.artifactService.getArtifactContent(report->id);
+    req(content.success()
+            && content.value().find("Classification: applied_proposal_set") != std::string::npos,
+        "the frozen area must not show up as workspace drift");
+}
+
+// An artifact whose recorded exclusion cannot be restored is a refusal BEFORE the first write (P2): the write area is part of
+// permission now, not of the best-effort report.
+void testApplyRefusesBeforeWritingWhenARecordedExclusionCannotBeRestored()
+{
+    Fixture f;
+    writeFile(f.projectDir.path / "existing.txt", "baseline\n");
+    const auto baseline = WorkspaceBaselineProvenance::capture(
+        WorkspaceReadPolicy::secureDefaults(f.projectDir.path));
+    req(baseline.success(), "baseline capture failed");
+    auto tampered = baseline.value();
+    tampered.exclusions.push_back("path:Out2/../existing.txt");
+    const auto baselineJson = WorkspaceBaselineProvenance::renderJson(tampered);
+    req(baselineJson.success(), "baseline rendering failed");
+    req(f.artifactService.createArtifact(
+            "r1", std::nullopt, ArtifactKind::ContextSnapshot,
+            "workspace-baseline.v1.json", "application/json", baselineJson.value()).success(),
+        "baseline artifact persistence failed");
+
+    auto proposalService = f.makeProposalService();
+    CreateChangeProposalRequest request;
+    request.runId = "r1";
+    request.projectId = "p1";
+    request.providerId = "prov1";
+    request.modelId = "m1";
+    request.agentRole = "test";
+    request.rawModelOutput = makeCreateProposal("created.txt", "created by proposal");
+    request.policy = f.defaultPolicy();
+    const auto proposal = proposalService.createFromModelOutput(std::move(request));
+    req(proposal.success(), "proposal creation failed");
+
+    auto applyService = f.makeApplyServiceWithArtifacts();
+    req(applyService.approve(proposal.value().changeSetId).success(), "approve failed");
+    const auto applied = applyService.apply(proposal.value().changeSetId);
+    req(!applied.success() && applied.error()->code == kRecordedExclusionInvalidCode,
+        "the unrestorable exclusion must refuse the Apply with its typed code");
+    req(!fs::exists(f.projectDir.path / "created.txt"), "nothing may be written when the frozen area cannot be restored");
+    const auto approval = f.approvals.findApproval(proposal.value().changeSetId);
+    req(approval.success() && approval.value().has_value()
+            && approval.value()->applyResult == "apply_failed"
+            && !approval.value()->postApplyWorkspaceFingerprint.has_value(),
+        "the refusal must be audited as a failed apply without a fingerprint");
+}
+
+// ---- P2: the frozen exclusions are a WRITE boundary --------------------------------------------------------------------
+
+// A baseline that froze path:Out2 (optionally over a large generated file), persisted as the Run's own artifact.
+WorkspaceBaselineSnapshot freezeOut2(Fixture& f, const RunId& runId, bool largeGeneratedFile)
+{
+    writeFile(f.projectDir.path / "existing.txt", "baseline\n");
+    writeFile(f.projectDir.path / "Out2" / "old.txt", "generated");
+    if (largeGeneratedFile) writeFile(f.projectDir.path / "Out2" / "big.obj", std::string(300 * 1024, 'x'));
+    auto frozen = WorkspaceReadPolicy::secureDefaults(f.projectDir.path);
+    frozen.deniedPaths = {"Out2"};
+    const auto baseline = WorkspaceBaselineProvenance::capture(frozen);
+    req(baseline.success(), "baseline capture under the frozen exclusion failed");
+    const auto json = WorkspaceBaselineProvenance::renderJson(baseline.value());
+    req(json.success(), "baseline rendering failed");
+    req(f.artifactService.createArtifact(runId, std::nullopt, ArtifactKind::ContextSnapshot,
+            "workspace-baseline.v1.json", "application/json", json.value()).success(),
+        "baseline artifact persistence failed");
+    return baseline.value();
+}
+
+std::string proposalFence(const std::string& changesJson)
+{
+    return "```json\n{\"schemaVersion\":\"proposal-submission.v2\",\"summary\":\"s\",\"changes\":["
+        + changesJson + "]}\n```";
+}
+
+std::string createChangeJson(const std::string& id, const std::string& path)
+{
+    return "{\"change_id\":\"" + id + "\",\"operation\":\"create\",\"relative_path\":\"" + path
+        + "\",\"source_path\":null,\"proposed_content\":\"x\"}";
+}
+
+ChangeSetId createReadyProposal(Fixture& f, const RunId& runId, const std::string& raw,
+    const std::string& hashSubject = {}, const std::string& hashContent = {})
+{
+    auto proposalService = f.makeProposalService();
+    CreateChangeProposalRequest request;
+    request.runId = runId;
+    request.projectId = "p1";
+    request.providerId = "prov1";
+    request.modelId = "m1";
+    request.agentRole = "test";
+    request.rawModelOutput = raw;
+    request.policy = f.defaultPolicy();
+    request.policy.allowRename = true;
+    request.policy.allowDelete = true;
+    if (!hashSubject.empty()) bindHashEvidence(request, hashSubject, hashContent);
+    const auto proposal = proposalService.createFromModelOutput(std::move(request));
+    req(proposal.success() && proposal.value().state == ChangeSetState::ReadyForReview,
+        "the change set (created before any frozen-area check existed) must reach ReadyForReview");
+    return proposal.value().changeSetId;
+}
+
+void requireExcludedPathRefusal(Fixture& f, ChangeProposalService&, const ChangeSetId& id, const char* what)
+{
+    auto applyService = f.makeApplyServiceWithArtifacts();
+    req(applyService.approve(id).success(), "approve failed");
+    const auto result = applyService.apply(id);
+    req(!result.success() && result.error()->code == "proposal.excluded_output_path", what);
+    const auto stored = f.repo.findChangeSet(id);
+    req(stored.success() && stored.value()->state == ChangeSetState::ReadyForReview,
+        "a refused change set must not be marked Applied");
+    const auto approval = f.approvals.findApproval(id);
+    req(approval.success() && approval.value().has_value() && approval.value()->applyResult == "apply_failed"
+            && approval.value()->applyErrorCode == std::optional<std::string>("proposal.excluded_output_path"),
+        "the refusal must be audited");
+}
+
+void testApplyRefusesEveryOperationUnderTheFrozenExclusionBeforeAnyWrite()
+{
+    {   // Create
+        Fixture f;
+        freezeOut2(f, "r1", false);
+        auto ps = f.makeProposalService();
+        const auto id = createReadyProposal(f, "r1", makeCreateProposal("Out2/gen.txt", "x"));
+        requireExcludedPathRefusal(f, ps, id, "Create under the frozen area must be refused");
+        req(!fs::exists(f.projectDir.path / "Out2" / "gen.txt"), "nothing may be created under the frozen area");
+    }
+    {   // Modify
+        Fixture f;
+        freezeOut2(f, "r1", false);
+        auto ps = f.makeProposalService();
+        const auto id = createReadyProposal(f, "r1", makeModifyProposal("Out2/old.txt", "", "changed"), "Out2/old.txt", "generated");
+        requireExcludedPathRefusal(f, ps, id, "Modify under the frozen area must be refused");
+        req(readFile(f.projectDir.path / "Out2" / "old.txt") == "generated", "the frozen file must be untouched");
+    }
+    {   // Delete
+        Fixture f;
+        freezeOut2(f, "r1", false);
+        auto ps = f.makeProposalService();
+        const auto id = createReadyProposal(f, "r1", makeDeleteProposal("Out2/old.txt", ""), "Out2/old.txt", "generated");
+        requireExcludedPathRefusal(f, ps, id, "Delete under the frozen area must be refused");
+        req(fs::exists(f.projectDir.path / "Out2" / "old.txt"), "the frozen file must not be deleted");
+    }
+    {   // Rename, SOURCE side inside the frozen area
+        Fixture f;
+        freezeOut2(f, "r1", false);
+        auto ps = f.makeProposalService();
+        const auto id = createReadyProposal(f, "r1", makeRenameProposal("Out2/old.txt", "kept.txt", ""), "Out2/old.txt", "generated");
+        requireExcludedPathRefusal(f, ps, id, "A Rename whose source is in the frozen area must be refused");
+        req(fs::exists(f.projectDir.path / "Out2" / "old.txt") && !fs::exists(f.projectDir.path / "kept.txt"),
+            "a refused Rename must move nothing");
+    }
+    {   // Rename, TARGET side inside the frozen area
+        Fixture f;
+        freezeOut2(f, "r1", false);
+        writeFile(f.projectDir.path / "plain.txt", "plain");
+        auto ps = f.makeProposalService();
+        const auto id = createReadyProposal(f, "r1", makeRenameProposal("plain.txt", "Out2/moved.txt", ""), "plain.txt", "plain");
+        requireExcludedPathRefusal(f, ps, id, "A Rename whose target is in the frozen area must be refused");
+        req(fs::exists(f.projectDir.path / "plain.txt") && !fs::exists(f.projectDir.path / "Out2" / "moved.txt"),
+            "a refused Rename must move nothing");
+    }
+}
+
+void testApplyChecksTheWholeChangeSetBeforeTheFirstWrite()
+{
+    Fixture f;
+    freezeOut2(f, "r1", false);
+    auto ps = f.makeProposalService();
+    // The permitted operation comes FIRST, the forbidden one later: the workspace must stay exactly as it was.
+    const auto id = createReadyProposal(f, "r1",
+        proposalFence(createChangeJson("c1", "allowed.txt") + "," + createChangeJson("c2", "Out2/late.txt")));
+    requireExcludedPathRefusal(f, ps, id, "a change set with one forbidden operation must be refused as a whole");
+    req(!fs::exists(f.projectDir.path / "allowed.txt"),
+        "the permitted operation that comes first must not have been applied");
+}
+
+void testApplyComparesTheFrozenPrefixPerComponentAndIgnoresAsciiCaseOnWindows()
+{
+    Fixture f;
+    freezeOut2(f, "r1", false);
+    auto ps = f.makeProposalService();
+    // A neighbour that shares only a string prefix with the frozen directory is a different directory.
+    const auto neighbour = createReadyProposal(f, "r1", makeCreateProposal("Out2x/ok.txt", "x"));
+    auto applyService = f.makeApplyServiceWithArtifacts();
+    req(applyService.approve(neighbour).success(), "approve failed");
+    const auto applied = applyService.apply(neighbour);
+    req(applied.success() && fs::exists(f.projectDir.path / "Out2x" / "ok.txt"),
+        "a neighbouring path sharing only a string prefix must stay writable");
+#ifdef _WIN32
+    const auto upper = createReadyProposal(f, "r1", makeCreateProposal("OUT2/z.txt", "x"));
+    requireExcludedPathRefusal(f, ps, upper, "the frozen prefix must match ignoring ASCII case on Windows");
+#endif
+}
+
+// A directory link made the way this machine allows: a junction on Windows (a symbolic link may need a privilege), otherwise a
+// directory symlink. False when none can be made - the caller then says the link checks were NOT exercised.
+bool makeDirectoryLink(const fs::path& link, const fs::path& target)
+{
+#ifdef _WIN32
+    const std::string command = "cmd /c mklink /J \"" + link.string() + "\" \"" + target.string() + "\" >nul 2>&1";
+    return std::system(command.c_str()) == 0 && fs::exists(link);
+#else
+    std::error_code ec;
+    fs::create_directory_symlink(target, link, ec);
+    return !ec;
+#endif
+}
+
+// The OS follows a link: after approval an allowed folder can be replaced by a junction into the frozen area, and the unchanged
+// NAME safe/new.txt then lands in Out2/new.txt. The Apply must judge where the file really goes - before the first write.
+void testApplyRefusesAWriteThatALinkRedirectsIntoTheFrozenArea()
+{
+    {   // Create through the link, preceded by a permitted operation of the same change set
+        Fixture f;
+        freezeOut2(f, "r1", false);
+        fs::create_directories(f.projectDir.path / "safe");
+        auto ps = f.makeProposalService();
+        const auto id = createReadyProposal(f, "r1",
+            proposalFence(createChangeJson("c1", "allowed.txt") + "," + createChangeJson("c2", "safe/new.txt")));
+        auto svc = f.makeApplyServiceWithArtifacts();
+        req(svc.approve(id).success(), "approve failed");
+        fs::remove_all(f.projectDir.path / "safe");
+        if (!makeDirectoryLink(f.projectDir.path / "safe", f.projectDir.path / "Out2")) {
+            std::cout << "NOTE: no junction or symbolic link can be made here; the link checks were NOT exercised\n";
+            return;
+        }
+        const auto result = svc.apply(id);
+        req(!result.success() && result.error()->code == "proposal.excluded_output_path",
+            "a Create whose folder became a link into the frozen area must be refused");
+        req(!fs::exists(f.projectDir.path / "Out2" / "new.txt"), "nothing may be created inside the frozen area through the link");
+        req(!fs::exists(f.projectDir.path / "allowed.txt"), "the whole change set is refused before the first write");
+        requireExcludedPathRefusal(f, ps, id, "the refusal must be audited and leave the change set unapplied");
+    }
+    {   // Rename SOURCE through the link
+        Fixture f;
+        freezeOut2(f, "r1", false);
+        fs::create_directories(f.projectDir.path / "safe");
+        writeFile(f.projectDir.path / "safe" / "old.txt", "generated");
+        auto ps = f.makeProposalService();
+        const auto id = createReadyProposal(f, "r1", makeRenameProposal("safe/old.txt", "kept.txt", ""), "safe/old.txt", "generated");
+        auto svc = f.makeApplyServiceWithArtifacts();
+        req(svc.approve(id).success(), "approve failed");
+        fs::remove_all(f.projectDir.path / "safe");
+        if (!makeDirectoryLink(f.projectDir.path / "safe", f.projectDir.path / "Out2")) return;
+        const auto result = svc.apply(id);
+        req(!result.success() && result.error()->code == "proposal.excluded_output_path",
+            "a Rename whose source resolves into the frozen area through a link must be refused");
+        req(fs::exists(f.projectDir.path / "Out2" / "old.txt") && !fs::exists(f.projectDir.path / "kept.txt"),
+            "the frozen file must stay where it is");
+    }
+    {   // A link to a folder that is NOT frozen is not over-blocked
+        Fixture f;
+        freezeOut2(f, "r1", false);
+        fs::create_directories(f.projectDir.path / "link");
+        fs::create_directories(f.projectDir.path / "plain");
+        const auto id = createReadyProposal(f, "r1", makeCreateProposal("link/x.txt", "x"));
+        auto svc = f.makeApplyServiceWithArtifacts();
+        req(svc.approve(id).success(), "approve failed");
+        fs::remove_all(f.projectDir.path / "link");
+        if (!makeDirectoryLink(f.projectDir.path / "link", f.projectDir.path / "plain")) return;
+        const auto result = svc.apply(id);
+        req(result.success() && fs::exists(f.projectDir.path / "plain" / "x.txt"),
+            "a link to an ordinary folder inside the workspace must stay usable");
+    }
+}
+
+// The outcome table for a recognised Manifest Run: its Work Ledger fingerprint makes the baseline artifact mandatory.
+enum class MandatoryCase { Valid, Lost, Ambiguous, Corrupt, NoLedgerService, NoLedgerRow };
+
+void runMandatoryBaselineCase(MandatoryCase mode)
+{
+    Fixture f;
+    Run manifestRun;
+    manifestRun.id = "m1";
+    manifestRun.projectId = "p1";
+    manifestRun.title = "Manifest Run";
+    manifestRun.task = "t";
+    manifestRun.workflowId = kExecutionManifestWorkflowId;
+    manifestRun.workspacePath = fs::weakly_canonical(f.projectDir.path);
+    manifestRun.status = RunStatus::Completed;
+    manifestRun.createdAt = std::chrono::system_clock::now();
+    req(f.runs.insertRun(manifestRun).success(), "could not seed the Manifest Run");
+
+    // The frozen area is EMPTY: losing the artifact cannot show up as drift or file_limit.
+    writeFile(f.projectDir.path / "existing.txt", "baseline\n");
+    fs::create_directories(f.projectDir.path / "Out2");
+    auto frozen = WorkspaceReadPolicy::secureDefaults(f.projectDir.path);
+    frozen.deniedPaths = {"Out2"};
+    const auto baseline = WorkspaceBaselineProvenance::capture(frozen);
+    req(baseline.success(), "baseline capture failed");
+    const auto json = WorkspaceBaselineProvenance::renderJson(baseline.value());
+    req(json.success(), "baseline rendering failed");
+    const auto persist = [&](std::string_view content) {
+        req(f.artifactService.createArtifact("m1", std::nullopt, ArtifactKind::Report,
+                "workspace-baseline.v1.json", "application/json", content).success(),
+            "artifact persistence failed");
+    };
+    if (mode == MandatoryCase::Valid || mode == MandatoryCase::Ambiguous || mode == MandatoryCase::NoLedgerService
+        || mode == MandatoryCase::NoLedgerRow) {
+        persist(json.value());
+    }
+    if (mode == MandatoryCase::Ambiguous) persist(json.value());
+    if (mode == MandatoryCase::Corrupt) persist("{ not a baseline");
+
+    InMemoryManifestWorkLedgerRepository ledgerRepository;
+    InMemoryExecutionManifestRepository manifests;
+    InMemoryManifestTaskExecutionRepository taskExecutions;
+    ManifestWorkLedgerService ledgerService(
+        ledgerRepository, f.runs, manifests, taskExecutions, f.repo, &f.artifactService);
+    if (mode != MandatoryCase::NoLedgerRow) {
+        ManifestWorkLedgerEntry entry;
+        entry.runId = "m1";
+        entry.projectId = "p1";
+        entry.terminalStatus = RunStatus::Completed;
+        entry.disposition = ManifestWorkLedgerDisposition::ManifestReady;
+        entry.baselineFingerprint = baseline.value().fingerprint;
+        entry.createdAt = std::chrono::system_clock::now();
+        req(ledgerRepository.insertEntry(entry).success(), "could not seed the ledger row");
+    }
+
+    const auto id = createReadyProposal(f, "m1", makeCreateProposal("created.txt", "created by proposal"));
+    ChangeSetApplyService applyService(f.repo, *f.store, f.runs, f.projects, f.approvals,
+        &f.artifactService, mode == MandatoryCase::NoLedgerService ? nullptr : &ledgerService);
+    req(applyService.approve(id).success(), "approve failed");
+    const auto applied = applyService.apply(id);
+    const auto createdExists = fs::exists(f.projectDir.path / "created.txt");
+    switch (mode) {
+    case MandatoryCase::Valid: {
+        req(applied.success() && createdExists, "a Manifest Run with its artifact must apply");
+        const auto approval = f.approvals.findApproval(id);
+        req(approval.success() && approval.value().has_value()
+                && approval.value()->postApplyWorkspaceFingerprint.has_value(),
+            "the audit fingerprint must be recorded under the frozen policy");
+        break;
+    }
+    case MandatoryCase::Lost:
+        req(!applied.success() && applied.error()->code == kRecordedBaselineMissingCode && !createdExists,
+            "a lost mandatory artifact must refuse the Apply before any write");
+        break;
+    case MandatoryCase::Ambiguous:
+        req(!applied.success() && applied.error()->code == kRecordedBaselineAmbiguousCode && !createdExists,
+            "two baseline artifacts must refuse the Apply before any write");
+        break;
+    case MandatoryCase::Corrupt:
+        req(!applied.success() && !createdExists, "a corrupt baseline artifact must refuse the Apply before any write");
+        break;
+    case MandatoryCase::NoLedgerService:
+        req(!applied.success() && applied.error()->code == "proposal.baseline_context_unavailable" && !createdExists,
+            "a missing ledger service must not switch the check off for a Manifest Run");
+        break;
+    case MandatoryCase::NoLedgerRow:
+        req(!applied.success() && applied.error()->code == "proposal.baseline_context_missing" && !createdExists,
+            "a missing ledger row must not switch the check off for a Manifest Run");
+        break;
+    }
+}
+
+void testApplyOfAManifestRunTreatsItsLedgerFingerprintAsAMandatoryBaseline()
+{
+    runMandatoryBaselineCase(MandatoryCase::Valid);
+    runMandatoryBaselineCase(MandatoryCase::Lost);
+    runMandatoryBaselineCase(MandatoryCase::Ambiguous);
+    runMandatoryBaselineCase(MandatoryCase::Corrupt);
+    runMandatoryBaselineCase(MandatoryCase::NoLedgerService);
+    runMandatoryBaselineCase(MandatoryCase::NoLedgerRow);
+}
+
+// The explicit legacy / non-Manifest call keeps working, and an artifact it owns is still honoured.
+void testApplyOfALegacyRunWithoutAnArtifactServiceKeepsWorking()
+{
+    Fixture f;
+    auto proposalService = f.makeProposalService();
+    const auto id = createReadyProposal(f, "r1", makeCreateProposal("created.txt", "x"));
+    auto applyService = f.makeApplyService();
+    req(applyService.approve(id).success(), "approve failed");
+    req(applyService.apply(id).success() && fs::exists(f.projectDir.path / "created.txt"),
+        "an old caller without an ArtifactService must keep working");
+    static_cast<void>(proposalService);
+}
+
 void testApplyProvenanceDetectsUnrelatedWorkspaceDrift()
 {
     Fixture f;
@@ -1416,6 +1852,14 @@ int runChangeSetApplyServiceTests()
     testApplyCreateWithAFileNameTheAnsiCodePageCannotHold();
     testApproveAndApplyNudgeTheOutcomeBrief();
     testApplyPersistsTruthfulPostApplyWorkspaceProvenance();
+    testApplyRestoresTheRunsFrozenExclusionsForThePostApplyFingerprint();
+    testApplyRefusesBeforeWritingWhenARecordedExclusionCannotBeRestored();
+    testApplyRefusesEveryOperationUnderTheFrozenExclusionBeforeAnyWrite();
+    testApplyChecksTheWholeChangeSetBeforeTheFirstWrite();
+    testApplyRefusesAWriteThatALinkRedirectsIntoTheFrozenArea();
+    testApplyComparesTheFrozenPrefixPerComponentAndIgnoresAsciiCaseOnWindows();
+    testApplyOfAManifestRunTreatsItsLedgerFingerprintAsAMandatoryBaseline();
+    testApplyOfALegacyRunWithoutAnArtifactServiceKeepsWorking();
     testApplyProvenanceDetectsUnrelatedWorkspaceDrift();
     testApplyModify();
     testApplyHashMismatch();

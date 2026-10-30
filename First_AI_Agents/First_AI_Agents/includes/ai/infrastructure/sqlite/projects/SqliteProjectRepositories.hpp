@@ -4,6 +4,7 @@
 #include "ai/application/projects/IProjectRepository.hpp"
 #include "ai/application/projects/ITaskRepository.hpp"
 #include "ai/application/projects/IWorkspaceStateRepository.hpp"
+#include "ai/application/workspace/ProjectOutputApproval.hpp"
 #include "ai/common/Result.hpp"
 #include "ai/infrastructure/sqlite/SqliteDatabase.hpp"
 
@@ -56,6 +57,24 @@ public:
     [[nodiscard]] common::Result<std::optional<application::ProjectReadinessRecord>> find(
         const application::ProjectId& projectId) const override;
     common::Result<void> upsert(const application::ProjectReadinessRecord& record) override;
+
+private:
+    std::shared_ptr<SqliteDatabase> database_;
+};
+
+/** SQLite implementation of the output approvals port (table project_output_approvals, schema step 71). */
+class SqliteProjectOutputApprovalRepository final : public application::IProjectOutputApprovalRepository {
+public:
+    explicit SqliteProjectOutputApprovalRepository(std::shared_ptr<SqliteDatabase> database);
+
+    [[nodiscard]] common::Result<application::ProjectOutputApprovalCommitResult> commit(
+        const application::ProjectOutputApproval& candidate,
+        const application::ProjectOutputApprovalSetValidator& validator) override;
+    [[nodiscard]] common::Result<std::vector<application::ProjectOutputApproval>> listForWorkspace(
+        const application::ProjectId& projectId, const std::string& workspaceKey) const override;
+    [[nodiscard]] common::Result<std::vector<application::ProjectOutputApproval>> listForProject(
+        const application::ProjectId& projectId) const override;
+    common::Result<bool> revoke(const application::ProjectId& projectId, const std::string& approvalId) override;
 
 private:
     std::shared_ptr<SqliteDatabase> database_;

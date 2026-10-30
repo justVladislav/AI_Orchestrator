@@ -13,6 +13,11 @@
 #include "ai/application/execution/ManifestWorkLedgerService.hpp"
 #include "ai/application/Sha256.hpp"
 #include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
+#include "ai/application/verification/IManifestVerificationManualHandoffRepository.hpp"
+#include "ai/application/verification/ManifestVerificationContinuationPreparationService.hpp"
+#include "ai/application/verification/ManifestVerificationManualHandoffTypes.hpp"
+#include "ai/application/verification/RecordedBaselinePolicy.hpp"
+#include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/workspace/WorkspaceReadPolicy.hpp"
 #include "ai/common/Result.hpp"
 
@@ -159,6 +164,106 @@ std::string computeSnapshotHash(const std::vector<ProposedFileChange>& changes)
     return sha256Hex(manifest);
 }
 
+constexpr const char* kBaselineContextUnavailableCode = "proposal.baseline_context_unavailable";
+constexpr const char* kBaselineContextMissingCode = "proposal.baseline_context_missing";
+constexpr const char* kBaselineContextInvalidCode = "proposal.baseline_context_invalid";
+constexpr const char* kExcludedOutputPathCode = "proposal.excluded_output_path";
+
+// The ONE frozen policy an Apply is judged by, used for the pre-write path check and for the post-apply capture alike.
+//
+// Recognised Manifest-family Runs (Manifest, continuation child, manual-handoff attempt) always had a durable baseline: their
+// context is mandatory, so a missing dependency or ledger row is a refusal, never a switch-off of the check. Their Work Ledger
+// fingerprint, when non-empty, makes the Run's own baseline artifact mandatory; a present artifact that is ambiguous, corrupt or
+// of another generation is a refusal and is never bypassed through the anchor. Only a manual-handoff attempt that has no
+// artifact of its own (one from before attempts persisted theirs) takes its rules from the anchor of its typed links, and the
+// anchor's artifact is then mandatory in turn. The attempt's fingerprint (handoff.baselineFingerprint, possibly the normalised
+// F1) and the anchor's (F0 or its pinned F1) are NOT required to be equal; each artifact is checked against its own Run's ledger
+// identity.
+//
+// Any other workflow (the explicit legacy / non-Manifest case) claims no durable identity; an artifact it owns is still honoured.
+common::Result<WorkspaceReadPolicy> resolveFrozenWorkspacePolicy(
+    const Run& run,
+    const fs::path& workspaceRoot,
+    ArtifactService* artifacts,
+    ManifestWorkLedgerService* ledger,
+    IManifestVerificationManualHandoffRepository* manualHandoffs,
+    IRunRepository& runs)
+{
+    using Result = common::Result<WorkspaceReadPolicy>;
+    const std::string_view workflow = run.workflowId;
+    const bool manifest = workflow == kExecutionManifestWorkflowId;
+    const bool continuation = workflow == kManifestVerificationContinuationWorkflowId;
+    const bool attempt = workflow == kManifestVerificationManualHandoffWorkflowId;
+    if (!manifest && !continuation && !attempt) {
+        if (artifacts == nullptr) return Result::ok(WorkspaceReadPolicy::secureDefaults(workspaceRoot));
+        return RecordedBaselinePolicy::forRun(*artifacts, run.id, std::nullopt, workspaceRoot);
+    }
+
+    if (artifacts == nullptr || ledger == nullptr) {
+        return Result::failure({kBaselineContextUnavailableCode,
+            "The frozen baseline of this Run cannot be consulted: the artifact or Work Ledger service is not available"});
+    }
+    const auto identity = ledger->findBaselineIdentity(run.id);
+    if (!identity.success()) return Result::failure(*identity.error());
+    if (!identity.value().has_value()) {
+        return Result::failure({kBaselineContextMissingCode, "This Run has no Work Ledger row to take its frozen baseline from"});
+    }
+    if (identity.value()->projectId != run.projectId) {
+        return Result::failure({kBaselineContextInvalidCode, "The Run's Work Ledger row belongs to another project"});
+    }
+    const std::string& fingerprint = identity.value()->durableBaselineFingerprint;
+    if (fingerprint.empty()) {
+        return RecordedBaselinePolicy::forRun(*artifacts, run.id, std::nullopt, workspaceRoot);
+    }
+
+    auto own = RecordedBaselinePolicy::forRun(*artifacts, run.id, fingerprint, workspaceRoot);
+    if (own.success() || !attempt || own.error()->code != kRecordedBaselineMissingCode) return own;
+
+    // A manual-handoff attempt without an artifact of its own: attempt -> handoff -> anchor, every link proven.
+    if (manualHandoffs == nullptr) {
+        return Result::failure({kBaselineContextUnavailableCode,
+            "The manual-handoff links of this attempt cannot be consulted: no handoff repository is available"});
+    }
+    const auto attemptRow = manualHandoffs->findAttemptByRunId(run.id);
+    if (!attemptRow.success()) return Result::failure(*attemptRow.error());
+    if (!attemptRow.value().has_value()) {
+        return Result::failure({kBaselineContextMissingCode, "This attempt Run has no manual-handoff attempt record"});
+    }
+    const auto handoff = manualHandoffs->findHandoffById(attemptRow.value()->handoffId);
+    if (!handoff.success()) return Result::failure(*handoff.error());
+    if (!handoff.value().has_value()) {
+        return Result::failure({kBaselineContextMissingCode, "The attempt's manual handoff no longer exists"});
+    }
+    const auto& anchorId = handoff.value()->verificationAnchorRunId;
+    if (attemptRow.value()->attemptRunId != run.id
+        || attemptRow.value()->verificationAnchorRunId != anchorId
+        || handoff.value()->sourceProjectId != run.projectId
+        || run.parentRunId != std::optional<RunId>(anchorId)
+        || handoff.value()->baselineFingerprint != fingerprint) {
+        return Result::failure({kBaselineContextInvalidCode,
+            "The manual-handoff attempt, handoff, anchor and Work Ledger identities disagree"});
+    }
+    const auto anchorRun = runs.findRun(anchorId);
+    if (!anchorRun.success()) return Result::failure(*anchorRun.error());
+    if (!anchorRun.value().has_value()) {
+        return Result::failure({kBaselineContextMissingCode, "The handoff's anchor Run no longer exists"});
+    }
+    if (anchorRun.value()->projectId != run.projectId || anchorRun.value()->workspacePath != run.workspacePath) {
+        return Result::failure({kBaselineContextInvalidCode,
+            "The handoff's anchor Run belongs to another project or workspace"});
+    }
+    const auto anchorIdentity = ledger->findBaselineIdentity(anchorId);
+    if (!anchorIdentity.success()) return Result::failure(*anchorIdentity.error());
+    if (!anchorIdentity.value().has_value() || anchorIdentity.value()->durableBaselineFingerprint.empty()) {
+        return Result::failure({kBaselineContextMissingCode, "The handoff's anchor Run records no durable baseline"});
+    }
+    if (anchorIdentity.value()->projectId != run.projectId) {
+        return Result::failure({kBaselineContextInvalidCode, "The anchor's Work Ledger row belongs to another project"});
+    }
+    return RecordedBaselinePolicy::forRun(
+        *artifacts, anchorId, anchorIdentity.value()->durableBaselineFingerprint, workspaceRoot);
+}
+
 // AG-14.1: errorCode is set on any failure (see the individual return sites
 // below); fingerprint carries the real WorkspaceBaselineSnapshot::fingerprint
 // of the post-apply workspace (WorkspaceBaselineProvenance.hpp) on success -
@@ -290,7 +395,8 @@ ChangeSetApplyService::ChangeSetApplyService(
     IChangeApprovalRepository& approvals,
     ArtifactService* artifacts,
     ManifestWorkLedgerService* manifestWorkLedgerService,
-    ManifestApplyVerificationGate* verificationGate)
+    ManifestApplyVerificationGate* verificationGate,
+    IManifestVerificationManualHandoffRepository* manualHandoffs)
     : repository_(repository)
     , store_(store)
     , runs_(runs)
@@ -299,6 +405,7 @@ ChangeSetApplyService::ChangeSetApplyService(
     , artifacts_(artifacts)
     , manifestWorkLedgerService_(manifestWorkLedgerService)
     , verificationGate_(verificationGate)
+    , manualHandoffs_(manualHandoffs)
 {
 }
 
@@ -569,6 +676,47 @@ common::Result<ApplyChangeSetResult> ChangeSetApplyService::applyUnnotified(
         }
     }
 
+    // 6b. The Run's frozen write area, resolved ONCE after the authority gate and before the first file operation. The whole change set is
+    // checked against it - both sides of a Rename included - before the first file operation, so a refusal leaves the workspace
+    // exactly as it was; the same policy later serves the post-apply capture.
+    const auto frozenPolicy = resolveFrozenWorkspacePolicy(
+        run, canonRoot, artifacts_, manifestWorkLedgerService_, manualHandoffs_, runs_);
+    if (!frozenPolicy.success())
+        return applyFailureFromError(*frozenPolicy.error());
+    // Both the name as written AND the place the file system will really write to are judged: the OS follows a junction or
+    // symlink that replaced an allowed folder after approval, so safe/new.txt may physically be Out2/new.txt. Every existing
+    // component is resolved (the not-yet-existing tail of a Create stays lexical); a target that resolves outside the
+    // workspace is refused as an escape.
+    std::error_code rootResolveError;
+    const fs::path physicalRoot = detail::canonicalizeWithMissingSuffix(canonRoot, rootResolveError);
+    if (rootResolveError)
+        return applyFailure("proposal.workspace_unavailable", "The Run workspace could not be resolved");
+    const auto frozenAreaProblem = [&](const fs::path& relative) -> std::optional<common::Error> {
+        if (WorkspaceReadPolicyValidator::matchesDeniedPath(relative, frozenPolicy.value())) {
+            return common::Error {kExcludedOutputPathCode,
+                "A change targets a path inside an area this Run excluded from its workspace baseline"};
+        }
+        std::error_code resolveError;
+        const fs::path physical = detail::canonicalizeWithMissingSuffix(canonRoot / relative, resolveError);
+        if (resolveError) {
+            return common::Error {"proposal.path_unresolvable", "The target of a change could not be resolved on disk"};
+        }
+        const fs::path physicalRelative = physical.lexically_relative(physicalRoot);
+        if (physicalRelative.empty() || *physicalRelative.begin() == "..") {
+            return common::Error {"proposal.path_traversal", "Resolved path escapes project root"};
+        }
+        if (WorkspaceReadPolicyValidator::matchesDeniedPath(physicalRelative, frozenPolicy.value())) {
+            return common::Error {kExcludedOutputPathCode,
+                "A change resolves, through a link, to a path inside an area this Run excluded from its workspace baseline"};
+        }
+        return std::nullopt;
+    };
+    for (const auto& change : changes) {
+        auto problem = frozenAreaProblem(change.relativePath);
+        if (!problem && change.sourcePath) problem = frozenAreaProblem(*change.sourcePath);
+        if (problem) return applyFailure(problem->code, problem->message);
+    }
+
     // 7. Apply with rollback tracking.
     std::vector<AppliedEntry> applied;
     applied.reserve(changes.size());
@@ -686,8 +834,11 @@ common::Result<ApplyChangeSetResult> ChangeSetApplyService::applyUnnotified(
 
     std::optional<std::string> provenanceErrorCode;
     std::optional<std::string> postApplyFingerprint;
-    const auto postApplySnapshot = WorkspaceBaselineProvenance::capture(
-        WorkspaceReadPolicy::secureDefaults(canonRoot));
+    // The very policy that vetted every path before the first write (step 4b) - resolved once, never re-derived here, so the
+    // post-apply fingerprint cannot be taken over a different area than the one the write was allowed in. The old best-effort
+    // provenance REPORT below still looks for the Run's own baseline artifact; whether it exists decides only that report,
+    // never what was permitted.
+    const auto postApplySnapshot = WorkspaceBaselineProvenance::capture(frozenPolicy.value());
     if (postApplySnapshot.success()) {
         postApplyFingerprint = postApplySnapshot.value().fingerprint;
     } else {

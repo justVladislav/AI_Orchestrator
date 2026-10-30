@@ -436,6 +436,134 @@ void testServiceReportsStorageFailureInsteadOfUsingAnUnvalidatedFolder()
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
+// locate(): the read-only counterpart. The existing resolve() / validate() keep creating, adopting and probing; locate() answers the
+// same question - where is the root, and is that place acceptable - and leaves no trace.
+// ---------------------------------------------------------------------------------------------------------------------------------
+
+void testLocateLeavesNoTraceAndKeepsTheSameRefusals()
+{
+    TestDirectory base("lo");
+    // A missing folder, below a missing parent: the place comes back and NOTHING is created, not even the parent.
+    const fs::path missing = base.path / "d" / "s";
+    const auto located = VerificationScratchPolicy::locate(missing, std::nullopt, /*adoptExistingDefault=*/true);
+    require(located.success(), "A missing folder must be located: " + (located.success() ? std::string() : located.error()->message));
+    require(located.value().filename() == "s" && located.value().is_absolute(), "...as an absolute path of the right name");
+    require(!fs::exists(missing) && !fs::exists(missing.parent_path()), "...without creating the folder or its parent");
+
+    // An existing folder stays exactly as it is: no probe file, no new content.
+    const fs::path existing = base.path / "existing";
+    require(VerificationScratchPolicy::validate(existing, std::nullopt, true).success(), "setup: created private");
+    const auto onExisting = VerificationScratchPolicy::locate(existing, std::nullopt);
+    require(onExisting.success() && fs::is_empty(existing), "An existing folder is located without a probe file");
+
+    // The refusals that do not depend on the folder being there are the same ones as validate().
+    require(hasCode(VerificationScratchPolicy::locate("relative/path", std::nullopt), kVerificationScratchInvalidPathCode),
+        "A relative path is refused");
+    require(hasCode(VerificationScratchPolicy::locate(base.path / ".." / "x", std::nullopt), kVerificationScratchInvalidPathCode),
+        "A path with '..' is refused");
+    const fs::path file = base.path / "a-file";
+    { std::ofstream(file) << "x"; }
+    require(hasCode(VerificationScratchPolicy::locate(file, std::nullopt), kVerificationScratchUnavailableCode), "A file is refused");
+    const fs::path workspace = base.path / "ws";
+    fs::create_directories(workspace);
+    require(hasCode(VerificationScratchPolicy::locate(workspace / "scratch", workspace), kVerificationScratchOverlapCode),
+        "A place inside the workspace is refused...");
+    require(!fs::exists(workspace / "scratch"), "...and nothing was created there");
+    require(hasCode(VerificationScratchPolicy::locate(base.path, workspace), kVerificationScratchOverlapCode),
+        "A place that contains the workspace is refused");
+}
+
+#ifdef _WIN32
+void testLocateRefusesLongPathsAndLinksAndNeverChangesAnAccessList()
+{
+    TestDirectory base("ll");
+    const fs::path tooLong = base.path / std::string(kMaxVerificationScratchRootLength, 'x');
+    require(hasCode(VerificationScratchPolicy::locate(tooLong, std::nullopt), kVerificationScratchTooLongCode),
+        "A too long place is refused");
+    require(!fs::exists(tooLong), "...and not created");
+
+    const fs::path target = base.path / "target";
+    fs::create_directories(target);
+    const fs::path junction = base.path / "junction";
+    if (makeJunction(junction, target)) {
+        require(hasCode(VerificationScratchPolicy::locate(junction, std::nullopt), kVerificationScratchUnsafeCode),
+            "A junction is refused");
+    } else {
+        std::cout << "SKIP: no junction can be made here; the locate junction check was NOT exercised" << std::endl;
+    }
+
+    // A folder Everyone can write to: OUR default is reported as adoptable but is NOT tightened by locate(); a folder the user chose is
+    // refused and left alone. validate() with adoption still tightens it (the old behaviour is kept).
+    const fs::path shared = base.path / "shared";
+    require(VerificationScratchPolicy::validate(shared, std::nullopt, true).success(), "setup: created private");
+    shareWithEveryone(shared);
+    std::string reason;
+    require(!VerificationScratchPolicy::isPrivateToCurrentUser(shared, reason), "setup: shared now");
+    require(VerificationScratchPolicy::locate(shared, std::nullopt, /*adoptExistingDefault=*/true).success(),
+        "A shared default folder is located (it would be adopted by a real use)");
+    require(!VerificationScratchPolicy::isPrivateToCurrentUser(shared, reason),
+        "...and locate() did NOT change its access list");
+    require(hasCode(VerificationScratchPolicy::locate(shared, std::nullopt, false), kVerificationScratchNotPrivateCode),
+        "A shared folder the user chose is refused by locate() too...");
+    require(!VerificationScratchPolicy::isPrivateToCurrentUser(shared, reason), "...and also left as it is");
+    require(VerificationScratchPolicy::validate(shared, std::nullopt, true, /*adoptExistingDefault=*/true).success()
+            && VerificationScratchPolicy::isPrivateToCurrentUser(shared, reason),
+        "validate() still adopts and tightens it, as before");
+}
+#endif
+
+void testServiceLocateIsReadOnlyAndSelectsLikeResolve()
+{
+    TestDirectory base("sl");
+    const fs::path defaultRoot = base.path / "default";
+    InMemoryVerificationScratchSettingRepository repository;
+    VerificationScratchService service(repository, defaultRoot);
+
+    const auto located = service.locate(std::nullopt);
+    require(located.success() && located.value().source == VerificationScratchSource::Default, "The default is located");
+    require(!fs::exists(defaultRoot), "...and not created");
+
+    const auto resolved = service.resolve(std::nullopt);
+    require(resolved.success() && fs::is_directory(defaultRoot), "resolve() keeps creating the private folder");
+    const auto again = service.locate(std::nullopt);
+    require(again.success() && again.value().path == resolved.value().path && fs::is_empty(defaultRoot),
+        "After that locate() names the same place and leaves the folder empty (no probe)");
+
+    // A chosen folder is the one located, whether or not it exists; it is not created.
+    const fs::path chosen = base.path / "chosen";
+    require(repository.store(chosen).success(), "setup: the stored choice");
+    const auto chosenLocated = service.locate(std::nullopt);
+    require(chosenLocated.success() && chosenLocated.value().source == VerificationScratchSource::Setting
+            && chosenLocated.value().path.filename() == "chosen",
+        "The chosen folder is located, not the default");
+    require(!fs::exists(chosen), "...and not created");
+
+    // The workspace is considered: the located place may not overlap it.
+    const fs::path workspace = base.path / "ws";
+    fs::create_directories(workspace);
+    require(repository.store(workspace / "inside").success(), "setup: a choice inside the workspace");
+    const auto overlapping = service.locate(workspace);
+    require(!overlapping.success() && overlapping.error()->code == kVerificationScratchOverlapCode, "A place inside the workspace is refused");
+    require(!fs::exists(workspace / "inside"), "...and not created");
+
+    // A storage failure is an error, not a guess.
+    class FailingRepository final : public IVerificationScratchSettingRepository {
+    public:
+        ai::common::Result<std::optional<fs::path>> load() const override
+        {
+            return ai::common::Result<std::optional<fs::path>>::failure({"storage.unavailable", "no database"});
+        }
+        ai::common::Result<void> store(const std::optional<fs::path>&) override
+        {
+            return ai::common::Result<void>::failure({"storage.unavailable", "no database"});
+        }
+    } failing;
+    VerificationScratchService broken(failing, base.path / "other");
+    const auto failed = broken.locate(std::nullopt);
+    require(!failed.success() && failed.error()->code == "storage.unavailable", "A failing setting store fails locate() too");
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------------
 // The SQLite setting (schema step 69)
 // ---------------------------------------------------------------------------------------------------------------------------------
 
@@ -543,6 +671,11 @@ int main()
 #endif
         testServiceReportsStorageFailureInsteadOfUsingAnUnvalidatedFolder();
         testSqliteSettingPersistsAcrossReopenAndMigrates();
+        testLocateLeavesNoTraceAndKeepsTheSameRefusals();
+#ifdef _WIN32
+        testLocateRefusesLongPathsAndLinksAndNeverChangesAnAccessList();
+#endif
+        testServiceLocateIsReadOnlyAndSelectsLikeResolve();
     } catch (const std::exception& exception) {
         std::cerr << "VerificationScratch tests failed: " << exception.what() << std::endl;
         return 1;

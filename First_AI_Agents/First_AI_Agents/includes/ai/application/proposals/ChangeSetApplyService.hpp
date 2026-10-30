@@ -20,6 +20,7 @@ class IRunRepository;
 class ArtifactService;
 class ManifestWorkLedgerService;
 class ManifestApplyVerificationGate;
+class IManifestVerificationManualHandoffRepository;
 
 // Result of a successful apply.
 struct ApplyChangeSetResult {
@@ -82,7 +83,11 @@ public:
         IChangeApprovalRepository& approvals,
         ArtifactService* artifacts = nullptr,
         ManifestWorkLedgerService* manifestWorkLedgerService = nullptr,
-        ManifestApplyVerificationGate* verificationGate = nullptr);
+        ManifestApplyVerificationGate* verificationGate = nullptr,
+        // Resolves the frozen write area of a manual-handoff attempt that has no baseline artifact of its own (an attempt from
+        // before attempts persisted one) through its typed attempt -> handoff -> anchor links. Required for such attempts;
+        // callers without manual handoffs may leave it null.
+        IManifestVerificationManualHandoffRepository* manualHandoffs = nullptr);
 
     // Records that a human confirmed applying this exact, currently
     // ReadyForReview snapshot. Idempotent: re-approving the same, unchanged
@@ -112,6 +117,7 @@ private:
     ArtifactService* artifacts_;
     ManifestWorkLedgerService* manifestWorkLedgerService_;
     ManifestApplyVerificationGate* verificationGate_;
+    IManifestVerificationManualHandoffRepository* manualHandoffs_;
 };
 
 } // namespace ai::application

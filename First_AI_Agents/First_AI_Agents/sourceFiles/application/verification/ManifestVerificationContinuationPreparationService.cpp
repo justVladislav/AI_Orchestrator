@@ -172,7 +172,13 @@ ManifestVerificationContinuationPreparationService::prepare(
     const auto scratchRoot = resolveVerificationScratchRoot(scratchProvider_, trustedScratchRoot_, workspaceRoot);
     if (!scratchRoot.success()) return fail<ManifestVerificationContinuationPreparationResult>(
         scratchRoot.error()->code, scratchRoot.error()->message);
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspaceRoot);
+    // The live workspace is captured under the dynamic exclusions the source Run froze in its own baseline artifact, whose
+    // fingerprint is durable.baselineFingerprint. Legacy normalization below and the pinned fingerprint are unchanged.
+    const auto recordedPolicy = baselineNormalization_.policyForRecordedBaseline(
+        sourceRunId, durable.baselineFingerprint, workspaceRoot);
+    if (!recordedPolicy.success()) return fail<ManifestVerificationContinuationPreparationResult>(
+        recordedPolicy.error()->code, recordedPolicy.error()->message);
+    const auto& policy = recordedPolicy.value();
     const auto currentBaseline = WorkspaceBaselineProvenance::capture(policy);
     if (!currentBaseline.success()) return fail<ManifestVerificationContinuationPreparationResult>(
         currentBaseline.error()->code, currentBaseline.error()->message);

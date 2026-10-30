@@ -8,6 +8,8 @@
 #include "ai/application/execution/IWorkflowRunner.hpp"
 #include "ai/application/verification/ManifestVerificationManualHandoffTypes.hpp"
 #include "ai/application/Sha256.hpp"
+#include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
+#include "ai/application/workspace/WorkspaceReadPolicy.hpp"
 #include "ai/infrastructure/SqliteRepositories.hpp"
 
 #include <sqlite3.h>
@@ -15,8 +17,11 @@
 #include <cassert>
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <sstream>
+#include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -731,6 +736,96 @@ void testSqliteAttemptResultClassificationSurvivesRestart()
     assert(restartedAttempt.value()->editedSnapshotFingerprint == attempt.editedSnapshotFingerprint);
 }
 
+// U18 of the P3 design: the exclusions of a handoff's originalSnapshot - static rules AND several dynamic path: entries - come back from
+// the real SQLite row exactly as they went in, through every read path the service uses, after the connection was closed and the
+// database reopened. Nothing is lost, normalised or added; the files, sizes and fingerprint agree too.
+void testSqliteOriginalSnapshotKeepsItsExclusionsAcrossARestart()
+{
+    const auto require = [](bool condition, const char* message) {
+        if (!condition) throw std::runtime_error(message);
+    };
+    TemporaryPersistenceWorkspace workspace;
+    const fs::path tree = workspace.root / "tree";
+    const std::string utf8Folder = "\xD0\xA1\xD0\xB1\xD0\xBE\xD1\x80\xD0\xBA\xD0\xB0/\xD0\xB2\xD1\x8B\xD1\x85\xD0\xBE\xD0\xB4";
+    const auto write = [&](const std::string& relative, const std::string& content) {
+        const fs::path target = tree / ai::application::detail::pathFromUtf8(relative);
+        fs::create_directories(target.parent_path());
+        std::ofstream(target, std::ios::binary | std::ios::trunc) << content;
+    };
+    write("qml/AppSidebar.qml", "Item {}");
+    write("src/main.cpp", "int main() {}");
+    write("Out2/ignored.obj", "generated");
+    write("Builds/x64-ninja/CMakeCache.txt", "generated");
+    write(utf8Folder + "/x.txt", "generated");
+
+    auto policy = WorkspaceReadPolicy::secureDefaults(tree);
+    policy.deniedPaths = {"Out2", "Builds/x64-ninja", ai::application::detail::pathFromUtf8(utf8Folder)};
+    const auto snapshot = WorkspaceBaselineProvenance::capture(policy);
+    require(snapshot.success(), "could not capture the fixture tree");
+    const auto dynamicOf = [](const WorkspaceBaselineSnapshot& value) {
+        std::vector<std::string> paths;
+        for (const auto& entry : value.exclusions) {
+            if (entry.rfind("path:", 0) == 0) paths.push_back(entry);
+        }
+        return paths;
+    };
+    require(dynamicOf(snapshot.value()).size() == 3 && snapshot.value().files.size() == 2, "setup: three dynamic exclusions, two files");
+
+    ManifestVerificationManualHandoff handoff = makeHandoff("run-u18", "u18");
+    handoff.originalSnapshot = snapshot.value();
+    {
+        const auto opened = SqliteDatabase::open(workspace.databasePath);
+        require(opened.success(), "could not open the database");
+        SqliteProjectRepository projects(opened.value());
+        Project project;
+        project.id = "project-1";
+        project.name = "Project";
+        project.rootPath = workspace.root / "project";
+        project.createdAt = std::chrono::system_clock::now();
+        project.updatedAt = project.createdAt;
+        require(projects.insert(project).success(), "could not store the project");
+        SqliteRunRepository runs(opened.value());
+        Run source;
+        source.id = "run-u18";
+        source.projectId = "project-1";
+        source.title = "Source Run";
+        source.task = "task";
+        source.workflowId = std::string(kExecutionManifestWorkflowId);
+        source.status = RunStatus::Failed;
+        source.createdAt = std::chrono::system_clock::now();
+        require(runs.insertRun(source).success(), "could not store the Run");
+        SqliteManifestVerificationManualHandoffRepository repository(opened.value());
+        require(repository.insertHandoff(handoff).success(), "could not store the handoff");
+        // everything goes out of scope: a genuine close
+    }
+
+    const auto reopened = SqliteDatabase::open(workspace.databasePath);
+    require(reopened.success(), "could not reopen the database");
+    SqliteManifestVerificationManualHandoffRepository repository(reopened.value());
+    const auto sameSnapshot = [&](const ManifestVerificationManualHandoff& loaded) {
+        const auto& original = handoff.originalSnapshot;
+        const auto& back = loaded.originalSnapshot;
+        require(back.exclusions == original.exclusions, "The exclusions must come back exactly: same entries, same order, none added");
+        require(dynamicOf(back) == dynamicOf(original), "...also the dynamic set");
+        require(back.fingerprint == original.fingerprint && back.totalBytes == original.totalBytes && back.files.size() == original.files.size(),
+            "...with the same fingerprint, size and file count");
+        for (std::size_t index = 0; index < original.files.size(); ++index) {
+            require(back.files[index].relativePath == original.files[index].relativePath
+                    && back.files[index].sha256 == original.files[index].sha256 && back.files[index].byteSize == original.files[index].byteSize,
+                "...and the same files");
+        }
+    };
+    const auto byAnchor = repository.findHandoffByAnchorRun("run-u18");
+    require(byAnchor.success() && byAnchor.value().has_value(), "found by the anchor Run");
+    sameSnapshot(*byAnchor.value());
+    const auto byId = repository.findHandoffById(handoff.id);
+    require(byId.success() && byId.value().has_value(), "found by id");
+    sameSnapshot(*byId.value());
+    const auto byMember = repository.findHandoffByMemberProposalId("proposal-1");
+    require(byMember.success() && byMember.value().has_value(), "found by member proposal");
+    sameSnapshot(*byMember.value());
+}
+
 } // namespace
 
 int runManifestVerificationManualHandoffRepositoryTests()
@@ -750,5 +845,6 @@ int runManifestVerificationManualHandoffRepositoryTests()
     testInMemoryAttemptResultRoundTripDuplicateRejectionAndCascade();
     testSqliteAttemptResultRoundTripDuplicateRejectionAndCascade();
     testSqliteAttemptResultClassificationSurvivesRestart();
+    testSqliteOriginalSnapshotKeepsItsExclusionsAcrossARestart();
     return 0;
 }

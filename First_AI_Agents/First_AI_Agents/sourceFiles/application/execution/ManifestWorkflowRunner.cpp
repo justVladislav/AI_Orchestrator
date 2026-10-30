@@ -771,14 +771,10 @@ WorkflowResult ManifestWorkflowRunner::run(
 
     const std::filesystem::path workspaceRoot =
         context.run.workspacePath.value_or(context.project.rootPath);
-    const WorkspaceReadPolicy inspectPolicy = AgentToolExecutionService::buildPolicy(workspaceRoot);
 
     eventSink.publish(stageEvent(RunEventType::StageStarted, context.run.id, planningStage.id,
         0.0, planningStage.title + " started"));
 
-    // Persist the policy-visible baseline before creating a provider session.
-    // It contains relative paths, sizes and hashes only.
-    const auto baseline = WorkspaceBaselineProvenance::capture(inspectPolicy);
     auto failBeforeProvider = [&](const std::string& message, std::string_view reason) {
         eventSink.publish(stageEvent(RunEventType::StageFailed, context.run.id,
             planningStage.id, 0.0, message));
@@ -787,6 +783,25 @@ WorkflowResult ManifestWorkflowRunner::run(
             "Manifest execution skipped: " + std::string(reason)));
         return WorkflowResult {false, RunStatus::Failed, message, totalUsage};
     };
+
+    // P3c: the Run's read policy is decided ONCE, here, before the baseline is captured: today's secureDefaults plus the output folders
+    // the user approved for (this project, this Run's workspace root). The baseline artifact below freezes exactly the set this single
+    // answer carried, and the same object serves the preflight, the planner, the readiness/overlay steps, the provenance captures and
+    // the executor - nothing asks the approvals again, so an approval changed while the Run is in flight is for the NEXT Run. An error
+    // is the Run's failure before any provider exists; it is never turned into the defaults (which could even read the output).
+    // Without a source (a standalone runner) the policy is what it always was.
+    auto policyResult = outputApprovals_ != nullptr
+        ? resolveReadPolicy(outputApprovals_, context.project.id, workspaceRoot)
+        : common::Result<WorkspaceReadPolicy>::ok(AgentToolExecutionService::buildPolicy(workspaceRoot));
+    if (!policyResult.success()) {
+        return failBeforeProvider(policyResult.error()->code + ": " + policyResult.error()->message,
+            "the workspace read policy could not be determined");
+    }
+    const WorkspaceReadPolicy inspectPolicy = std::move(policyResult.value());
+
+    // Persist the policy-visible baseline before creating a provider session.
+    // It contains relative paths, sizes and hashes only.
+    const auto baseline = WorkspaceBaselineProvenance::capture(inspectPolicy);
     if (!baseline.success()) {
         return failBeforeProvider(baseline.error()->code + ": "
                 + baseline.error()->message,

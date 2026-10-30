@@ -8,6 +8,7 @@
 #include "ai/application/verification/ManifestMandatoryVerificationPolicy.hpp"
 #include "ai/application/verification/ManifestProposalOverlay.hpp"
 #include "ai/application/verification/ManifestVerificationRepairability.hpp"
+#include "ai/application/verification/RecordedBaselinePolicy.hpp"
 #include "ai/application/execution/TaskRouteResolver.hpp"
 #include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 #include "ai/application/workspace/WorkspaceReadPolicy.hpp"
@@ -186,7 +187,13 @@ ManifestVerificationContinuationRepairService::repair(
     const auto scratchRoot = resolveVerificationScratchRoot(scratchProvider_, trustedScratchRoot_, workspaceRoot);
     if (!scratchRoot.success()) return fail<ManifestVerificationContinuationRepairOutcome>(
         scratchRoot.error()->code, scratchRoot.error()->message);
-    const auto policy = WorkspaceReadPolicy::secureDefaults(workspaceRoot);
+    // The dynamic exclusions the SOURCE Run froze in its own baseline artifact (the ledger fingerprint of that Run), not the
+    // possibly normalised fingerprint this continuation pinned: input.baselineFingerprint is still what the capture is compared to.
+    const auto recordedPolicy = RecordedBaselinePolicy::forRun(
+        artifacts_, sourceRunId, sourceVerification.baselineFingerprint, workspaceRoot);
+    if (!recordedPolicy.success()) return fail<ManifestVerificationContinuationRepairOutcome>(
+        recordedPolicy.error()->code, recordedPolicy.error()->message);
+    const auto& policy = recordedPolicy.value();
     const auto currentBaseline = WorkspaceBaselineProvenance::capture(policy);
     if (!currentBaseline.success()) return fail<ManifestVerificationContinuationRepairOutcome>(
         currentBaseline.error()->code, currentBaseline.error()->message);

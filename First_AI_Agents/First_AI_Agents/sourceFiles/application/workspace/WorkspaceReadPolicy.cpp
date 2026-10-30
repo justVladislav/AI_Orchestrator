@@ -173,6 +173,15 @@ common::Result<void> WorkspaceReadPolicyValidator::validateTrustedPolicy(
     return common::Result<void>::ok();
 }
 
+bool WorkspaceReadPolicyValidator::matchesDeniedPath(
+    const fs::path& relativePath, const WorkspaceReadPolicy& policy)
+{
+    const fs::path normalized = relativePath.lexically_normal();
+    return std::any_of(
+        policy.deniedPaths.begin(), policy.deniedPaths.end(),
+        [&](const fs::path& path) { return pathStartsWith(normalized, path); });
+}
+
 bool WorkspaceReadPolicyValidator::matchesDeniedDirectorySequence(
     const fs::path& relativePath, const WorkspaceReadPolicy& policy)
 {
@@ -251,10 +260,7 @@ common::Result<fs::path> WorkspaceReadPolicyValidator::validateRelativePath(
         }
     }
 
-    const bool denied = std::any_of(
-        policy.deniedPaths.begin(), policy.deniedPaths.end(),
-        [&](const fs::path& path) { return pathStartsWith(normalized, path); });
-    if (denied) {
+    if (matchesDeniedPath(normalized, policy)) {
         return common::Result<fs::path>::failure(policyError(
             "workspace_path.denied",
             "Workspace path is denied by read policy"));

@@ -9,6 +9,9 @@
 #include "ai/application/planning/FollowUpSourceReader.hpp"
 #include "ai/application/inmemory/InMemoryManifestWorkLedgerRepository.hpp"
 #include "ai/application/inmemory/InMemoryOutcomeBriefRepository.hpp"
+#include "ai/application/inmemory/InMemoryProjectOutputApprovalRepository.hpp"
+#include "ai/application/workspace/ProjectOutputApprovalService.hpp"
+#include "ai/application/workspace/WorkspaceBaselineProvenance.hpp"
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/workspace/WorkspacePathGuard.hpp"
 #include "ai/application/workspace/WorkspaceReadPolicy.hpp"
@@ -525,15 +528,22 @@ public:
 class CountingLoader final : public IFollowUpFileLoader {
 public:
     [[nodiscard]] common::Result<std::vector<FollowUpFileCandidate>> load(
-        const fs::path& root, const std::vector<std::string>& paths) const override
+        const WorkspaceReadPolicy& policy, const std::vector<std::string>& paths) const override
     {
         ++calls;
-        lastRoot = root;
-        return inner.load(root, paths);
+        lastRoot = policy.workspaceRoot;
+        lastPolicy = policy;
+        if (onLoad) onLoad();
+        return inner.load(policy, paths);
     }
-    FilesystemFollowUpFileLoader inner;
+    // The files the real loader actually opens (its beforeOpen seam): a denied path must never appear here.
+    FilesystemFollowUpFileLoader inner {FollowUpFileLoaderHooks {[this](const fs::path& path) { opened.push_back(path); }, {}}};
     mutable int calls {0};
     mutable fs::path lastRoot;
+    mutable WorkspaceReadPolicy lastPolicy;
+    mutable std::vector<fs::path> opened;
+    // Runs when the loader is asked, i.e. after the snapshot of the same read() was taken.
+    std::function<void()> onLoad;
 };
 
 // A project with a workspace on disk, one Completed manifest Run with its Outcome head and two proposals, and the real snapshot service.
@@ -995,6 +1005,279 @@ void testARealFileChangeBetweenQuoteAndAuthorisationIsAFreeStale()
     check(stored.state == FollowUpPlanRequestState::Stale && !followUpRequestMayBeCharged(stored), "...and a free one");
 }
 
+// ---- P3c: the read policy of a follow-up read ---------------------------------------------------------------------------------------
+
+// Answers with today's secureDefaults plus the folders in `denied` (a test changes `denied`, or sets `failure`, between two questions),
+// and records every question. `foreignRoot`, when set, makes it answer with the policy of ANOTHER folder.
+class PolicySpy final : public IOutputApprovalPolicySource {
+public:
+    mutable std::vector<std::pair<ProjectId, fs::path>> calls;
+    std::vector<std::string> denied;
+    std::optional<common::Error> failure;
+    std::optional<fs::path> foreignRoot;
+
+    [[nodiscard]] common::Result<WorkspaceReadPolicy> policyFor(const ProjectId& projectId, const fs::path& root) const override
+    {
+        calls.emplace_back(projectId, root);
+        if (failure.has_value()) return common::Result<WorkspaceReadPolicy>::failure(*failure);
+        auto policy = WorkspaceReadPolicy::secureDefaults(foreignRoot.has_value() ? *foreignRoot : root);
+        for (const auto& path : denied) policy.deniedPaths.push_back(path);
+        return common::Result<WorkspaceReadPolicy>::ok(std::move(policy));
+    }
+};
+
+WorkspaceReadPolicy policyDenying(const fs::path& root, const std::vector<std::string>& denied)
+{
+    auto policy = WorkspaceReadPolicy::secureDefaults(root);
+    for (const auto& path : denied) policy.deniedPaths.push_back(path);
+    return policy;
+}
+
+bool wasOpened(const CountingLoader& loader, const std::string& relative)
+{
+    return std::any_of(loader.opened.begin(), loader.opened.end(), [&](const fs::path& path) {
+        return path.generic_string().find(relative) != std::string::npos;
+    });
+}
+
+// The loader judges every candidate under the policy it is given: a path under deniedPaths is the existing unsafe verdict, with no
+// content and no digest, and is never even opened; the neighbours are judged exactly as before. The old call keeps today's defaults.
+void testTheLoaderJudgesUnderTheGivenPolicyAndNeverOpensADeniedPath()
+{
+    TemporaryDirectory workspace("loader-policy");
+    workspace.write("src/ok.cpp", "int ok() { return 1; }\n");
+    workspace.write("Out2/gen.txt", "generated output\n");
+    workspace.write("Out2/nested/more.txt", "more output\n");
+    workspace.write("Out2-source/real.txt", "a neighbour that only shares the name prefix\n");
+    std::vector<fs::path> opened;
+    FilesystemFollowUpFileLoader loader {FollowUpFileLoaderHooks {[&](const fs::path& path) { opened.push_back(path); }, {}}};
+    const std::vector<std::string> paths = {"Out2/gen.txt", "src/ok.cpp", "Out2/nested/more.txt", "Out2-source/real.txt", "Out2/missing.txt"};
+
+    const auto loaded = loader.load(policyDenying(workspace.path(), {"Out2"}), paths);
+    check(loaded.success(), "the loader runs: " + codeOf(loaded.error()));
+    const auto& files = loaded.value();
+    check(files.size() == paths.size(), "One candidate per input path - a denied one is not dropped from the list");
+    for (std::size_t index = 0; index < paths.size(); ++index) check(files[index].relativePath == paths[index], "...in the input order");
+    for (const auto* denied : {"Out2/gen.txt", "Out2/nested/more.txt", "Out2/missing.txt"}) {
+        check(safetyOf(files, denied) == Safety::UnsafePath, std::string("A path under the approved folder is unsafe: ") + denied);
+        check(find(files, denied)->content.empty() && find(files, denied)->contentSha256.empty(),
+            std::string("...with no content and no digest: ") + denied);
+    }
+    check(safetyOf(files, "src/ok.cpp") == Safety::Eligible && find(files, "src/ok.cpp")->content == "int ok() { return 1; }\n"
+            && find(files, "src/ok.cpp")->contentSha256 == sha256Hex("int ok() { return 1; }\n"),
+        "An ordinary source stays eligible with its real bytes and digest");
+    check(safetyOf(files, "Out2-source/real.txt") == Safety::Eligible, "A neighbour sharing only the name prefix is not hidden");
+    check(opened.size() == 2, "Only the two permitted files were opened");
+    for (const auto& path : opened) {
+        check(path.generic_string().find("/Out2/") == std::string::npos, "...and none of them is under the approved folder");
+    }
+
+    // The previous call is exactly today's secureDefaults of the root: the folder is an ordinary one there.
+    const auto legacy = loader.load(workspace.path(), {"Out2/gen.txt"});
+    check(legacy.success() && safetyOf(legacy.value(), "Out2/gen.txt") == Safety::Eligible,
+        "load(root, paths) is today's defaults, not a policy with approvals");
+
+    // A policy that cannot be trusted, or whose root is not a readable folder, makes every file unreadable.
+    WorkspaceReadPolicy relative = WorkspaceReadPolicy::secureDefaults(workspace.path());
+    relative.workspaceRoot = fs::path("not/absolute");
+    const auto notAbsolute = loader.load(relative, paths);
+    check(!notAbsolute.success() && notAbsolute.error()->code == "follow_up.workspace_unavailable", "A relative policy root is unavailable");
+    const auto missing = loader.load(policyDenying(workspace.path() / "no-such-dir", {"Out2"}), paths);
+    check(!missing.success() && missing.error()->code == "follow_up.workspace_unavailable", "A missing policy root is unavailable");
+}
+
+// One read(): ONE policy, asked for the source Run's own workspace, serves the catalogue and the candidate files. An approval revoked
+// after the snapshot and before the loader changes nothing for this read; the next read() asks again and sees the new set.
+void testOneReadUsesOneCurrentPolicyForTheCatalogueAndTheFiles()
+{
+    Fixture f;
+    f.frozenWorkspace.write("Out2/gen.txt", "generated output\n");
+    f.frozenWorkspace.write("Out2/big.obj", filler(300 * 1024)); // over the read limit: the defaults refuse the whole catalogue on it
+    f.proposals.add(kRun, "set-3", {change("Out2/gen.txt")});
+    PolicySpy spy;
+    spy.denied = {"Out2"};
+    f.reader.setOutputApprovalPolicySource(&spy);
+    f.snapshots.setOutputApprovalPolicySource(&spy);
+    f.loader.onLoad = [&] { spy.denied.clear(); }; // the approval is revoked between the snapshot and the loader
+
+    const auto first = f.reader.read(kProject, kRun);
+    check(first.success(), "the read passes under the approved area: " + codeOf(first.error()));
+    check(spy.calls.size() == 1, "The source is asked exactly once for the whole read (the snapshot did not ask again)");
+    check(spy.calls.front().first == kProject && spy.calls.front().second == f.frozenWorkspace.path(),
+        "...for the project and the source Run's own workspace, not the project root");
+    check(f.loader.lastPolicy.workspaceRoot == f.frozenWorkspace.path()
+            && std::find(f.loader.lastPolicy.deniedPaths.begin(), f.loader.lastPolicy.deniedPaths.end(), fs::path("Out2"))
+                != f.loader.lastPolicy.deniedPaths.end(),
+        "The loader got the very policy the revocation came too late for");
+    const auto expected = WorkspaceBaselineProvenance::capture(policyDenying(f.frozenWorkspace.path(), {"Out2"}));
+    check(expected.success() && first.value().snapshot.workspaceFingerprint == expected.value().fingerprint,
+        "The catalogue was taken under the same area");
+    const auto* denied = find(first.value().candidates, "Out2/gen.txt");
+    check(denied != nullptr && denied->safety == Safety::UnsafePath && denied->content.empty() && denied->contentSha256.empty(),
+        "The candidate under the approved folder is unsafe, without content or digest");
+    check(!wasOpened(f.loader, "Out2"), "...and the file was never opened");
+    check(find(first.value().candidates, "src/a.cpp")->safety == Safety::Eligible, "The permitted file is eligible");
+
+    // The next read asks again: the folder is no longer approved, so its big file refuses the catalogue.
+    f.loader.onLoad = nullptr;
+    const auto second = f.reader.read(kProject, kRun);
+    check(spy.calls.size() == 2, "The next read() asks for its own policy");
+    check(!second.success() && second.error()->code == "workspace_baseline.file_limit",
+        "...and sees the revocation: " + (second.success() ? std::string("it succeeded") : codeOf(second.error())));
+}
+
+// The cheap, authoritative refusals come first and do not need a policy: the source is not asked and no workspace file is read.
+void testTheEarlyRefusalsOfTheReaderNeverAskForAPolicy()
+{
+    {   // an archived project
+        Fixture f;
+        PolicySpy spy;
+        f.reader.setOutputApprovalPolicySource(&spy);
+        f.setProjectStatus(ProjectStatus::Archived);
+        const auto read = f.reader.read(kProject, kRun);
+        check(read.success() && read.value().project.status == ProjectStatus::Archived && spy.calls.empty() && f.loader.calls == 0,
+            "An archived project: reported as it is, no policy asked, nothing read");
+    }
+    {   // a Run of another project
+        Fixture f;
+        PolicySpy spy;
+        f.reader.setOutputApprovalPolicySource(&spy);
+        auto run = f.runs.findRun(kRun).value().value();
+        run.projectId = "project-2";
+        check(f.runs.updateRun(run).success(), "setup: the Run moved");
+        const auto read = f.reader.read(kProject, kRun);
+        check(read.success() && read.value().runProjectId == "project-2" && spy.calls.empty() && f.loader.calls == 0,
+            "A Run of another project: no policy asked, nothing read");
+    }
+    {   // no Outcome head
+        Fixture f;
+        PolicySpy spy;
+        f.reader.setOutputApprovalPolicySource(&spy);
+        check(f.runs.insertRun([&] {
+            Run other;
+            other.id = "run-without-brief";
+            other.projectId = kProject;
+            other.title = "No brief";
+            other.task = "Task";
+            other.workflowId = kExecutionManifestWorkflowId;
+            other.status = RunStatus::Completed;
+            return other;
+        }()).success(), "setup: a Run without a brief");
+        const auto read = f.reader.read(kProject, "run-without-brief");
+        check(!read.success() && read.error()->code == "follow_up.outcome_missing" && spy.calls.empty() && f.loader.calls == 0,
+            "No Outcome head: the previous code, no policy asked");
+    }
+    {   // too many candidate paths - counted before anything of the workspace, hidden paths included
+        Fixture f;
+        PolicySpy spy;
+        spy.denied = {"gen"};
+        f.reader.setOutputApprovalPolicySource(&spy);
+        addCandidates(f, "set-9", kFollowUpMaximumCandidates - 2);
+        const auto read = f.reader.read(kProject, kRun);
+        check(read.success() && read.value().candidateRefusal.has_value()
+                && read.value().candidateRefusal->code == "follow_up.too_many_candidate_files" && spy.calls.empty() && f.loader.calls == 0,
+            "257 candidates (the hidden ones counted too): the previous refusal, before any policy or file");
+    }
+}
+
+// An error of the source is the failure of the whole read - not an empty snapshot, not an empty list, not the defaults; and a policy
+// of another root is refused before the workspace is read.
+void testASourceErrorOrAForeignPolicyFailsTheWholeRead()
+{
+    {
+        Fixture f;
+        PolicySpy spy;
+        spy.failure = common::Error {"output_approval.storage_failed", "disk is gone"};
+        f.reader.setOutputApprovalPolicySource(&spy);
+        const auto read = f.reader.read(kProject, kRun);
+        check(!read.success() && read.error()->code == "output_approval.storage_failed", "The source's own error fails the read");
+        check(f.loader.calls == 0 && spy.calls.size() == 1, "...before any file was loaded, after one question");
+    }
+    {
+        Fixture f;
+        TemporaryDirectory elsewhere("foreign-policy-root");
+        PolicySpy spy;
+        spy.foreignRoot = elsewhere.path();
+        f.reader.setOutputApprovalPolicySource(&spy);
+        const auto read = f.reader.read(kProject, kRun);
+        check(!read.success() && read.error()->code == "workspace_policy.root_mismatch", "A policy of another folder is refused");
+        check(f.loader.calls == 0, "...and no file was loaded");
+    }
+}
+
+// The real P3a service and repository feed the reader: no spy that only returns a hand-made list proves the composition.
+class UnreadableApprovals final : public IProjectOutputApprovalRepository {
+public:
+    common::Result<ProjectOutputApprovalCommitResult> commit(
+        const ProjectOutputApproval&, const ProjectOutputApprovalSetValidator&) override
+    {
+        return common::Result<ProjectOutputApprovalCommitResult>::failure({kOutputApprovalStorageFailedCode, "disk is gone"});
+    }
+    common::Result<std::vector<ProjectOutputApproval>> listForWorkspace(const ProjectId&, const std::string&) const override
+    {
+        return common::Result<std::vector<ProjectOutputApproval>>::failure({kOutputApprovalStorageFailedCode, "disk is gone"});
+    }
+    common::Result<std::vector<ProjectOutputApproval>> listForProject(const ProjectId&) const override
+    {
+        return common::Result<std::vector<ProjectOutputApproval>>::failure({kOutputApprovalStorageFailedCode, "disk is gone"});
+    }
+    common::Result<bool> revoke(const ProjectId&, const std::string&) override
+    {
+        return common::Result<bool>::failure({kOutputApprovalStorageFailedCode, "disk is gone"});
+    }
+};
+
+void testTheRealApprovalServiceFeedsTheReaderAndAStorageErrorFailsIt()
+{
+    Fixture f(/*frozen=*/false); // the Run reads the project's own root: the root an approval is made for
+    f.projectRoot.write("Out2/gen.txt", "generated output\n");
+    f.projectRoot.write("src/b.cpp", "int b() { return 2; }\n");
+    f.proposals.add(kRun, "set-3", {change("Out2/gen.txt")});
+    InMemoryProjectOutputApprovalRepository approvals;
+    FunctionProtectedStoragePathSource noProtectedPaths {[](const fs::path&) {
+        return common::Result<std::vector<ProtectedStoragePath>>::ok({});
+    }};
+    FilesystemOutputDirectoryInspector inspector;
+    ProjectOutputApprovalService service(f.projects, approvals, noProtectedPaths, inspector);
+    f.reader.setOutputApprovalPolicySource(&service);
+    f.snapshots.setOutputApprovalPolicySource(&service);
+
+    const auto before = f.reader.read(kProject, kRun);
+    check(before.success() && safetyOf(before.value().candidates, "Out2/gen.txt") == Safety::Eligible,
+        "Nothing approved: the folder is an ordinary one");
+
+    OutputApprovalRequest request;
+    request.projectId = kProject;
+    request.relativePath = "Out2";
+    request.acknowledgeNestedSources = false;
+    request.approvedBy = "tester";
+    const auto approved = service.approve(request);
+    check(approved.success(), "the folder is approved: " + codeOf(approved.error()));
+    f.loader.opened.clear();
+    const auto during = f.reader.read(kProject, kRun);
+    check(during.success(), "the read under the approval: " + codeOf(during.error()));
+    const auto* denied = find(during.value().candidates, "Out2/gen.txt");
+    check(denied != nullptr && denied->safety == Safety::UnsafePath && denied->content.empty() && !wasOpened(f.loader, "Out2"),
+        "The approved folder is unsafe, without content, never opened");
+    check(safetyOf(during.value().candidates, "src/b.cpp") == Safety::Eligible, "The source next to it is eligible");
+    check(during.value().snapshot.workspaceFingerprint != before.value().snapshot.workspaceFingerprint,
+        "The catalogue changed with the area");
+
+    check(service.revoke(kProject, approved.value().approval.id).success(), "the approval is revoked");
+    const auto after = f.reader.read(kProject, kRun);
+    check(after.success() && safetyOf(after.value().candidates, "Out2/gen.txt") == Safety::Eligible,
+        "After the revocation the next read sees the folder again");
+
+    // A store that cannot be read is an error of the read, not an empty area.
+    UnreadableApprovals broken;
+    ProjectOutputApprovalService unreadable(f.projects, broken, noProtectedPaths, inspector);
+    f.reader.setOutputApprovalPolicySource(&unreadable);
+    f.loader.calls = 0;
+    const auto failed = f.reader.read(kProject, kRun);
+    check(!failed.success() && failed.error()->code == kOutputApprovalStorageFailedCode && f.loader.calls == 0,
+        "A storage error fails the read before any file is loaded");
+}
+
 } // namespace
 
 int main()
@@ -1016,6 +1299,11 @@ int main()
         {"testAFaultIsPassedOnUnchanged", testAFaultIsPassedOnUnchanged},
         {"testTheComposerRunsOverTheProductionReaderAndLoader", testTheComposerRunsOverTheProductionReaderAndLoader},
         {"testARealFileChangeBetweenQuoteAndAuthorisationIsAFreeStale", testARealFileChangeBetweenQuoteAndAuthorisationIsAFreeStale},
+        {"testTheLoaderJudgesUnderTheGivenPolicyAndNeverOpensADeniedPath", testTheLoaderJudgesUnderTheGivenPolicyAndNeverOpensADeniedPath},
+        {"testOneReadUsesOneCurrentPolicyForTheCatalogueAndTheFiles", testOneReadUsesOneCurrentPolicyForTheCatalogueAndTheFiles},
+        {"testTheEarlyRefusalsOfTheReaderNeverAskForAPolicy", testTheEarlyRefusalsOfTheReaderNeverAskForAPolicy},
+        {"testASourceErrorOrAForeignPolicyFailsTheWholeRead", testASourceErrorOrAForeignPolicyFailsTheWholeRead},
+        {"testTheRealApprovalServiceFeedsTheReaderAndAStorageErrorFailsIt", testTheRealApprovalServiceFeedsTheReaderAndAStorageErrorFailsIt},
     };
     int failures = 0;
     for (const auto& [name, test] : tests) {

@@ -1,5 +1,6 @@
 #include "ai/infrastructure/SqliteRepositories.hpp"
 #include "SqliteConnection.hpp"
+#include "SqlitePreMigrationBackup.hpp"
 #include "SqlitePrimitives.hpp"
 #include "SqliteSchema.hpp"
 
@@ -30,7 +31,7 @@ SqliteDatabase::SqliteDatabase(std::unique_ptr<Impl> impl)
 SqliteDatabase::~SqliteDatabase() = default;
 
 common::Result<std::shared_ptr<SqliteDatabase>> SqliteDatabase::open(
-    const std::filesystem::path& databasePath)
+    const std::filesystem::path& databasePath, const SqliteOpenOptions& options)
 {
     if (databasePath.empty()) {
         return common::Result<std::shared_ptr<SqliteDatabase>>::failure(
@@ -74,6 +75,31 @@ common::Result<std::shared_ptr<SqliteDatabase>> SqliteDatabase::open(
     sqlite3_extended_result_codes(impl->handle, 1);
     sqlite3_busy_timeout(impl->handle, 5000);
 
+    // Before ANYTHING changes the file - the journal mode, a pragma that writes, the first migration statement - decide whether an
+    // existing database is about to be upgraded and, if so, keep a verified copy of it. Only the composition root that owns the file
+    // asks for this (SqliteOpenOptions); a new or empty database, a current one and ":memory:" get no copy.
+    if (!options.preMigrationBackupDirectory.empty() && utf8Path != ":memory:") {
+        const auto state = sqlite_detail::inspectPreMigrationState(impl->handle);
+        if (!state.success()) {
+            return common::Result<std::shared_ptr<SqliteDatabase>>::failure(*state.error());
+        }
+        const int version = state.value().userVersion;
+        if (version == 0 && state.value().hasUserObjects) {
+            // user_version 0 does not prove that the file is new: objects without a version are somebody's data.
+            return common::Result<std::shared_ptr<SqliteDatabase>>::failure(error(
+                sqlite_detail::kUnversionedDatabaseCode,
+                "The database holds data but no schema version, so it is not upgraded"));
+        }
+        if (version >= 1 && version < sqlite_detail::supportedSchemaVersion) {
+            auto backup = sqlite_detail::createPreMigrationBackup(impl->handle, databasePath,
+                options.preMigrationBackupDirectory, version, sqlite_detail::supportedSchemaVersion);
+            if (!backup.success()) {
+                return common::Result<std::shared_ptr<SqliteDatabase>>::failure(*backup.error());
+            }
+            impl->preMigrationBackup = std::move(backup.value());
+        }
+    }
+
     const auto foreignKeys = execute(impl->handle, "PRAGMA foreign_keys = ON;", "migration.pragma_failed");
     if (!foreignKeys.success()) {
         return common::Result<std::shared_ptr<SqliteDatabase>>::failure(*foreignKeys.error());
@@ -100,6 +126,12 @@ common::Result<std::shared_ptr<SqliteDatabase>> SqliteDatabase::open(
 
     const auto schema = sqlite_detail::ensureSchema(impl->handle);
     if (!schema.success()) {
+        if (impl->preMigrationBackup.has_value()) {
+            // The upgrade failed AFTER a verified copy was made: keep the copy, keep the original error and say where the copy is.
+            return common::Result<std::shared_ptr<SqliteDatabase>>::failure(error(schema.error()->code,
+                schema.error()->message + " A verified copy of the database from before the upgrade was kept at: "
+                    + pathToUtf8(impl->preMigrationBackup->path)));
+        }
         return common::Result<std::shared_ptr<SqliteDatabase>>::failure(*schema.error());
     }
 
@@ -110,6 +142,11 @@ common::Result<std::shared_ptr<SqliteDatabase>> SqliteDatabase::open(
 const std::filesystem::path& SqliteDatabase::path() const noexcept
 {
     return impl_->databasePath;
+}
+
+const std::optional<PreMigrationBackupInfo>& SqliteDatabase::preMigrationBackup() const noexcept
+{
+    return impl_->preMigrationBackup;
 }
 
 } // namespace ai::infrastructure

@@ -7,6 +7,7 @@
 #include "ai/application/projects/IProjectRepository.hpp"
 #include "ai/application/execution/IRunRepository.hpp"
 #include "ai/application/context/ProjectContextSnapshotService.hpp"
+#include "ai/application/workspace/OutputApprovalPolicySource.hpp"
 
 #include <string>
 #include <vector>
@@ -40,10 +41,21 @@ public:
         const IChangeProposalRepository& proposals,
         const IFollowUpFileLoader& files);
 
+    // P3c: where the CURRENT read policy of the source Run's workspace comes from (see ProjectContextSnapshotService). A follow-up reads
+    // the files as they are now for a NEW context; it is not a replay of the old Run's frozen baseline, which it neither changes nor
+    // replaces. ONE policy is obtained per read() - after the cheap refusals and the candidate-count gate, before the first byte of the
+    // workspace is read - and the same object serves the catalogue (the snapshot) and every candidate file, so an approval revoked in
+    // between cannot make the two see different areas. Set once while the runtime is composed; null keeps secureDefaults.
+    void setOutputApprovalPolicySource(const IOutputApprovalPolicySource* source) noexcept
+    {
+        outputApprovals_ = source;
+    }
+
     [[nodiscard]] common::Result<FollowUpSourceMaterial> read(
         const ProjectId& projectId, const RunId& sourceRunId) const override;
 
 private:
+    const IOutputApprovalPolicySource* outputApprovals_ {nullptr};
     const IProjectRepository& projects_;
     const IRunRepository& runs_;
     const IOutcomeBriefRepository& briefs_;

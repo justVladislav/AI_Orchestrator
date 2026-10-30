@@ -1034,7 +1034,7 @@ void requireOldDataStillWorks(const std::shared_ptr<SqliteDatabase>& database, c
 void requireTheNewShapeWorks(const fs::path& databasePath, const std::shared_ptr<SqliteDatabase>& database, const fc::Env& env)
 {
     RawConnection raw(databasePath);
-    require(raw.scalar("SELECT user_version FROM pragma_user_version;") == 70, "The database is at version 70");
+    require(raw.scalar("SELECT user_version FROM pragma_user_version;") == 71, "The database is at version 71");
     require(contains(raw.text("SELECT sql FROM sqlite_master WHERE name = 'model_executions';"), "'follow_up'"), "model_executions admits follow_up");
     require(contains(raw.text("SELECT sql FROM sqlite_master WHERE name = 'run_draft_groups';"), "'follow_up_request'"), "run_draft_groups admits follow_up_request");
     require(raw.scalar("SELECT count(*) FROM follow_up_plan_requests;") == 0, "The new table exists and is empty");
@@ -1137,9 +1137,9 @@ void testRunningTheStepAgainIsANoOp()
         require(raw.exec("PRAGMA user_version = 65;").empty(), "setup: rewind the version");
     }
     const auto again = SqliteDatabase::open(databasePath);
-    require(again.success(), "Steps 66 and 67 run again over a v70 schema: " + (again.success() ? std::string() : again.error()->message));
+    require(again.success(), "Steps 66 and 67 run again over a v71 schema: " + (again.success() ? std::string() : again.error()->message));
     RawConnection raw(databasePath);
-    require(raw.scalar("SELECT user_version FROM pragma_user_version;") == 70, "...and ends at 70");
+    require(raw.scalar("SELECT user_version FROM pragma_user_version;") == 71, "...and ends at 71");
     require(schemaText(raw) == schemaAfterFirst, "...with exactly the schema it had: no object was added, lost or rewritten");
     requireTheOldDataIsUnchanged(databasePath, old.digests, "after the step ran twice");
 }
@@ -1160,9 +1160,9 @@ void testTheChainFromV42ReRunsOverTheNewSchema()
         require(raw.exec("PRAGMA user_version = 42;").empty(), "setup: rewind to v42");
     }
     const auto chain = SqliteDatabase::open(databasePath);
-    require(chain.success(), "Every step from v43 re-runs over the v70 schema: " + (chain.success() ? std::string() : chain.error()->message));
+    require(chain.success(), "Every step from v43 re-runs over the v71 schema: " + (chain.success() ? std::string() : chain.error()->message));
     RawConnection raw(databasePath);
-    require(raw.scalar("SELECT user_version FROM pragma_user_version;") == 70, "...and ends at 70");
+    require(raw.scalar("SELECT user_version FROM pragma_user_version;") == 71, "...and ends at 71");
     requireTheOldDataIsUnchanged(databasePath, old.digests, "after the chain re-ran");
     require(contains(raw.text("SELECT sql FROM sqlite_master WHERE name = 'model_executions';"), "'follow_up'")
             && contains(raw.text("SELECT sql FROM sqlite_master WHERE name = 'run_draft_groups';"), "'follow_up_request'"),
@@ -1224,7 +1224,7 @@ void testAnOldV66TableIsRepairedToExactlyTheFreshSchema()
             const auto fresh = openDatabase(workspace.database);
             RawConnection raw(workspace.database);
             freshSchema = schemaText(raw);
-            require(raw.scalar("SELECT user_version FROM pragma_user_version;") == 70, "a new database is at version 70");
+            require(raw.scalar("SELECT user_version FROM pragma_user_version;") == 71, "a new database is at version 71");
         }
     }
     auto workspace = std::make_shared<Workspace>();
@@ -1237,7 +1237,7 @@ void testAnOldV66TableIsRepairedToExactlyTheFreshSchema()
     require(repaired.success(), "Step 67 repairs the old table: " + (repaired.success() ? std::string() : repaired.error()->message));
     {
         RawConnection raw(workspace->database);
-        require(raw.scalar("SELECT user_version FROM pragma_user_version;") == 70, "...and the database is at version 70");
+        require(raw.scalar("SELECT user_version FROM pragma_user_version;") == 71, "...and the database is at version 71");
         require(raw.exec("SELECT accounting_json FROM follow_up_plan_requests;").empty(), "...with the column the amended code reads");
         require(schemaText(raw) == freshSchema, "...and the schema is byte for byte the one of a database created today (every table, index and trigger)");
     }
@@ -1262,7 +1262,7 @@ void testAV66DatabaseThatAlreadyHasTheAmendedTableOnlyGetsTheVersion()
     const auto reopened = SqliteDatabase::open(workspace->database);
     require(reopened.success(), "it opens: " + (reopened.success() ? std::string() : reopened.error()->message));
     RawConnection raw(workspace->database);
-    require(raw.scalar("SELECT user_version FROM pragma_user_version;") == 70, "it is at 70 now");
+    require(raw.scalar("SELECT user_version FROM pragma_user_version;") == 71, "it is at 71 now");
     require(schemaText(raw) == schemaBefore, "nothing of its schema was touched");
     require(raw.scalar("SELECT count(*) FROM follow_up_plan_requests WHERE id = 'keep-1';") == 1, "and its request is still there");
 }

@@ -17,6 +17,7 @@
 #include <ai/application/verification/ManifestProposalContentHash.hpp>
 #include <ai/application/verification/ManifestVerificationContinuationPreparationService.hpp>
 #include <ai/application/verification/ManifestVerificationContinuationTypes.hpp>
+#include <ai/application/verification/RecordedBaselinePolicy.hpp>
 #include <ai/application/execution/ManifestWorkLedgerTypes.hpp>
 #include <ai/application/Sha256.hpp>
 #include <ai/application/workspace/WorkspaceBaselineProvenance.hpp>
@@ -1187,7 +1188,11 @@ int main(int argc, char* argv[])
 
     auto seedManifestProposal = [&](
             const std::string& runId, const std::string& relativePath, const std::string& content,
-            ai::application::RunStatus runStatus = ai::application::RunStatus::Completed) {
+            ai::application::RunStatus runStatus = ai::application::RunStatus::Completed,
+            // Optional: finishes the Run's durable setup in THIS still-open guest runtime. A terminal Manifest Run without a Work Ledger
+            // row gets an immutable one when the NEXT runtime starts (startup recovery builds it from the Run's artifacts), so whatever
+            // that row must be built from has to exist before this runtime closes.
+            const std::function<void(ai::backend::BackendRuntime&, const std::string&)>& whileOpen = {}) {
         ai::backend::BackendRuntime seed(workspace.guestRuntimeConfig());
         assert(seed.storageAvailable());
 
@@ -1228,6 +1233,7 @@ int main(int argc, char* argv[])
         const auto created = seed.changeProposalService().createFromModelOutput(std::move(request));
         assert(created.success());
         assert(created.value().state == ai::application::ChangeSetState::ReadyForReview);
+        if (whileOpen) whileOpen(seed, created.value().changeSetId);
         return created.value().changeSetId;
     };
 
@@ -1258,7 +1264,15 @@ int main(int argc, char* argv[])
             }
             hashInputs.push_back(std::move(input));
         }
-        constexpr const char* kBaselineFingerprint = "ai-orchestrator-qml-smoke-baseline";
+        // The REAL Apply of this Run (B.11 below) resolves its frozen write area from the Run's own recorded baseline: one real capture of
+        // the workspace before anything is applied, stored as that Run's artifact, and the ledger row and its verification name exactly
+        // this snapshot (an opaque placeholder here would be refused with workspace_baseline.recorded_baseline_missing).
+        const auto capturedBaseline = ai::application::WorkspaceBaselineProvenance::capture(
+            ai::application::WorkspaceReadPolicy::secureDefaults(workspace.projectPath));
+        assert(capturedBaseline.success());
+        assert(ai::application::RecordedBaselinePolicy::persist(
+            seed.artifactService(), eligibleRunId, std::nullopt, capturedBaseline.value()).success());
+        const std::string kBaselineFingerprint = capturedBaseline.value().fingerprint;
         ai::application::ManifestProposalSetVerification verification;
         verification.workspaceIdentity = projectId.toStdString();
         verification.baselineFingerprint = kBaselineFingerprint;
@@ -1432,6 +1446,10 @@ int main(int argc, char* argv[])
         agentSessionControllerObject, "approveAndApply",
         Q_RETURN_ARG(bool, approveAndApplyResult),
         Q_ARG(QString, QString::fromStdString(eligibleChangeSetId))));
+    if (!approveAndApplyResult) {
+        std::fprintf(stderr, "eligible approveAndApply refused: [%s]\n",
+            agentSessionErrorText->property("text").toString().toUtf8().constData());
+    }
     assert(approveAndApplyResult && "approveAndApply() did not succeed for the eligible proposal");
     assert(ai::ui::test_support::waitForCondition("Apply button hidden after Applied", [&] {
         return !applyToWorkspaceButton->property("visible").toBool();
@@ -2615,17 +2633,19 @@ int main(int argc, char* argv[])
     // stray file is genuinely removed from disk.
     {
         const std::string resetRunId = "reset-hardening-qml-click-run";
-        const std::string resetChangeSetId =
-            seedManifestProposal(resetRunId, "keep.qml", "kept content",
-                ai::application::RunStatus::Failed);
-
+        std::string resetChangeSetId;
         std::string resetRealHash;
         std::string resetOverlayFingerprint;
         ai::application::WorkspaceBaselineSnapshot resetOriginalSnapshot;
+        ai::application::WorkspaceBaselineSnapshot resetBaseline;
         const fs::path resetCandidateRoot = workspace.databasePath.parent_path()
             / "manual-handoff" / "reset-qml-click-candidate";
-        {
-            ai::backend::BackendRuntime seed(workspace.guestRuntimeConfig());
+        // The whole setup of the terminal anchor Run is finished inside the guest runtime that creates it (the hook below): the next
+        // runtime that starts gives a terminal Manifest Run its immutable Work Ledger row from the artifacts the Run holds then, so the
+        // anchor's baseline and verification identity must already be there.
+        resetChangeSetId = seedManifestProposal(resetRunId, "keep.qml", "kept content", ai::application::RunStatus::Failed,
+            [&](ai::backend::BackendRuntime& seed, const std::string& seededChangeSetId) {
+            resetChangeSetId = seededChangeSetId;
             assert(seed.storageAvailable());
 
             const auto changes = seed.changeProposalService().listChanges(resetChangeSetId);
@@ -2664,13 +2684,56 @@ int main(int argc, char* argv[])
             assert(overlaySnapshot.success());
             resetOriginalSnapshot = overlaySnapshot.value();
 
+            // The anchor's durable identity. The baseline is the one captured above, of the ORIGINAL workspace before any candidate
+            // exists (never a later capture); reset reads the live workspace under the exclusions this artifact froze. The
+            // verification identity is the typed record the Manifest workflow itself writes (rendered by its own serializer), naming
+            // that same baseline; startup recovery turns both into the anchor's Work Ledger row.
+            resetBaseline = baselineSnapshot.value();
+            assert(ai::application::RecordedBaselinePolicy::persist(
+                seed.artifactService(), resetRunId, std::nullopt, resetBaseline).success());
+            ai::application::ManifestProposalSetVerification anchorVerification;
+            anchorVerification.workspaceIdentity = projectId.toStdString();
+            anchorVerification.baselineFingerprint = resetBaseline.fingerprint;
+            anchorVerification.overlayFingerprint = resetOverlayFingerprint;
+            anchorVerification.orderedProposalIds = {resetChangeSetId};
+            anchorVerification.orderedProposalContentHashes = {resetRealHash};
+            anchorVerification.proposalSafetyStatus = ai::application::ExecutionVerificationStatus::Passed;
+            anchorVerification.buildLintTestStatus = ai::application::ExecutionVerificationStatus::Failed;
+            anchorVerification.acceptanceStatus = ai::application::ExecutionVerificationStatus::Failed;
+            assert(ai::application::validateManifestProposalSetVerification(anchorVerification).success());
+            assert(seed.artifactService().createArtifact(resetRunId, std::nullopt, ai::application::ArtifactKind::Report,
+                "manifest-verification-identity.v1.json", "application/json",
+                ai::application::renderManifestProposalSetVerificationJson(anchorVerification)).success());
+
+            // A restart: startup recovery gives the terminal anchor its immutable Work Ledger row from the artifacts above (the row is
+            // checked, never inserted or replaced here). It happens BEFORE the candidate copy exists: the same startup also sweeps
+            // candidate folders that no handoff row names yet, and the candidate is only placed once the recovery is done.
+            {
+                ai::backend::BackendRuntime restart(workspace.guestRuntimeConfig());
+                assert(restart.storageAvailable());
+            }
+            {
+                const auto database = ai::infrastructure::SqliteDatabase::open(workspace.databasePath);
+                assert(database.success());
+                ai::infrastructure::SqliteManifestWorkLedgerRepository anchorLedger(database.value());
+                const auto recovered = anchorLedger.findEntry(resetRunId);
+                const bool recoveredAsRecorded = recovered.success() && recovered.value().has_value()
+                    && recovered.value()->baselineFingerprint == resetBaseline.fingerprint
+                    && recovered.value()->verification.has_value()
+                    && recovered.value()->verification->baselineFingerprint == resetBaseline.fingerprint;
+                if (!recoveredAsRecorded) {
+                    std::fprintf(stderr, "the anchor's Work Ledger row was not recovered from its artifacts as recorded\n");
+                }
+                assert(recoveredAsRecorded);
+            }
+
             std::error_code copyError;
             fs::create_directories(resetCandidateRoot.parent_path(), copyError);
             assert(!copyError);
             fs::copy(built.value().root, resetCandidateRoot, fs::copy_options::recursive, copyError);
             assert(!copyError);
             assert(ai::application::ManifestProposalOverlay::cleanup(built.value()).success());
-        }
+        });
 
         {
             const auto database = ai::infrastructure::SqliteDatabase::open(workspace.databasePath);
@@ -2687,6 +2750,8 @@ int main(int argc, char* argv[])
             const auto baselineAgain = ai::application::WorkspaceBaselineProvenance::capture(
                 ai::application::WorkspaceReadPolicy::secureDefaults(workspace.projectPath));
             assert(baselineAgain.success());
+            assert(baselineAgain.value().fingerprint == resetBaseline.fingerprint
+                && "the workspace did not change since the anchor's baseline was recorded");
             handoff.baselineFingerprint = baselineAgain.value().fingerprint;
             handoff.sourceOverlayFingerprint = resetOverlayFingerprint;
             handoff.frozenMembers = {{resetChangeSetId, resetRunId, resetRealHash, resetChangeSetId}};

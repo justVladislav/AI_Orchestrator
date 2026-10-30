@@ -90,6 +90,8 @@ BackendBridge::BackendBridge(const QString& databasePathOverride,
     , outcomeBriefController_(std::make_unique<OutcomeBriefController>(runtime_.outcomeBriefReadModelService(), this))
     , followUpPlanController_(std::make_unique<FollowUpPlanController>(
           runtime_.followUpPlanService(), runtime_.followUpPlanReadModel(), this))
+    , projectOutputApprovalController_(std::make_unique<ProjectOutputApprovalController>(
+          runtime_.projectOutputApprovalService(), this))
     , taskController_(runtime_.taskService(), this)
     , runController_(runtime_.orchestrationService(), runtime_.artifactService(),
           runtime_.providerCatalogService(),
@@ -204,6 +206,7 @@ QObject* BackendBridge::projectVerificationSetup() noexcept
 {
     return projectVerificationSetupController_.get();
 }
+QObject* BackendBridge::projectOutputApprovals() noexcept { return projectOutputApprovalController_.get(); }
 QObject* BackendBridge::tasks() noexcept { return &taskController_; }
 QObject* BackendBridge::runs() noexcept { return &runController_; }
 QObject* BackendBridge::workspace() noexcept { return &workspaceContextController_; }
@@ -228,6 +231,10 @@ ProjectController& BackendBridge::projectController() noexcept { return projectC
 ProjectVerificationSetupController& BackendBridge::projectVerificationSetupController() noexcept
 {
     return *projectVerificationSetupController_;
+}
+ProjectOutputApprovalController& BackendBridge::projectOutputApprovalController() noexcept
+{
+    return *projectOutputApprovalController_;
 }
 TaskController& BackendBridge::taskController() noexcept { return taskController_; }
 RunController& BackendBridge::runController() noexcept { return runController_; }

@@ -67,6 +67,15 @@ struct VerificationScratchPolicy {
         bool adoptExistingDefault = false,
         bool probeWritable = true);
 
+    // The READ-ONLY counterpart of validate(): where the root would be, decided by the same checks, without touching the file system.
+    // It creates no folder, never changes an access list (a not-yet-private default folder is reported as it would be after it was
+    // adopted, not tightened) and writes no probe file. A folder that does not exist yet is a valid answer - the path a later
+    // validate() would create. For a caller that must know the location (to protect it) and may not leave a trace.
+    [[nodiscard]] static common::Result<std::filesystem::path> locate(
+        const std::filesystem::path& candidate,
+        const std::optional<std::filesystem::path>& workspaceRoot,
+        bool adoptExistingDefault = false);
+
     // The decision of the Windows privacy check: the owner must be the current user, SYSTEM or Administrators, there must be an access
     // list, and no entry that grants a write-like right (write data/append/EA/attributes, delete child, delete, change permissions or
     // owner, generic write/all) may belong to anyone but the current user, SYSTEM, Administrators, CREATOR OWNER or TrustedInstaller.
@@ -74,6 +83,16 @@ struct VerificationScratchPolicy {
 
     // True when only the current user, SYSTEM and Administrators can write to the directory (see above). `reason` says why not.
     [[nodiscard]] static bool isPrivateToCurrentUser(const std::filesystem::path& directory, std::string& reason);
+
+private:
+    // validate() and locate() are this one function: readOnly changes only what may be written, never what is checked.
+    [[nodiscard]] static common::Result<std::filesystem::path> validateImpl(
+        const std::filesystem::path& candidate,
+        const std::optional<std::filesystem::path>& workspaceRoot,
+        bool createIfMissing,
+        bool adoptExistingDefault,
+        bool probeWritable,
+        bool readOnly);
 };
 
 } // namespace ai::application

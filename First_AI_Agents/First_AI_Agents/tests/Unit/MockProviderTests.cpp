@@ -55,6 +55,7 @@ int runVerificationBootstrapRetryServiceTests();
 int runProviderExecutionBudgetTests();
 int runCostCalculationTests();
 int runExecutionAnalyticsServiceTests();
+int runProjectOutputApprovalServiceTests();
 
 namespace {
 
@@ -88,6 +89,13 @@ int runTests(int argc, char** argv)
     // dominated by unrelated long-running/flaky suites during hardening.
     if (argc == 2 && std::string(argv[1]) == "--verification-preset-setup-only") {
         return runVerificationEnvironmentPresetSetupServiceTests();
+    }
+    if (argc == 2 && std::string(argv[1]) == "--manual-handoff-repository-only") {
+        return runManifestVerificationManualHandoffRepositoryTests();
+    }
+    if (argc == 2 && std::string(argv[1]) == "--manual-handoff-service-only") {
+        runManifestVerificationContinuationServiceTests();
+        return 0;
     }
     if (argc == 2 && std::string(argv[1]) == "--manual-handoff-read-model-only") {
         return runManifestVerificationManualHandoffReadModelServiceTests();
@@ -147,6 +155,7 @@ int runTests(int argc, char** argv)
     if (runProviderExecutionBudgetTests() != 0) return 1;
     if (runCostCalculationTests() != 0) return 1;
     if (runExecutionAnalyticsServiceTests() != 0) return 1;
+    if (runProjectOutputApprovalServiceTests() != 0) return 1;
 
     std::cout << "All tests passed\n";
     return 0;

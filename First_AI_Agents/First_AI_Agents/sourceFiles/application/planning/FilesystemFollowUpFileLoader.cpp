@@ -252,9 +252,10 @@ FilesystemFollowUpFileLoader::FilesystemFollowUpFileLoader(FollowUpFileLoaderHoo
 }
 
 common::Result<std::vector<FollowUpFileCandidate>> FilesystemFollowUpFileLoader::load(
-    const fs::path& workspaceRoot, const std::vector<std::string>& relativePaths) const
+    const WorkspaceReadPolicy& policy, const std::vector<std::string>& relativePaths) const
 {
     using Result = common::Result<std::vector<FollowUpFileCandidate>>;
+    const fs::path& workspaceRoot = policy.workspaceRoot;
     const auto unavailable = [] {
         return Result::failure({"follow_up.workspace_unavailable", "The workspace of the source Run is not available"});
     };
@@ -264,7 +265,6 @@ common::Result<std::vector<FollowUpFileCandidate>> FilesystemFollowUpFileLoader:
     const fs::path canonicalRoot = fs::weakly_canonical(workspaceRoot, error);
     if (error) return unavailable();
 
-    const WorkspaceReadPolicy policy = WorkspaceReadPolicy::secureDefaults(workspaceRoot);
     const auto trusted = WorkspaceReadPolicyValidator::validateTrustedPolicy(policy);
     if (!trusted.success()) return unavailable();
 

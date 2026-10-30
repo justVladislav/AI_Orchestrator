@@ -17,6 +17,7 @@
 #include <ai/application/verification/ManifestProposalContentHash.hpp>
 #include <ai/application/execution/ManifestRouting.hpp>
 #include <ai/application/verification/ManifestProposalOverlay.hpp>
+#include <ai/application/verification/RecordedBaselinePolicy.hpp>
 #include <ai/application/execution/ManifestWorkLedgerTypes.hpp>
 #include <ai/application/execution/MockWorkflowRunner.hpp>
 #include <ai/application/execution/OrchestrationService.hpp>
@@ -49,7 +50,9 @@
 #include <QDir>
 #include <QEventLoop>
 #include <QJsonDocument>
+#include <QProcess>
 #include <QRegularExpression>
+#include <QStringList>
 #include <QVariantList>
 #include <QVariantMap>
 
@@ -64,6 +67,9 @@
 #include <limits>
 #include <optional>
 #include <vector>
+
+// P3d: the controller of the output-folder approvals (tests live in ProjectOutputApprovalControllerTests.cpp).
+int runProjectOutputApprovalControllerTests();
 
 namespace {
 
@@ -2101,13 +2107,20 @@ SeededManifestProposal seedManifestRunWithProposal(
 // failing verification (required status not passed / content-hash
 // mismatch) while otherwise reusing the exact same seeding logic as the
 // eligible case.
+//
+// realBaselineFingerprint is an explicit opt-in for a scenario that goes on to run a REAL Apply, which must find the Run's own
+// workspace-baseline.v1.json hashing to the fingerprint this ledger row records. The caller captures and stores that baseline
+// first and passes its fingerprint here; the ledger and the verification then name that very snapshot. Left out (every other
+// caller), the opaque placeholder below is used exactly as before. An empty value is a programming error, never "no baseline".
 void seedManifestWorkLedgerVerification(
     const TempWorkspace& workspace, const std::string& runId, const std::string& projectId,
     const std::string& changeSetId,
     ai::application::ExecutionVerificationStatus acceptanceStatus =
         ai::application::ExecutionVerificationStatus::Passed,
-    bool corruptContentHash = false)
+    bool corruptContentHash = false,
+    const std::optional<std::string>& realBaselineFingerprint = std::nullopt)
 {
+    assert(!realBaselineFingerprint.has_value() || !realBaselineFingerprint->empty());
     ai::backend::BackendRuntime seed(workspace.guestRuntimeConfig());
     assert(seed.storageAvailable());
 
@@ -2131,7 +2144,8 @@ void seedManifestWorkLedgerVerification(
     const std::string realHash =
         ai::application::computeManifestProposalContentHash(changeSetId, hashInputs);
 
-    constexpr const char* kBaselineFingerprint = "aio-qt-test-baseline-fingerprint";
+    const std::string kBaselineFingerprint =
+        realBaselineFingerprint.value_or(std::string("aio-qt-test-baseline-fingerprint"));
 
     ai::application::ManifestProposalSetVerification verification;
     verification.workspaceIdentity = projectId;
@@ -2381,8 +2395,23 @@ void testTerminalStatesProjectApplyAllowedFalse()
     // Applied - a fully eligible proposal that has already been applied.
     const auto seeded = seedManifestRunWithProposal(
         workspace, projectId.toStdString(), "applied.txt", "applied content");
+    // This scenario runs a REAL Apply, which resolves the Run's frozen write area from its own recorded baseline: one real capture of
+    // the workspace, before anything is applied, stored as the artifact of the Run that produced applied.txt. The ledger row and its
+    // verification (below) name exactly this snapshot. No other caller of the helper does this.
+    std::string appliedRunBaselineFingerprint;
+    {
+        ai::backend::BackendRuntime seed(workspace.guestRuntimeConfig());
+        assert(seed.storageAvailable());
+        const auto captured = ai::application::WorkspaceBaselineProvenance::capture(
+            ai::application::WorkspaceReadPolicy::secureDefaults(workspace.projectPath));
+        assert(captured.success());
+        appliedRunBaselineFingerprint = captured.value().fingerprint;
+        assert(ai::application::RecordedBaselinePolicy::persist(
+            seed.artifactService(), seeded.runId, std::nullopt, captured.value()).success());
+    }
     seedManifestWorkLedgerVerification(
-        workspace, seeded.runId, projectId.toStdString(), seeded.changeSetId);
+        workspace, seeded.runId, projectId.toStdString(), seeded.changeSetId,
+        ai::application::ExecutionVerificationStatus::Passed, false, appliedRunBaselineFingerprint);
     assert(agentSessions.selectRun(QString::fromStdString(seeded.runId)));
     assert(ai::ui::test_support::waitForCondition("Applied-fixture session load", [&] {
         return agentSessions.hasSession();
@@ -2391,7 +2420,11 @@ void testTerminalStatesProjectApplyAllowedFalse()
     // currently *selected* proposal's detail panel, so a genuine
     // approveAndApply() call is always preceded by selectProposal().
     assert(agentSessions.selectProposal(QString::fromStdString(seeded.changeSetId)));
-    assert(agentSessions.approveAndApply(QString::fromStdString(seeded.changeSetId)));
+    const bool appliedOk = agentSessions.approveAndApply(QString::fromStdString(seeded.changeSetId));
+    if (!appliedOk) {
+        std::fprintf(stderr, "terminal-state apply refused: %s\n", agentSessions.errorText().toUtf8().constData());
+    }
+    assert(appliedOk);
     assert(fs::exists(workspace.projectPath / "applied.txt"));
 
     // approveAndApply()'s own refresh() reloads asynchronously; wait for
@@ -2484,8 +2517,23 @@ void testSuccessfulApplyUpdatesSelectedProposalDetailInPlace()
 
     const auto seeded = seedManifestRunWithProposal(
         workspace, projectId.toStdString(), "post-apply.txt", "post-apply content");
+    // A REAL Apply resolves the frozen write area from the producing Run's own recorded baseline: one real capture of the workspace
+    // before anything is applied, stored as that Run's artifact, and the ledger row and its verification name exactly this snapshot
+    // (the helper's opt-in; no other caller but the terminal-state scenario uses it).
+    std::string appliedRunBaselineFingerprint;
+    {
+        ai::backend::BackendRuntime seed(workspace.guestRuntimeConfig());
+        assert(seed.storageAvailable());
+        const auto captured = ai::application::WorkspaceBaselineProvenance::capture(
+            ai::application::WorkspaceReadPolicy::secureDefaults(workspace.projectPath));
+        assert(captured.success());
+        appliedRunBaselineFingerprint = captured.value().fingerprint;
+        assert(ai::application::RecordedBaselinePolicy::persist(
+            seed.artifactService(), seeded.runId, std::nullopt, captured.value()).success());
+    }
     seedManifestWorkLedgerVerification(
-        workspace, seeded.runId, projectId.toStdString(), seeded.changeSetId);
+        workspace, seeded.runId, projectId.toStdString(), seeded.changeSetId,
+        ai::application::ExecutionVerificationStatus::Passed, false, appliedRunBaselineFingerprint);
 
     AgentSessionController& agentSessions = bridge.agentSessionController();
     assert(agentSessions.selectRun(QString::fromStdString(seeded.runId)));
@@ -2496,7 +2544,12 @@ void testSuccessfulApplyUpdatesSelectedProposalDetailInPlace()
     assert(agentSessions.selectedProposalDetail().value(QStringLiteral("state")).toString()
         == QStringLiteral("ready_for_review"));
 
-    assert(agentSessions.approveAndApply(QString::fromStdString(seeded.changeSetId)));
+    const bool appliedOk = agentSessions.approveAndApply(QString::fromStdString(seeded.changeSetId));
+    if (!appliedOk) {
+        std::fprintf(stderr, "successful apply refused: code=[%s] text=[%s]\n",
+            agentSessions.errorCode().toUtf8().constData(), agentSessions.errorText().toUtf8().constData());
+    }
+    assert(appliedOk);
     assert(fs::exists(workspace.projectPath / "post-apply.txt"));
 
     // No selectProposal() call here - approveAndApply()'s own refresh()
@@ -3451,6 +3504,107 @@ void testManualHandoffCommandCompletionDoesNotPolluteNewRunSelection()
         && "Completion notification must retain the originating Run identity");
 }
 
+// A directory that still lets its files be read but refuses NEW files (and sub-folders) for as long as the object lives. Used to make
+// ONLY an output artifact write fail while an artifact that was stored earlier stays readable. The denial is checked, not assumed:
+// effective() tries to create a file there.
+class ScopedFileCreationDenial final {
+public:
+    explicit ScopedFileCreationDenial(fs::path directory)
+        : directory_(std::move(directory))
+    {
+#ifdef _WIN32
+        // Deny "create files / add sub-folder" to Everyone (SID S-1-1-0); reading, deleting and changing permissions stay allowed.
+        applied_ = runIcacls({QStringLiteral("/deny"), QStringLiteral("*S-1-1-0:(WD,AD)")});
+#else
+        std::error_code error;
+        originalPermissions_ = fs::status(directory_, error).permissions();
+        if (!error) {
+            fs::permissions(directory_, fs::perms::owner_write | fs::perms::group_write | fs::perms::others_write,
+                fs::perm_options::remove, error);
+        }
+        applied_ = !error;
+#endif
+    }
+    ~ScopedFileCreationDenial()
+    {
+#ifdef _WIN32
+        static_cast<void>(runIcacls({QStringLiteral("/remove:d"), QStringLiteral("*S-1-1-0")}));
+#else
+        std::error_code error;
+        fs::permissions(directory_, originalPermissions_, fs::perm_options::replace, error);
+#endif
+    }
+    ScopedFileCreationDenial(const ScopedFileCreationDenial&) = delete;
+    ScopedFileCreationDenial& operator=(const ScopedFileCreationDenial&) = delete;
+
+    [[nodiscard]] bool effective() const
+    {
+        if (!applied_) return false;
+        const fs::path probe = directory_ / "creation-probe.tmp";
+        std::ofstream attempt(probe, std::ios::binary);
+        const bool created = attempt.is_open();
+        attempt.close();
+        if (created) {
+            std::error_code ignored;
+            fs::remove(probe, ignored);
+        }
+        return !created;
+    }
+
+private:
+#ifdef _WIN32
+    // No shell and no narrow path: the program and every argument are separate, and the directory goes through as a wide string, so a
+    // Unicode or %-containing temporary path cannot be altered or expanded on the way. True only for a normal exit with code 0.
+    [[nodiscard]] bool runIcacls(const QStringList& permissionArguments) const
+    {
+        QProcess icacls;
+        icacls.setProgram(QStringLiteral("icacls"));
+        icacls.setArguments(QStringList {QString::fromStdWString(directory_.wstring())} + permissionArguments);
+        icacls.start();
+        if (!icacls.waitForStarted(10000)) return false;
+        if (!icacls.waitForFinished(30000)) {
+            icacls.kill();
+            icacls.waitForFinished(5000);
+            return false;
+        }
+        return icacls.exitStatus() == QProcess::NormalExit && icacls.exitCode() == 0;
+    }
+#else
+    fs::perms originalPermissions_ {fs::perms::none};
+#endif
+    fs::path directory_;
+    bool applied_ {false};
+};
+
+// The helper on its own temporary Unicode path (with a '%' too, which a shell would expand): the denial is really in force while
+// the object lives, and it is lifted when it dies, so the folder can be used and removed again.
+void testFileCreationDenialHelperHandlesUnicodePaths()
+{
+    TempWorkspace workspace;
+    const fs::path directory = workspace.root / fs::path(u"Артефакты %TEMP% é");
+    fs::create_directories(directory);
+    {
+        std::ofstream readable(directory / "kept.txt", std::ios::binary);
+        assert(readable.is_open());
+        readable << "kept";
+    }
+    {
+        const ScopedFileCreationDenial denial(directory);
+        assert(denial.effective() && "The denial must be in force on a Unicode path");
+        std::ifstream stillReadable(directory / "kept.txt", std::ios::binary);
+        assert(stillReadable.is_open() && "An earlier file must stay readable");
+        std::ofstream refused(directory / "new.txt", std::ios::binary);
+        assert(!refused.is_open() && "A new file must be refused");
+    }
+    {
+        std::ofstream allowedAgain(directory / "new.txt", std::ios::binary);
+        assert(allowedAgain.is_open() && "The denial must be lifted when the object is gone");
+    }
+    std::error_code removeError;
+    fs::remove_all(directory, removeError);
+    assert(!removeError && !fs::exists(directory) && "The folder must be removable after the denial");
+}
+
 // Post-P4R.6 human review/Apply hardening: end-to-end real proof that an
 // authoritative manual-handoff member is reviewable and Apply-eligible
 // through ManifestVerificationManualHandoffController alone - never through
@@ -3508,6 +3662,23 @@ void testManualHandoffReviewMemberRealApplyEndToEnd()
             seeded.changeSetId, {input});
     }
 
+    // Who owns the frozen baseline. ChangeSetApplyService::apply() resolves the frozen write area from the Run that PRODUCED the change
+    // set (cs.runId = seeded.runId, a recognised Manifest Run, which is also the handoff's anchor) - not from the attempt Run, whose
+    // Work Ledger row only feeds the verification gate. Its Work Ledger row names the durable baseline fingerprint and its own
+    // workspace-baseline.v1.json must hash to exactly that. Both are made here from one real capture of the temporary workspace
+    // through the production capture/serialization path; the handoff and the attempt's verification name the same snapshot.
+    ai::application::WorkspaceBaselineSnapshot baselineSnapshot;
+    {
+        ai::backend::BackendRuntime seed(workspace.guestRuntimeConfig());
+        assert(seed.storageAvailable());
+        const auto captured = ai::application::WorkspaceBaselineProvenance::capture(
+            ai::application::WorkspaceReadPolicy::secureDefaults(workspace.projectPath));
+        assert(captured.success());
+        baselineSnapshot = captured.value();
+        assert(ai::application::RecordedBaselinePolicy::persist(
+            seed.artifactService(), seeded.runId, std::nullopt, baselineSnapshot).success());
+    }
+
     {
         const auto database = ai::infrastructure::SqliteDatabase::open(workspace.databasePath);
         assert(database.success());
@@ -3536,7 +3707,7 @@ void testManualHandoffReviewMemberRealApplyEndToEnd()
         handoff.sourceProjectId = projectId.toStdString();
         handoff.storageKey = "review-apply-e2e-candidate";
         handoff.workspaceIdentity = projectId.toStdString();
-        handoff.baselineFingerprint = std::string(64, 'a');
+        handoff.baselineFingerprint = baselineSnapshot.fingerprint;
         handoff.sourceOverlayFingerprint = std::string(64, 'b');
         handoff.frozenMembers = {
             {seeded.changeSetId, seeded.runId, realHash, seeded.changeSetId}};
@@ -3586,6 +3757,20 @@ void testManualHandoffReviewMemberRealApplyEndToEnd()
         entry.createdAt = std::chrono::system_clock::now();
         ai::infrastructure::SqliteManifestWorkLedgerRepository ledger(database.value());
         assert(ledger.insertEntry(entry).success());
+
+        // The anchor / producing Run's own row: the durable identity of the baseline artifact stored above. The anchor is the Run
+        // whose verification failed (that is why a manual handoff exists), so it records no verified set of its own.
+        ai::application::ExecutionManifest anchorManifest;
+        anchorManifest.runId = seeded.runId;
+        assert(manifests.insert(std::move(anchorManifest)).success());
+        ai::application::ManifestWorkLedgerEntry anchorEntry;
+        anchorEntry.runId = seeded.runId;
+        anchorEntry.projectId = projectId.toStdString();
+        anchorEntry.terminalStatus = ai::application::RunStatus::Failed;
+        anchorEntry.baselineFingerprint = baselineSnapshot.fingerprint;
+        anchorEntry.disposition = ai::application::ManifestWorkLedgerDisposition::NotProduced;
+        anchorEntry.createdAt = std::chrono::system_clock::now();
+        assert(ledger.insertEntry(anchorEntry).success());
     }
 
     // Selecting the ANCHOR Run (never the internal attempt Run, which stays
@@ -3636,21 +3821,15 @@ void testManualHandoffReviewMemberRealApplyEndToEnd()
             && "Inspecting the diff must never mutate the proposal");
     }
 
-    // Force only the best-effort post-Apply artifact write to fail. The
-    // workspace mutation must remain successful and the controller must
-    // surface ApplyChangeSetResult::provenanceErrorCode rather than silently
-    // discarding it or pretending the file write rolled back.
-    const fs::path artifactRoot = workspace.databasePath.parent_path() / "artifacts";
-    const fs::path artifactBackup = workspace.databasePath.parent_path() / "artifacts-before-warning";
-    assert(fs::is_directory(artifactRoot));
-    std::error_code artifactMoveError;
-    fs::rename(artifactRoot, artifactBackup, artifactMoveError);
-    assert(!artifactMoveError);
-    {
-        std::ofstream blocker(artifactRoot, std::ios::binary);
-        assert(blocker.is_open());
-        blocker << "deliberately not an artifact directory";
-    }
+    // Force only the best-effort post-Apply artifact WRITE to fail. The mandatory input baseline is read before the first file
+    // operation, so the artifact store must stay readable: the Run's artifact directory (which holds the baseline) only loses
+    // the right to receive new files. The workspace mutation must remain successful and the controller must surface
+    // ApplyChangeSetResult::provenanceErrorCode rather than silently discarding it or pretending the file write rolled back.
+    const fs::path runArtifactDirectory = workspace.databasePath.parent_path() / "artifacts" / seeded.runId;
+    assert(fs::is_directory(runArtifactDirectory));
+    const ScopedFileCreationDenial noNewArtifacts(runArtifactDirectory);
+    assert(noNewArtifacts.effective()
+        && "The output-only failure must really be in force: creating a file there has to be refused");
 
     // The real Approve-and-apply pipeline: ProposalReviewService::
     // assertNotRejected() -> ChangeSetApplyService::approve()/apply() ->
@@ -3819,6 +3998,11 @@ void testManualHandoffResetNonEditableChangesRealCandidateEndToEnd()
         const auto baselineSnapshot = ai::application::WorkspaceBaselineProvenance::capture(policy);
         assert(baselineSnapshot.success());
         handoff.baselineFingerprint = baselineSnapshot.value().fingerprint;
+        // The anchor Run's OWN durable baseline: reset reads the live workspace under the exclusions that this very artifact froze
+        // (recordedHandoffPolicy), and the artifact must hash to the fingerprint the anchor's Work Ledger row recorded below. It is
+        // the snapshot taken here, of the original workspace and before any candidate exists or is edited - never a later capture.
+        assert(ai::application::RecordedBaselinePolicy::persist(
+            seed.artifactService(), runId, std::nullopt, baselineSnapshot.value()).success());
 
         ai::application::BuildManifestProposalOverlayRequest overlayRequest;
         overlayRequest.workspaceRoot = workspace.projectPath;
@@ -3870,6 +4054,32 @@ void testManualHandoffResetNonEditableChangesRealCandidateEndToEnd()
         ai::infrastructure::SqliteManifestVerificationManualHandoffRepository handoffs(
             database.value());
         assert(handoffs.insertHandoff(handoff).success());
+
+        // The failed anchor's Work Ledger row: its verification record carries the durable baseline identity of the artifact
+        // stored above, the same fingerprint the handoff froze.
+        ai::infrastructure::SqliteExecutionManifestRepository manifests(database.value());
+        ai::application::ExecutionManifest anchorManifest;
+        anchorManifest.runId = runId;
+        assert(manifests.insert(std::move(anchorManifest)).success());
+        ai::application::ManifestProposalSetVerification verification;
+        verification.workspaceIdentity = projectId.toStdString();
+        verification.baselineFingerprint = handoff.baselineFingerprint;
+        verification.overlayFingerprint = overlayFingerprint;
+        verification.orderedProposalIds = {proposalId};
+        verification.orderedProposalContentHashes = {contentHash};
+        verification.proposalSafetyStatus = ai::application::ExecutionVerificationStatus::Passed;
+        verification.buildLintTestStatus = ai::application::ExecutionVerificationStatus::Failed;
+        verification.acceptanceStatus = ai::application::ExecutionVerificationStatus::Failed;
+        ai::application::ManifestWorkLedgerEntry anchorEntry;
+        anchorEntry.runId = runId;
+        anchorEntry.projectId = projectId.toStdString();
+        anchorEntry.terminalStatus = ai::application::RunStatus::Failed;
+        anchorEntry.baselineFingerprint = handoff.baselineFingerprint;
+        anchorEntry.disposition = ai::application::ManifestWorkLedgerDisposition::NotProduced;
+        anchorEntry.verification = verification;
+        anchorEntry.createdAt = std::chrono::system_clock::now();
+        ai::infrastructure::SqliteManifestWorkLedgerRepository ledger(database.value());
+        assert(ledger.insertEntry(anchorEntry).success());
     }
 
     auto& controller = bridge.manualHandoffController();
@@ -3934,6 +4144,9 @@ void testManualHandoffResetNonEditableChangesRealCandidateEndToEnd()
         [&] { return "busy=" + std::to_string(controller.busy())
             + ", error=" + controller.errorText().toStdString(); }, 4s));
 
+    if (!finishedSucceeded) {
+        std::fprintf(stderr, "manual-handoff reset failed: %s\n", controller.errorText().toUtf8().constData());
+    }
     assert(finishedRunId == QString::fromStdString(runId) && finishedSucceeded);
     assert(controller.errorText().isEmpty());
     assert(!controller.resetResultText().isEmpty());
@@ -6043,6 +6256,7 @@ int main(int argc, char* argv[])
 {
     ai::ui::test_support::configureHeadlessFailureMode();
     QCoreApplication application(argc, argv);
+    if (argc == 2 && std::string(argv[1]) == "--output-approvals-only") return runProjectOutputApprovalControllerTests();
     bool stressConfigured = false;
     const int stressIterations = qEnvironmentVariableIntValue(
         "AI_ORCHESTRATOR_B6_STRESS_ITERATIONS", &stressConfigured);
@@ -6053,6 +6267,7 @@ int main(int argc, char* argv[])
     testSingleSessionLifecycle();
     testPersistenceAcrossCompositionRootRestart();
     testManualHandoffCommandCompletionDoesNotPolluteNewRunSelection();
+    testFileCreationDenialHelperHandlesUnicodePaths();
     testManualHandoffReviewMemberRealApplyEndToEnd();
     testManualHandoffResetGuardsNoRunAndNoHandoff();
     testManualHandoffResetNonEditableChangesRealCandidateEndToEnd();
@@ -6119,5 +6334,6 @@ int main(int argc, char* argv[])
     testTheFollowUpPlannerQmlCannotStartAnythingAndTheRelabelIsInPlace();
     testPromptWorkshopQmlOnlyRendersAndRelaysTheBackendsPreview();
     testManualHandoffPanelUsesBackendProjectionOnly();
+    if (runProjectOutputApprovalControllerTests() != 0) return 1;
     return 0;
 }

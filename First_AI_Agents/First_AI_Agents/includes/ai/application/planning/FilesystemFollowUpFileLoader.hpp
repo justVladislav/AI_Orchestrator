@@ -45,8 +45,13 @@ class FilesystemFollowUpFileLoader final : public IFollowUpFileLoader {
 public:
     explicit FilesystemFollowUpFileLoader(FollowUpFileLoaderHooks hooks = {});
 
+    using IFollowUpFileLoader::load;
+
+    // The policy is used as given - never replaced by secureDefaults - and its workspaceRoot is the root. A path under its deniedPaths
+    // gets the UnsafePath verdict from the lexical policy check, before any handle is opened (the hooks never see it), and carries
+    // neither content nor digest; the other candidates are judged exactly as before.
     [[nodiscard]] common::Result<std::vector<FollowUpFileCandidate>> load(
-        const std::filesystem::path& workspaceRoot, const std::vector<std::string>& relativePaths) const override;
+        const WorkspaceReadPolicy& policy, const std::vector<std::string>& relativePaths) const override;
 
 private:
     FollowUpFileLoaderHooks hooks_;

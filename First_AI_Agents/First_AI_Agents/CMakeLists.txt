@@ -190,6 +190,10 @@ set(APPLICATION_SOURCES
     sourceFiles/application/execution/RunPathClaimRegistry.cpp
     sourceFiles/application/proposals/ChangeProposalService.cpp
     sourceFiles/application/workspace/WorkspaceReadPolicy.cpp
+    sourceFiles/application/workspace/RecordedWorkspaceExclusions.cpp
+    sourceFiles/application/workspace/OutputDirectoryInspector.cpp
+    sourceFiles/application/workspace/ProjectOutputApprovalService.cpp
+    sourceFiles/application/verification/RecordedBaselinePolicy.cpp
     sourceFiles/application/workspace/WorkspacePathGuard.cpp
     sourceFiles/application/workspace/ToolRegistry.cpp
     sourceFiles/application/workspace/FilesystemWorkspaceToolExecutor.cpp
@@ -638,6 +642,7 @@ endif()
 add_library(AIOrchestrator_Persistence STATIC
     sourceFiles/infrastructure/sqlite/SqliteDatabase.cpp
     sourceFiles/infrastructure/sqlite/SqliteSchema.cpp
+    sourceFiles/infrastructure/sqlite/SqlitePreMigrationBackup.cpp
     sourceFiles/infrastructure/sqlite/SqlitePrimitives.cpp
     sourceFiles/infrastructure/sqlite/catalog/SqliteExecutionProfileRepository.cpp
     sourceFiles/infrastructure/sqlite/catalog/SqliteModelRepository.cpp
@@ -671,6 +676,7 @@ add_library(AIOrchestrator_Persistence STATIC
     sourceFiles/infrastructure/sqlite/planning/SqliteRunDraftRepository.cpp
     sourceFiles/infrastructure/sqlite/execution/SqliteRunStatusMapping.cpp
     sourceFiles/infrastructure/sqlite/projects/SqliteProjectReadinessRepository.cpp
+    sourceFiles/infrastructure/sqlite/projects/SqliteProjectOutputApprovalRepository.cpp
     sourceFiles/infrastructure/sqlite/roster/SqliteRosterMapping.cpp
     sourceFiles/infrastructure/sqlite/projects/SqliteProjectRepository.cpp
     sourceFiles/infrastructure/sqlite/projects/SqliteTaskRepository.cpp
@@ -717,8 +723,11 @@ if(AI_ORCHESTRATOR_BUILD_PERSISTENCE_TESTS)
           tests/Unit/RunWorkspaceScopeRepositoryTests.cpp
           tests/Unit/VerificationEnvironmentSnapshotRepositoryTests.cpp
           tests/Unit/VerificationBootstrapRepositoryTests.cpp
+          tests/Unit/SqlitePreMigrationBackupTests.cpp
       )
     target_compile_features(AIOrchestrator_Persistence_tests PRIVATE cxx_std_20)
+    # The pre-migration backup tests drive the closed fault seam of the persistence-private helper (never an exported include path).
+    target_include_directories(AIOrchestrator_Persistence_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/sourceFiles/infrastructure/sqlite)
     target_link_libraries(AIOrchestrator_Persistence_tests
         PRIVATE
             AIOrchestrator::Persistence
@@ -1000,6 +1009,7 @@ add_executable(${TARGET_NAME}_tests
     tests/Unit/ProviderExecutionBudgetTests.cpp
     tests/Unit/CostCalculationTests.cpp
     tests/Unit/ExecutionAnalyticsServiceTests.cpp
+    tests/Unit/ProjectOutputApprovalServiceTests.cpp
 )
 target_compile_features(${TARGET_NAME}_tests PRIVATE cxx_std_20)
 target_link_libraries(${TARGET_NAME}_tests

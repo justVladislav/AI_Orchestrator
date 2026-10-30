@@ -1026,4 +1026,27 @@ common::Result<void> ManifestWorkLedgerService::authorizePlanningAttempt(
     return common::Result<void>::ok();
 }
 
+common::Result<std::optional<ManifestWorkLedgerService::BaselineIdentity>>
+ManifestWorkLedgerService::findBaselineIdentity(const RunId& runId) const
+{
+    using Result = common::Result<std::optional<BaselineIdentity>>;
+    const auto found = ledger_.findEntry(runId);
+    if (!found.success()) return Result::failure(*found.error());
+    if (!found.value().has_value()) return Result::ok(std::nullopt);
+    const ManifestWorkLedgerEntry& entry = *found.value();
+    if (entry.runId != runId) {
+        return Result::failure({"manifest_work_ledger.baseline_identity_corrupt",
+            "The Work Ledger row does not belong to the Run it was looked up for"});
+    }
+    const std::string verificationFingerprint =
+        entry.verification.has_value() ? entry.verification->baselineFingerprint : std::string {};
+    if (!verificationFingerprint.empty() && !entry.baselineFingerprint.empty()
+        && verificationFingerprint != entry.baselineFingerprint) {
+        return Result::failure({"manifest_work_ledger.baseline_identity_conflict",
+            "The Work Ledger row's baseline fingerprint and its verification record's disagree"});
+    }
+    return Result::ok(BaselineIdentity {entry.runId, entry.projectId,
+        verificationFingerprint.empty() ? entry.baselineFingerprint : verificationFingerprint});
+}
+
 } // namespace ai::application

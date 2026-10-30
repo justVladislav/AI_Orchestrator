@@ -14,6 +14,7 @@
 #include <ai/ui/ProjectContextController.hpp>
 #include <ai/ui/ProjectController.hpp>
 #include <ai/ui/ProjectMemoryController.hpp>
+#include <ai/ui/ProjectOutputApprovalController.hpp>
 #include <ai/ui/ProjectVerificationSetupController.hpp>
 #include <ai/ui/PromptWorkshopController.hpp>
 #include <ai/ui/TaskController.hpp>
@@ -46,6 +47,7 @@ class BackendBridge final : public QObject
     Q_PROPERTY(QString applicationVersion READ applicationVersion CONSTANT)
     Q_PROPERTY(QObject* projects READ projects CONSTANT)
     Q_PROPERTY(QObject* projectVerificationSetup READ projectVerificationSetup CONSTANT)
+    Q_PROPERTY(QObject* projectOutputApprovals READ projectOutputApprovals CONSTANT)
     Q_PROPERTY(QObject* tasks READ tasks CONSTANT)
     Q_PROPERTY(QObject* runs READ runs CONSTANT)
     Q_PROPERTY(QObject* workspace READ workspace CONSTANT)
@@ -85,6 +87,7 @@ public:
     [[nodiscard]] QString applicationVersion() const;
     [[nodiscard]] QObject* projects() noexcept;
     [[nodiscard]] QObject* projectVerificationSetup() noexcept;
+    [[nodiscard]] QObject* projectOutputApprovals() noexcept;
     [[nodiscard]] QObject* tasks() noexcept;
     [[nodiscard]] QObject* runs() noexcept;
     [[nodiscard]] QObject* workspace() noexcept;
@@ -108,6 +111,7 @@ public:
     // Typed accessors support C++ integration tests; QML uses the properties.
     [[nodiscard]] ProjectController& projectController() noexcept;
     [[nodiscard]] ProjectVerificationSetupController& projectVerificationSetupController() noexcept;
+    [[nodiscard]] ProjectOutputApprovalController& projectOutputApprovalController() noexcept;
     [[nodiscard]] TaskController& taskController() noexcept;
     [[nodiscard]] RunController& runController() noexcept;
     [[nodiscard]] WorkspaceContextController& workspaceContextController() noexcept;
@@ -185,6 +189,10 @@ private:
     // PC-5D: heap-owned like the controllers above (BackendBridge is stack-layout sensitive). Holds the runtime's FollowUpPlanService
     // and FollowUpPlanReadModel only; declared after runtime_, so it is destroyed before it (and waits for a running call).
     std::unique_ptr<FollowUpPlanController> followUpPlanController_;
+    // P3d: heap-owned like the controllers above (BackendBridge is stack-layout sensitive; this one holds a QFutureWatcher). Holds a
+    // pointer to the runtime's approval service (null without durable storage: then it is unavailable); declared after runtime_, so it
+    // is destroyed - and its worker stopped and awaited - before the service goes away.
+    std::unique_ptr<ProjectOutputApprovalController> projectOutputApprovalController_;
     TaskController taskController_;
     RunController runController_;
 };

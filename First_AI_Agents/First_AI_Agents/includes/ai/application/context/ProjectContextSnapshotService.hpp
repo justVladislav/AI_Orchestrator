@@ -6,6 +6,7 @@
 #include "ai/application/execution/IRunRepository.hpp"
 #include "ai/application/verification/ManifestVerificationManualHandoffResolution.hpp"
 #include "ai/application/context/ProjectContextSnapshot.hpp"
+#include "ai/application/workspace/OutputApprovalPolicySource.hpp"
 
 #include <cstddef>
 #include <optional>
@@ -42,10 +43,31 @@ public:
         IManifestVerificationManualHandoffResolutionReader& manualResolutions,
         IProjectMemoryRepository& projectMemory);
 
+    // P3c: where the CURRENT read policy of the workspace comes from - today's secureDefaults plus the output folders the user approved
+    // for (project, the root this snapshot reads). A snapshot is a read of the files as they are now, not the comparison of an older
+    // Run's frozen baseline: that Run's own baseline artifact is neither changed nor replaced by it. Set once while the runtime is
+    // composed. Null (the default, a standalone service) keeps secureDefaults.
+    void setOutputApprovalPolicySource(const IOutputApprovalPolicySource* source) noexcept
+    {
+        outputApprovals_ = source;
+    }
+
+    // The policy is asked ONCE per build, after the cheap request checks and before the workspace is hashed. An error of the source is
+    // the failure of the whole build, never a snapshot under the defaults.
     [[nodiscard]] common::Result<ProjectContextSnapshot> build(
         const ProjectContextSnapshotRequest& request) const;
 
+    // For a caller that has already obtained the policy of ITS operation (the follow-up read, which also reads files under it): the
+    // same policy is used and the source is not asked again. It must be the policy of the root this request reads (the selected Run's
+    // workspace, else the project root) - a policy for any other root is refused as workspace_policy.root_mismatch, nothing is read.
+    [[nodiscard]] common::Result<ProjectContextSnapshot> build(
+        const ProjectContextSnapshotRequest& request, const WorkspaceReadPolicy& policy) const;
+
 private:
+    [[nodiscard]] common::Result<ProjectContextSnapshot> buildWith(
+        const ProjectContextSnapshotRequest& request, const WorkspaceReadPolicy* provided) const;
+
+    const IOutputApprovalPolicySource* outputApprovals_ {nullptr};
     IProjectRepository& projects_;
     IRunRepository& runs_;
     IManifestWorkLedgerRepository& workLedger_;
