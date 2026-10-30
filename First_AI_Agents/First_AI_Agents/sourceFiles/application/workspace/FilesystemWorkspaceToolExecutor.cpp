@@ -20,6 +20,16 @@
 #include <system_error>
 #include <vector>
 
+#ifdef _WIN32
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#  ifndef WIN32_LEAN_AND_MEAN
+#    define WIN32_LEAN_AND_MEAN
+#  endif
+#  include <windows.h>
+#endif
+
 namespace ai::application {
 
 namespace {
@@ -389,6 +399,116 @@ std::optional<std::string> checkResultSize(const std::string& content,
     return std::nullopt;
 }
 
+// ─── Read policy during enumeration and search ───────────────────────────────
+//
+// WorkspacePathGuard vets the path an agent NAMES. list / find / search also come across paths the agent did not name, so the
+// same policy has to be applied to every entry they meet - otherwise an enumeration reveals (and a search reads) exactly what a
+// direct read of that path would refuse. Everything below is lexical or a single attribute lookup per entry; the project is not
+// walked a second time.
+
+// True when the policy lets an agent see this workspace entry at all: the lexical rules WorkspacePathGuard applies to a named path
+// (denied names, sequences and paths, secret file names and extensions, allowed roots and exact file scopes). Fails closed for
+// anything that is not provably below the workspace root.
+bool visibleUnderPolicy(const fs::path& entryPath, const fs::path& canonicalRoot, const WorkspaceReadPolicy& policy)
+{
+    const fs::path relative = entryPath.lexically_relative(canonicalRoot);
+    if (relative.empty() || relative == ".") return false;
+    return WorkspaceReadPolicyValidator::validateRelativePath(relative, policy).success();
+}
+
+// Case-folded like the policy's own component comparison (case-insensitive on Windows only).
+std::string componentKey(const fs::path& component)
+{
+    std::string value = detail::genericUtf8(component);
+#ifdef _WIN32
+    value = detail::asciiLower(std::move(value));
+#endif
+    return value;
+}
+
+// True when `relative` is a proper ancestor, component by component, of one of the policy's allowed paths.
+bool isProperAncestorOfAllowedPath(const fs::path& relative, const WorkspaceReadPolicy& policy)
+{
+    const fs::path normalized = relative.lexically_normal();
+    return std::any_of(policy.allowedRoots.begin(), policy.allowedRoots.end(), [&](const fs::path& allowed) {
+        const fs::path target = allowed.lexically_normal();
+        auto left = normalized.begin();
+        auto right = target.begin();
+        for (; left != normalized.end() && right != target.end(); ++left, ++right) {
+            if (componentKey(*left) != componentKey(*right)) return false;
+        }
+        return left == normalized.end() && right != target.end();
+    });
+}
+
+// For an entry that is NOT visible under the policy: may the walk still pass THROUGH it? This is distinct from visibleUnderPolicy,
+// which decides whether an entry may be returned or read. Under an exact file scope the parents of an allowed file are not
+// themselves allowed (the scope lists files, and must never authorise their siblings), yet a walk started from a listed ancestor
+// has to pass through them to reach the file. So such a directory may be traversed when it is a proper ancestor of an allowed
+// path - and only then - and only if every DENY rule still lets it pass: the same validator with the allowed-root restriction
+// removed, so denied names, sequences, deniedPaths and secret names cut here exactly as they do everywhere else. allowedRoots
+// itself is never widened. `denyOnly` is the policy with allowedRoots cleared; the caller builds it once per walk.
+bool mayTraverseUnlisted(const fs::path& entryPath, const fs::path& canonicalRoot, const WorkspaceReadPolicy& policy,
+                         const WorkspaceReadPolicy& denyOnly, bool exactScope)
+{
+    if (!exactScope) return false;
+    const fs::path relative = entryPath.lexically_relative(canonicalRoot);
+    if (relative.empty() || relative == ".") return false;
+    return isProperAncestorOfAllowedPath(relative, policy)
+        && WorkspaceReadPolicyValidator::validateRelativePath(relative, denyOnly).success();
+}
+
+// A symbolic link, or on Windows any reparse point (junction, mount point, cloud placeholder). Its target is not vetted by the
+// lexical policy, so it is never read through, searched, or descended into; `list` still reports it as metadata.
+// An entry whose type cannot be determined counts as a link.
+bool isLinkOrReparsePoint(const fs::directory_entry& entry)
+{
+    std::error_code ec;
+    const auto status = entry.symlink_status(ec);
+    if (ec || fs::is_symlink(status)) return true;
+#ifdef _WIN32
+    const DWORD attributes = ::GetFileAttributesW(detail::longPath(entry.path()).c_str());
+    return attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+#else
+    return false;
+#endif
+}
+
+// The regular files below `searchRoot` (a directory the caller has already vetted with WorkspacePathGuard) that the policy makes
+// visible. The policy is applied to each entry BEFORE it is returned, so a denied file is never opened, matched, or counted
+// against a limit, and a denied or linked directory is not entered at all. Links are not followed.
+// What may be RETURNED (visibleUnderPolicy) and what may be walked THROUGH (mayTraverseUnlisted) are decided separately: only the
+// former ever puts a path in the result.
+// `ec` reports an enumeration error; files found before it are still returned.
+std::vector<fs::path> collectVisibleFiles(const fs::path& searchRoot, const fs::path& canonicalRoot,
+                                          const WorkspaceReadPolicy& policy, std::error_code& ec)
+{
+    std::vector<fs::path> files;
+    const bool exactScope = policy.allowedRootsAreExactPaths && !policy.allowedRoots.empty();
+    WorkspaceReadPolicy denyOnly = policy; // the same deny rules, without the allowed-root restriction (traversal check only)
+    denyOnly.allowedRoots.clear();
+    denyOnly.allowedRootsAreExactPaths = false;
+
+    fs::recursive_directory_iterator it(searchRoot, fs::directory_options::skip_permission_denied, ec);
+    if (ec) return files;
+    const fs::recursive_directory_iterator end;
+    while (it != end) {
+        const fs::directory_entry& entry = *it;
+        if (isLinkOrReparsePoint(entry)) {
+            it.disable_recursion_pending();
+        } else if (visibleUnderPolicy(entry.path(), canonicalRoot, policy)) {
+            std::error_code statusEc;
+            if (entry.is_regular_file(statusEc) && !statusEc) files.push_back(entry.path());
+        } else if (!mayTraverseUnlisted(entry.path(), canonicalRoot, policy, denyOnly, exactScope)) {
+            it.disable_recursion_pending(); // harmless for a file; for a directory it keeps the whole subtree out
+        }
+        // else: a directory that may not be returned but leads to an explicitly allowed descendant - walk through it, report nothing
+        it.increment(ec);
+        if (ec) break;
+    }
+    return files;
+}
+
 // ─── Individual tool handlers ────────────────────────────────────────────────
 
 AgentToolResult executeStat(const AgentToolCall&    call,
@@ -524,6 +644,9 @@ AgentToolResult executeList(const AgentToolCall&    call,
     if (ec) return makeFail(call, "workspace_list.io_error");
 
     for (const auto& e : di) {
+        // Filter BEFORE sorting and truncating: a hidden entry must not use up the entry limit. A link that the policy lets
+        // the agent see is still listed (as metadata only); it is never followed.
+        if (!visibleUnderPolicy(e.path(), canonicalRoot, policy)) continue;
         const auto stat = e.symlink_status(ec);
         if (ec) { ec.clear(); continue; }
         const bool isFile = fs::is_regular_file(stat);
@@ -588,20 +711,18 @@ AgentToolResult executeFind(const AgentToolCall&    call,
         return makeFail(call, "workspace_find.not_a_directory");
 
     std::vector<std::string> matches;
-    const auto rdi = fs::recursive_directory_iterator(
-        searchRoot, fs::directory_options::skip_permission_denied, ec);
+    // Only policy-visible files are candidates, so a denied file can neither match nor use up the match limit.
+    const auto visibleFiles = collectVisibleFiles(searchRoot, canonicalRoot, policy, ec);
     if (ec) return makeFail(call, "workspace_find.io_error");
 
     const bool pathPattern = glob.find('/') != std::string::npos
         || glob.find('\\') != std::string::npos;
-    for (const auto& entry : rdi) {
-        if (entry.is_symlink()) continue; // never follow symlinks
-        if (!entry.is_regular_file()) continue;
+    for (const auto& file : visibleFiles) {
         const std::string candidate = pathPattern
-            ? detail::genericUtf8(entry.path().lexically_relative(searchRoot))
-            : detail::genericUtf8(entry.path().filename());
+            ? detail::genericUtf8(file.lexically_relative(searchRoot))
+            : detail::genericUtf8(file.filename());
         if (matchGlob(glob, candidate))
-            matches.push_back(relativeTo(entry.path(), canonicalRoot));
+            matches.push_back(relativeTo(file, canonicalRoot));
     }
 
     // Deterministic order.
@@ -650,12 +771,9 @@ AgentToolResult executeSearch(const AgentToolCall&    call,
     if (fs::is_regular_file(searchRoot, ec)) {
         files.push_back(searchRoot);
     } else {
-        for (const auto& entry : fs::recursive_directory_iterator(
-                 searchRoot, fs::directory_options::skip_permission_denied, ec)) {
-            if (ec) { ec.clear(); break; }
-            if (entry.is_symlink() || !entry.is_regular_file()) continue;
-            files.push_back(entry.path());
-        }
+        // The policy is applied here, before any file is opened: a denied file's content is never read, matched or counted.
+        files = collectVisibleFiles(searchRoot, canonicalRoot, policy, ec);
+        ec.clear(); // an enumeration error ends the walk; what was found before it is still searched
         std::sort(files.begin(), files.end(), pathLessCI);
     }
 

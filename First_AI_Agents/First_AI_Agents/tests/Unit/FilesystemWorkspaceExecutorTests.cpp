@@ -31,8 +31,12 @@
 
 #include <cassert>
 #include <cstdio>
+#include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -973,6 +977,364 @@ void testResults_neverContainAbsolutePaths()
     fs::remove_all(root);
 }
 
+// ---------------------------------------------------------------------------
+// Group 11: list / find / search apply the read policy to every entry they come across
+//
+// A path an agent names directly has always been vetted by the policy. These checks pin that what an agent merely ENUMERATES
+// or SEARCHES is vetted the same way: a denied entry is not reported, a denied subtree is not entered, and a denied file's
+// content is never matched. They use check() rather than assert() so that they are enforced in a build with NDEBUG as well,
+// and so that one run reports every violated expectation instead of stopping at the first.
+// ---------------------------------------------------------------------------
+
+int g_enumerationFailures = 0;
+
+void check(bool condition, const std::string& what)
+{
+    if (condition) return;
+    ++g_enumerationFailures;
+    std::cerr << "FAIL (enumeration): " << what << "\n";
+}
+
+std::string joined(const std::set<std::string>& values)
+{
+    std::string text = "{";
+    for (const auto& value : values) text += (text.size() > 1 ? ", " : "") + value;
+    return text + "}";
+}
+
+std::set<std::string> listedNames(const app::AgentToolResult& result)
+{
+    std::set<std::string> names;
+    if (!result.success) return names;
+    const json parsed = json::parse(result.contentJson); // kept alive: a range-for does not extend a temporary's lifetime before C++23
+    for (const auto& entry : parsed["entries"]) names.insert(entry["name"].get<std::string>());
+    return names;
+}
+
+std::set<std::string> foundPaths(const app::AgentToolResult& result)
+{
+    std::set<std::string> paths;
+    if (!result.success) return paths;
+    const json parsed = json::parse(result.contentJson);
+    for (const auto& match : parsed["matches"]) paths.insert(match.get<std::string>());
+    return paths;
+}
+
+std::set<std::string> searchedFiles(const app::AgentToolResult& result)
+{
+    std::set<std::string> files;
+    if (!result.success) return files;
+    const json parsed = json::parse(result.contentJson);
+    for (const auto& match : parsed["matches"]) files.insert(match["file"].get<std::string>());
+    return files;
+}
+
+bool resultTruncated(const app::AgentToolResult& result)
+{
+    return result.success && json::parse(result.contentJson)["truncated"].get<bool>();
+}
+
+fs::path freshWorkspace(const char* name)
+{
+    const fs::path root = makeTempWorkspace() / name;
+    std::error_code ec;
+    fs::remove_all(root, ec);
+    fs::create_directories(root, ec);
+    return root;
+}
+
+// A tree with allowed files, files denied by name, by the MSVC output sequence and by an explicit deniedPaths entry, a similarly
+// named sibling of the denied path, and a secret-looking file that holds plain text (so only the POLICY can hide it).
+fs::path buildPolicyTree(const char* name)
+{
+    const fs::path root = freshWorkspace(name);
+    writeFile(root / "README.md", "ENUM_MARKER readme\n");
+    writeFile(root / "src" / "main.cpp", "int main() { return 0; } // ENUM_MARKER\n");
+    writeFile(root / "generated" / "cache-source" / "keep.txt", "ENUM_MARKER sibling of the denied path\n");
+    writeFile(root / "x64" / "keep.txt", "ENUM_MARKER an architecture folder is not output\n");
+    writeFile(root / ".git" / "config", "ENUM_MARKER git\n");
+    writeFile(root / "build" / "out.txt", "ENUM_MARKER build\n");
+    writeFile(root / ".vs" / "state.txt", "ENUM_MARKER visual studio\n");
+    writeFile(root / "x64" / "Debug" / "log.txt", "ENUM_MARKER msvc output\n");
+    writeFile(root / ".env", "ENUM_MARKER=plain test text\n");
+    writeFile(root / "generated" / "cache" / "a.txt", "ENUM_MARKER denied path\n");
+    return root;
+}
+
+app::WorkspaceReadPolicy treePolicy(const fs::path& root)
+{
+    auto policy = app::WorkspaceReadPolicy::secureDefaults(root);
+    policy.deniedPaths = {"generated/cache"};
+    return policy;
+}
+
+void testEnumeration_denyRulesApplyToListFindAndSearch()
+{
+    const fs::path root = buildPolicyTree("enum_policy");
+    const auto policy = treePolicy(root);
+
+    const auto top = execP(policy, "workspace_list_directory", R"({"path":"."})");
+    check(top.success, "listing the workspace root succeeds");
+    const auto names = listedNames(top);
+    for (const char* hidden : {".git", "build", ".vs", ".env"}) {
+        check(!names.contains(hidden), std::string("list '.' must not report the denied entry ") + hidden + " (got " + joined(names) + ")");
+    }
+    for (const char* shown : {"README.md", "src", "generated", "x64"}) {
+        check(names.contains(shown), std::string("list '.' must still report the allowed entry ") + shown);
+    }
+    const auto x64 = listedNames(execP(policy, "workspace_list_directory", R"({"path":"x64"})"));
+    check(x64 == std::set<std::string> {"keep.txt"},
+        "list 'x64' hides the MSVC output sequence x64/Debug but keeps its other content (got " + joined(x64) + ")");
+    const auto generated = listedNames(execP(policy, "workspace_list_directory", R"({"path":"generated"})"));
+    check(generated == std::set<std::string> {"cache-source"},
+        "the denied path generated/cache is hidden while generated/cache-source is not (got " + joined(generated) + ")");
+
+    const std::set<std::string> visibleFiles {
+        "README.md", "src/main.cpp", "generated/cache-source/keep.txt", "x64/keep.txt"};
+
+    const auto found = execP(policy, "workspace_find_files", R"({"path":".","glob":"*"})");
+    check(found.success, "find from the workspace root succeeds");
+    check(foundPaths(found) == visibleFiles,
+        "find reports exactly the policy-visible files (got " + joined(foundPaths(found)) + ")");
+
+    const auto searched = execP(policy, "workspace_search_text", R"({"path":".","query":"ENUM_MARKER"})");
+    check(searched.success, "search from the workspace root succeeds");
+    check(searchedFiles(searched) == visibleFiles,
+        "search matches only policy-visible files, including no .env holding plain text (got " + joined(searchedFiles(searched)) + ")");
+    check(searched.contentJson.find("plain test text") == std::string::npos, "no content of the denied .env reaches the result");
+
+    // The same policy still refuses a direct read of every one of them.
+    for (const char* denied : {".git/config", "build/out.txt", ".vs/state.txt", "x64/Debug/log.txt", ".env", "generated/cache/a.txt"}) {
+        const auto direct = execP(policy, "workspace_read_file", json {{"path", denied}}.dump());
+        check(!direct.success && direct.errorCode == "workspace_path.denied", std::string("direct read of ") + denied + " stays denied");
+    }
+    check(execP(policy, "workspace_read_file", R"({"path":"src/main.cpp"})").success, "an allowed file stays readable");
+    fs::remove_all(root);
+}
+
+void testEnumeration_deniedEntriesNeverDisplaceAllowedOnes()
+{
+    const fs::path root = freshWorkspace("enum_limits");
+    // The denied names sort BEFORE the allowed ones, so a limit applied before the filtering would drop allowed results.
+    writeFile(root / ".env", "ENUM_MARKER one\nENUM_MARKER two\nENUM_MARKER three\n");
+    writeFile(root / ".git" / "config", "ENUM_MARKER a\nENUM_MARKER b\n");
+    writeFile(root / "build" / "out.txt", "ENUM_MARKER c\nENUM_MARKER d\n");
+    writeFile(root / "src" / "a.txt", "ENUM_MARKER a\n");
+    writeFile(root / "src" / "b.txt", "ENUM_MARKER b\n");
+    writeFile(root / "a.txt", "x");
+    writeFile(root / "b.txt", "x");
+    writeFile(root / "c.txt", "x");
+
+    auto policy = app::WorkspaceReadPolicy::secureDefaults(root);
+    policy.maxDirectoryEntries = 3;
+    policy.maxSearchMatches = 2;
+
+    // list: exactly three allowed entries (a.txt, b.txt, c.txt, plus src makes four) - the limit counts allowed entries only.
+    auto listed = execP(policy, "workspace_list_directory", R"({"path":"."})");
+    check(listed.success && listedNames(listed) == std::set<std::string> {"a.txt", "b.txt", "c.txt"} && resultTruncated(listed),
+        "list: denied names do not use up the entry limit; the first three allowed entries are returned and truncated is set (got "
+            + joined(listedNames(listed)) + ")");
+    fs::remove(root / "c.txt");
+    fs::remove_all(root / "src");
+    listed = execP(policy, "workspace_list_directory", R"({"path":"."})");
+    check(listedNames(listed) == std::set<std::string> {"a.txt", "b.txt"} && !resultTruncated(listed),
+        "list: when the allowed entries fit the limit, truncated stays false although denied entries exist (got "
+            + joined(listedNames(listed)) + ")");
+    writeFile(root / "src" / "a.txt", "ENUM_MARKER a\n");
+    writeFile(root / "src" / "b.txt", "ENUM_MARKER b\n");
+    fs::remove(root / "a.txt");
+    fs::remove(root / "b.txt");
+
+    // find and search: the limit is two matches.
+    auto found = execP(policy, "workspace_find_files", R"({"path":".","glob":"*"})");
+    check(foundPaths(found) == std::set<std::string> {"src/a.txt", "src/b.txt"} && !resultTruncated(found),
+        "find: denied files sorted first do not use up the match limit (got " + joined(foundPaths(found)) + ")");
+    auto searched = execP(policy, "workspace_search_text", R"({"path":".","query":"ENUM_MARKER"})");
+    check(searchedFiles(searched) == std::set<std::string> {"src/a.txt", "src/b.txt"} && !resultTruncated(searched),
+        "search: matches in denied files sorted first do not use up the match limit (got " + joined(searchedFiles(searched)) + ")");
+
+    writeFile(root / "src" / "c.txt", "ENUM_MARKER c\n");
+    found = execP(policy, "workspace_find_files", R"({"path":".","glob":"*"})");
+    check(foundPaths(found) == std::set<std::string> {"src/a.txt", "src/b.txt"} && resultTruncated(found),
+        "find: with a third allowed file the limit still applies and truncated is set (got " + joined(foundPaths(found)) + ")");
+    searched = execP(policy, "workspace_search_text", R"({"path":".","query":"ENUM_MARKER"})");
+    check(searchedFiles(searched) == std::set<std::string> {"src/a.txt", "src/b.txt"} && resultTruncated(searched),
+        "search: with a third allowed match the limit still applies and truncated is set (got " + joined(searchedFiles(searched)) + ")");
+    fs::remove_all(root);
+}
+
+void testEnumeration_allowedRootsAndExactFileScopesStayBounded()
+{
+    const fs::path root = freshWorkspace("enum_scopes");
+    writeFile(root / "src" / "public" / "a.txt", "ENUM_MARKER public\n");
+    writeFile(root / "src" / "private" / "b.txt", "ENUM_MARKER private\n");
+    writeFile(root / "docs" / "a.md", "ENUM_MARKER authorised\n");
+    writeFile(root / "docs" / "b.md", "ENUM_MARKER sibling\n");
+    writeFile(root / "other" / "c.txt", "ENUM_MARKER outside the scope\n");
+
+    // A prefix scope with an explicit denied path inside it.
+    auto prefix = app::WorkspaceReadPolicy::secureDefaults(root);
+    prefix.allowedRoots = {"src"};
+    prefix.deniedPaths = {"src/private"};
+    check(execP(prefix, "workspace_list_directory", R"({"path":"."})").errorCode == "workspace_path.outside_allowed_roots",
+        "a prefix scope still refuses to list above its root");
+    check(execP(prefix, "workspace_find_files", R"({"path":".","glob":"*"})").errorCode == "workspace_path.outside_allowed_roots",
+        "a prefix scope still refuses to find above its root");
+    const auto prefixList = listedNames(execP(prefix, "workspace_list_directory", R"({"path":"src"})"));
+    check(prefixList == std::set<std::string> {"public"}, "inside a prefix scope the denied path is hidden (got " + joined(prefixList) + ")");
+    const auto prefixFound = foundPaths(execP(prefix, "workspace_find_files", R"({"path":"src","glob":"*"})"));
+    check(prefixFound == std::set<std::string> {"src/public/a.txt"}, "find inside a prefix scope skips the denied path (got " + joined(prefixFound) + ")");
+    const auto prefixSearched = searchedFiles(execP(prefix, "workspace_search_text", R"({"path":"src","query":"ENUM_MARKER"})"));
+    check(prefixSearched == std::set<std::string> {"src/public/a.txt"},
+        "search inside a prefix scope skips the denied path (got " + joined(prefixSearched) + ")");
+
+    // An exact file scope names the directory (so it can be addressed) and one file: its sibling is not authorised.
+    auto exact = app::WorkspaceReadPolicy::secureDefaults(root);
+    exact.allowedRoots = {"docs", "docs/a.md"};
+    exact.allowedRootsAreExactPaths = true;
+    check(execP(exact, "workspace_list_directory", R"({"path":"."})").errorCode == "workspace_path.outside_allowed_roots",
+        "an exact scope still refuses to list the workspace root");
+    const auto exactList = listedNames(execP(exact, "workspace_list_directory", R"({"path":"docs"})"));
+    check(exactList == std::set<std::string> {"a.md"}, "an exact scope does not reveal an unlisted sibling in list (got " + joined(exactList) + ")");
+    const auto exactFound = foundPaths(execP(exact, "workspace_find_files", R"({"path":"docs","glob":"*.md"})"));
+    check(exactFound == std::set<std::string> {"docs/a.md"}, "an exact scope does not reveal an unlisted sibling in find (got " + joined(exactFound) + ")");
+    const auto exactSearched = searchedFiles(execP(exact, "workspace_search_text", R"({"path":"docs","query":"ENUM_MARKER"})"));
+    check(exactSearched == std::set<std::string> {"docs/a.md"}, "an exact scope does not search an unlisted sibling (got " + joined(exactSearched) + ")");
+    fs::remove_all(root);
+}
+
+enum class LinkKind { None, Symlink, Junction };
+
+// A real directory link inside the workspace: a symbolic link, or where that needs a privilege this machine does not grant, a junction.
+LinkKind makeDirectoryLink(const fs::path& link, const fs::path& target)
+{
+    std::error_code error;
+    fs::create_directory_symlink(target, link, error);
+    if (!error) return LinkKind::Symlink;
+#ifdef _WIN32
+    const std::string command = "mklink /J \"" + link.string() + "\" \"" + target.string() + "\" >nul 2>&1";
+    if (std::system(("cmd /c " + command).c_str()) == 0 && fs::exists(link)) return LinkKind::Junction;
+#endif
+    return LinkKind::None;
+}
+
+void testEnumeration_linksAreReportedAsMetadataButNeverFollowed()
+{
+    const fs::path root = freshWorkspace("enum_links");
+    const fs::path outside = freshWorkspace("enum_links_outside");
+    writeFile(outside / "secret-note.txt", "ENUM_MARKER outside the workspace\n");
+    writeFile(root / "real.txt", "ENUM_MARKER inside\n");
+
+    const LinkKind directoryLink = makeDirectoryLink(root / "linked", outside);
+    std::error_code error;
+    fs::create_symlink(outside / "secret-note.txt", root / "flink.txt", error);
+    const bool fileLink = !error;
+    if (directoryLink == LinkKind::None && !fileLink) {
+        std::cout << "NOTE: this machine allows no symbolic link and no junction here; the link checks were NOT exercised\n";
+        fs::remove_all(root);
+        fs::remove_all(outside);
+        return;
+    }
+
+    const auto listed = execP(app::WorkspaceReadPolicy::secureDefaults(root), "workspace_list_directory", R"({"path":"."})");
+    check(listed.success && listedNames(listed).contains("real.txt"), "list reports the ordinary file next to the links");
+    if (listed.success) {
+        const json parsedListing = json::parse(listed.contentJson);
+        for (const auto& entry : parsedListing["entries"]) {
+            const std::string name = entry["name"].get<std::string>();
+            if ((name == "linked" && directoryLink == LinkKind::Symlink) || (name == "flink.txt" && fileLink)) {
+                check(entry["isSymlink"].get<bool>(), "list keeps the link metadata of " + name);
+            }
+        }
+    }
+    if (fileLink) check(listedNames(listed).contains("flink.txt"), "list still reports a file link as an entry");
+
+    const auto policy = app::WorkspaceReadPolicy::secureDefaults(root);
+    const auto found = execP(policy, "workspace_find_files", R"({"path":".","glob":"*"})");
+    check(foundPaths(found) == std::set<std::string> {"real.txt"}, "find returns nothing reached through a link (got " + joined(foundPaths(found)) + ")");
+    const auto searched = execP(policy, "workspace_search_text", R"({"path":".","query":"ENUM_MARKER"})");
+    check(searchedFiles(searched) == std::set<std::string> {"real.txt"},
+        "search reads nothing reached through a link (got " + joined(searchedFiles(searched)) + ")");
+    check(searched.contentJson.find("outside the workspace") == std::string::npos, "no content from outside the workspace is returned");
+
+    if (directoryLink != LinkKind::None) {
+        for (const char* tool : {"workspace_list_directory", "workspace_find_files", "workspace_search_text"}) {
+            json arguments {{"path", "linked"}};
+            if (std::string(tool) == "workspace_find_files") arguments["glob"] = "*";
+            if (std::string(tool) == "workspace_search_text") arguments["query"] = "ENUM_MARKER";
+            check(!execP(policy, tool, arguments.dump()).success, std::string(tool) + " refuses to start inside a directory link");
+        }
+        check(!execP(policy, "workspace_read_file", R"({"path":"linked/secret-note.txt"})").success,
+            "reading through a directory link stays refused");
+    }
+
+    // Remove the links first: a junction must never be deleted through its target.
+    fs::remove(root / "linked", error);
+    fs::remove(root / "flink.txt", error);
+    fs::remove_all(root);
+    fs::remove_all(outside);
+}
+
+// An exact file scope names the files an agent may read. A file inside an UNLISTED directory is still reachable by find / search
+// started from a listed ancestor: passing through the directory is a technical step, not a right to return it. The right to return
+// or read an entry stays exactly the policy's (so the unlisted sibling stays hidden), and a denial anywhere on the way still cuts.
+void testEnumeration_exactScopeReachesAllowedDescendantsThroughUnlistedParents()
+{
+    const fs::path root = freshWorkspace("enum_exact_parents");
+    writeFile(root / "docs" / "nested" / "a.md", "ENUM_MARKER authorised\n");
+    writeFile(root / "docs" / "nested" / "b.md", "ENUM_MARKER forbidden sibling\n");
+    writeFile(root / "docs" / "other" / "c.md", "ENUM_MARKER unrelated directory\n");
+    writeFile(root / "docs" / "build" / "x.md", "ENUM_MARKER below a denied directory name\n");
+
+    auto exact = app::WorkspaceReadPolicy::secureDefaults(root);
+    exact.allowedRoots = {"docs", "docs/nested/a.md"};
+    exact.allowedRootsAreExactPaths = true;
+    const std::set<std::string> onlyA {"docs/nested/a.md"};
+
+    check(execP(exact, "workspace_read_file", R"({"path":"docs/nested/a.md"})").success, "the authorised file reads directly");
+    check(execP(exact, "workspace_read_file", R"({"path":"docs/nested/b.md"})").errorCode == "workspace_path.outside_allowed_roots",
+        "the unlisted sibling does not read directly");
+    const auto found = foundPaths(execP(exact, "workspace_find_files", R"({"path":"docs","glob":"*.md"})"));
+    check(found == onlyA, "find from the listed ancestor returns the authorised file, and only it (got " + joined(found) + ")");
+    const auto searched = searchedFiles(execP(exact, "workspace_search_text", R"({"path":"docs","query":"ENUM_MARKER"})"));
+    check(searched == onlyA, "search from the listed ancestor reads the authorised file, and only it (got " + joined(searched) + ")");
+    // Passing through a directory does not make it a returnable entry: list still shows only what the scope names.
+    const auto listed = listedNames(execP(exact, "workspace_list_directory", R"({"path":"docs"})"));
+    check(listed.empty(), "list does not report the unlisted parent directory (got " + joined(listed) + ")");
+
+    // The negative case: denying the parent also denies the file that was authorised before.
+    auto deniedParent = exact;
+    deniedParent.deniedPaths = {"docs/nested"};
+    check(execP(deniedParent, "workspace_read_file", R"({"path":"docs/nested/a.md"})").errorCode == "workspace_path.denied",
+        "a denied parent denies the previously authorised file to a direct read");
+    const auto foundDenied = foundPaths(execP(deniedParent, "workspace_find_files", R"({"path":"docs","glob":"*.md"})"));
+    check(foundDenied.empty(), "find does not pass through a denied parent (got " + joined(foundDenied) + ")");
+    const auto searchedDenied = searchedFiles(execP(deniedParent, "workspace_search_text", R"({"path":"docs","query":"ENUM_MARKER"})"));
+    check(searchedDenied.empty(), "search does not pass through a denied parent (got " + joined(searchedDenied) + ")");
+
+    // A denied directory NAME on the way cuts as well, even for an explicitly listed file.
+    auto deniedName = app::WorkspaceReadPolicy::secureDefaults(root);
+    deniedName.allowedRoots = {"docs", "docs/build/x.md"};
+    deniedName.allowedRootsAreExactPaths = true;
+    check(foundPaths(execP(deniedName, "workspace_find_files", R"({"path":"docs","glob":"*.md"})")).empty(),
+        "find does not pass through a directory with a denied name");
+    check(searchedFiles(execP(deniedName, "workspace_search_text", R"({"path":"docs","query":"ENUM_MARKER"})")).empty(),
+        "search does not pass through a directory with a denied name");
+    fs::remove_all(root);
+}
+
+// An unexpected exception inside a case is a failure of that case that is reported with its message, not the end of the program.
+void runEnumerationCase(const char* name, void (*testCase)())
+{
+    try {
+        testCase();
+    } catch (const std::exception& error) {
+        check(false, std::string(name) + " threw: " + error.what());
+    } catch (...) {
+        check(false, std::string(name) + " threw a non-standard exception");
+    }
+}
+
 } // namespace
 
 int runFilesystemWorkspaceExecutorTests()
@@ -1059,5 +1421,17 @@ int runFilesystemWorkspaceExecutorTests()
     // Group 10: Absolute paths never in results
     testResults_neverContainAbsolutePaths();
 
+    // Group 11: enumeration and search apply the read policy (checked with check(), also under NDEBUG)
+    runEnumerationCase("denyRulesApplyToListFindAndSearch", testEnumeration_denyRulesApplyToListFindAndSearch);
+    runEnumerationCase("deniedEntriesNeverDisplaceAllowedOnes", testEnumeration_deniedEntriesNeverDisplaceAllowedOnes);
+    runEnumerationCase("allowedRootsAndExactFileScopesStayBounded", testEnumeration_allowedRootsAndExactFileScopesStayBounded);
+    runEnumerationCase("linksAreReportedAsMetadataButNeverFollowed", testEnumeration_linksAreReportedAsMetadataButNeverFollowed);
+    runEnumerationCase("exactScopeReachesAllowedDescendantsThroughUnlistedParents",
+        testEnumeration_exactScopeReachesAllowedDescendantsThroughUnlistedParents);
+
+    if (g_enumerationFailures != 0) {
+        std::cerr << g_enumerationFailures << " enumeration check(s) failed\n";
+        return 1;
+    }
     return 0;
 }
