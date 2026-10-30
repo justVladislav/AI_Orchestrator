@@ -27,6 +27,8 @@
 #include <ai/ui/BackendBridge.hpp>
 #include <ai/ui/ComparisonResultListModel.hpp>
 #include <ai/ui/ComparisonSessionListModel.hpp>
+#include <ai/ui/ProjectController.hpp>
+#include <ai/ui/ProjectOutputApprovalController.hpp>
 #include <ai/ui/ProviderCatalogController.hpp>
 #include <ai/ui/ProjectListModel.hpp>
 #include <ai/ui/RunListModel.hpp>
@@ -40,7 +42,12 @@
 #include <QJSValue>
 #include <QMetaObject>
 #include <QQmlApplicationEngine>
+#include <QQmlComponent>
+#include <QQmlError>
+#include <QUrl>
 #include <QQuickItem>
+#include <QQuickItemGrabResult>
+#include <QtMath>
 #include <QQuickWindow>
 #include <QQuickStyle>
 #include <QVariant>
@@ -58,6 +65,7 @@
 #include <sstream>
 #include <stop_token>
 #include <string>
+#include <vector>
 
 namespace {
 void checkpoint(const char* label)
@@ -264,6 +272,881 @@ QString makeLongMultilineText(const QString& heading, const QString& linePrefix)
     return text;
 }
 
+// ---------------------------------------------------------------------------------------------------------------------------------
+// P3e: the "Output folders" section of the project setup panel.
+//   * runOutputFoldersBridgeTests: the real Main.qml and the real BackendBridge on the temporary database - the section is driven
+//     through its own fields and buttons (Preview -> Approve -> list -> Recheck -> Revoke, hard refusals, confirmations, leaving the
+//     cached Projects page); the stored rows are read through a SECOND connection to the temporary database.
+//   * runOutputFoldersHarnessTests: the real section over a controlled test-only controller written in QML (the same API and signals
+//     as ProjectOutputApprovalController) - for the answers that cannot be timed against the real worker: late and foreign results,
+//     the lower-bound / nested confirmations, a recheck of a dormant approval, cancellation, queued refreshes. It does not replace
+//     the bridge test: the connection itself is proven there.
+// With AIO_SHOT_DIR set, the harness windows are saved as PNG files (never part of a normal run).
+// ---------------------------------------------------------------------------------------------------------------------------------
+
+void collectNamed(QQuickItem* item, const QString& name, QList<QQuickItem*>& found)
+{
+    if (item == nullptr) return;
+    if (item->objectName() == name) found.push_back(item);
+    for (QQuickItem* child : item->childItems()) collectNamed(child, name, found);
+}
+
+// Repeater delegates are not QObject children of any ancestor: walk the VISUAL tree.
+QList<QQuickItem*> namedItems(QObject* root, const char* name)
+{
+    QList<QQuickItem*> found;
+    collectNamed(qobject_cast<QQuickItem*>(root), QString::fromLatin1(name), found);
+    return found;
+}
+
+QQuickItem* oneNamed(QObject* root, const char* name)
+{
+    const QList<QQuickItem*> found = namedItems(root, name);
+    if (found.size() != 1) std::fprintf(stderr, "expected exactly one '%s', found %d\n", name, static_cast<int>(found.size()));
+    assert(found.size() == 1);
+    return found.constFirst();
+}
+
+bool flag(QObject* object, const char* name) { return object->property(name).toBool(); }
+QString textOf(QObject* object) { return object->property("text").toString(); }
+
+// A text check that shows the text it saw when it fails.
+bool textHas(QObject* object, const QString& needle)
+{
+    const QString actual = textOf(object);
+    if (!actual.contains(needle)) {
+        std::fprintf(stderr, "text of '%s' is [%s], wanted [%s]\n", object->objectName().toUtf8().constData(),
+            actual.toUtf8().constData(), needle.toUtf8().constData());
+    }
+    return actual.contains(needle);
+}
+
+void clickItem(QObject* item)
+{
+    // A control is briefly disabled while the controller finishes another operation (a list read, say): wait, never assume.
+    waitForProperty(item, "enabled", [](const QVariant& v) { return v.toBool(); });
+    if (!flag(item, "enabled") || !flag(item, "visible")) {
+        std::fprintf(stderr, "cannot click '%s': enabled=%d visible=%d\n", item->objectName().toUtf8().constData(),
+            flag(item, "enabled") ? 1 : 0, flag(item, "visible") ? 1 : 0);
+    }
+    assert(flag(item, "enabled") && flag(item, "visible") && "only an enabled, visible control is clicked");
+    assert(QMetaObject::invokeMethod(item, "click"));
+}
+
+void settle(int cycles = 30)
+{
+    for (int cycle = 0; cycle < cycles; ++cycle) ai::ui::test_support::pumpOneEventCycle();
+}
+
+// The ITEM is grabbed, not the window: the item keeps its own size whatever the screen's scaling does to a top-level window.
+void saveShot(QObject* root, const QString& name)
+{
+    const QByteArray directory = qgetenv("AIO_SHOT_DIR");
+    auto* item = qobject_cast<QQuickItem*>(root);
+    if (directory.isEmpty() || item == nullptr) return;
+    settle(40);
+    const QSharedPointer<QQuickItemGrabResult> result = item->grabToImage(QSize(qCeil(item->width()), qCeil(item->height())));
+    assert(result && "the harness item can be grabbed");
+    QEventLoop loop;
+    QObject::connect(result.data(), &QQuickItemGrabResult::ready, &loop, &QEventLoop::quit);
+    loop.exec();
+    assert(result->saveToFile(QString::fromLocal8Bit(directory) + QLatin1Char('/') + name + QStringLiteral(".png")));
+}
+
+std::vector<ai::application::ProjectOutputApproval> storedApprovals(const TempWorkspace& workspace, const std::string& projectId)
+{
+    const auto database = ai::infrastructure::SqliteDatabase::open(workspace.databasePath);
+    assert(database.success());
+    ai::infrastructure::SqliteProjectOutputApprovalRepository repository(database.value());
+    const auto listed = repository.listForProject(projectId);
+    assert(listed.success());
+    return listed.value();
+}
+
+void writeFile(const fs::path& path, const std::string& content)
+{
+    fs::create_directories(path.parent_path());
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    out << content;
+}
+
+// ---- the real bridge ----
+
+void runOutputFoldersBridgeTests(BackendBridge& backend, QObject* window, QObject* projectsPage, const TempWorkspace& workspace,
+    const QStringList& qmlWarnings)
+{
+    checkpoint("P3e: Output folders over the real bridge");
+    const fs::path projectRoot = workspace.root / "p3e-project";
+    writeFile(projectRoot / "build" / "gen" / "a.obj", "object");
+    writeFile(projectRoot / "nested" / "gen" / "sub" / "CMakeLists.txt", "project(x)\n");
+    writeFile(projectRoot / "nested" / "gen" / "out.o", "object");
+    writeFile(projectRoot / fs::path(u"\u0421\u0431\u043e\u0440\u043a\u0430") / fs::path(u"\u0432\u044b\u0445\u043e\u0434") / "r.txt", "x");
+
+    const QString projectId = backend.projectController().createProject(
+        QStringLiteral("P3e output folders"), QStringLiteral("Output folder approvals through real QML"),
+        QString::fromStdWString(projectRoot.wstring()));
+    assert(!projectId.isEmpty());
+    const std::string project = projectId.toStdString();
+    const int runRowsBefore = backend.runController().model()->rowCount();
+
+    assert(window->setProperty("currentSection", QStringLiteral("projects")));
+    assert(projectsPage->setProperty("selectedProjectId", projectId));
+    QObject* section = waitForChild(window, "projectOutputFoldersSection");
+    assert(section && "the section is part of the project setup panel");
+    assert(waitForProperty(section, "projectId", [&](const QVariant& v) { return v.toString() == projectId; }));
+    assert(waitForProperty(section, "listLoaded", [](const QVariant& v) { return v.toBool(); }));
+    assert(flag(section, "visible") && flag(section, "storageAvailable"));
+
+    // Opening the section reads, it never writes: no approval, no Run.
+    assert(section->property("approvals").toList().isEmpty() && storedApprovals(workspace, project).empty());
+    assert(backend.runController().model()->rowCount() == runRowsBefore);
+    assert(flag(oneNamed(section, "outputFolderEmpty"), "visible"));
+    QObject* pathField = oneNamed(section, "outputFolderPathField");
+    QObject* previewButton = oneNamed(section, "outputFolderPreviewButton");
+    QObject* approveButton = oneNamed(section, "outputFolderApproveButton");
+    assert(!flag(previewButton, "enabled") && "no path, no Preview");
+    assert(!flag(approveButton, "enabled") && !flag(section, "previewUsable"));
+
+    // A folder the Backend refuses: the code is visible and nothing becomes approvable.
+    assert(pathField->setProperty("text", QStringLiteral("../escape")));
+    clickItem(previewButton);
+    assert(waitForProperty(section, "errorLine", [](const QVariant& v) { return v.toString().contains(QStringLiteral("output_")); }));
+    assert(!flag(section, "previewUsable") && !flag(approveButton, "enabled"));
+    assert(flag(oneNamed(section, "outputFolderError"), "visible"));
+    assert(storedApprovals(workspace, project).empty());
+
+    // Preview -> the Backend's own facts, Approve only now.
+    assert(pathField->setProperty("text", QStringLiteral("build/gen")));
+    assert(section->property("errorLine").toString().isEmpty() && "an edit drops the earlier message");
+    clickItem(previewButton);
+    assert(waitForProperty(section, "previewUsable", [](const QVariant& v) { return v.toBool(); }));
+    assert(textOf(oneNamed(section, "outputFolderPreviewCounts")).contains(QStringLiteral("Inspected completely: 1 entries, 1 files")));
+    assert(!flag(oneNamed(section, "outputFolderNestedAck"), "visible") && !flag(oneNamed(section, "outputFolderIncompleteAck"), "visible"));
+    assert(flag(approveButton, "enabled"));
+    assert(storedApprovals(workspace, project).empty() && "a preview writes nothing");
+
+    // UE7: an edit switches Approve off at once, and a forced approve of the old preview writes nothing.
+    assert(pathField->setProperty("text", QStringLiteral("build/gen2")));
+    assert(!flag(approveButton, "enabled") && !flag(section, "previewUsable"));
+    assert(QMetaObject::invokeMethod(section, "startApprove"));
+    settle();
+    assert(!flag(section, "controllerBusy") && storedApprovals(workspace, project).empty());
+    assert(pathField->setProperty("text", QStringLiteral("build/gen")));
+    assert(!flag(approveButton, "enabled") && "the old preview is not restored by typing the old text again");
+
+    // Preview again, then the explicit Approve.
+    clickItem(previewButton);
+    assert(waitForProperty(section, "previewUsable", [](const QVariant& v) { return v.toBool(); }));
+    clickItem(approveButton);
+    assert(waitForProperty(section, "approvals", [](const QVariant& v) { return v.toList().size() == 1; }));
+    {
+        const auto stored = storedApprovals(workspace, project);
+        assert(stored.size() == 1 && stored.front().projectId == project && stored.front().relativePath == "build/gen");
+        const QVariantMap row = section->property("approvals").toList().front().toMap();
+        assert(row.value(QStringLiteral("relativePath")).toString() == QStringLiteral("build/gen")
+            && row.value(QStringLiteral("appliesToCurrentRoot")).toBool());
+    }
+    assert(textOf(oneNamed(section, "outputFolderNotice")).contains(QStringLiteral("Approved")));
+    assert(!flag(section, "previewUsable") && !flag(approveButton, "enabled") && "a spent preview cannot be used twice");
+    assert(backend.runController().model()->rowCount() == runRowsBefore && "approving starts no Run");
+
+    // Recheck is read-only and says what it saw now.
+    clickItem(oneNamed(section, "outputFolderRecheckButton"));
+    assert(waitForProperty(section, "rechecks", [](const QVariant& v) { return !v.toMap().isEmpty(); }));
+    assert(textHas(oneNamed(section, "outputFolderRecheckResult"), QStringLiteral("Checked now")));
+    assert(storedApprovals(workspace, project).size() == 1);
+
+    // A folder with nested sources and a Unicode name: the nested confirmation is its own, and one box is all it asks for.
+    assert(pathField->setProperty("text", QStringLiteral("nested/gen")));
+    clickItem(previewButton);
+    assert(waitForProperty(section, "previewUsable", [](const QVariant& v) { return v.toBool(); }));
+    assert(flag(oneNamed(section, "outputFolderNestedAck"), "visible") && !flag(oneNamed(section, "outputFolderIncompleteAck"), "visible"));
+    assert(textOf(oneNamed(section, "outputFolderPreviewNested")).contains(QStringLiteral("1 CMakeLists.txt")));
+    assert(textOf(oneNamed(section, "outputFolderPreviewSamples")).contains(QStringLiteral("CMakeLists.txt")));
+    assert(!flag(approveButton, "enabled") && "nested sources must be confirmed first");
+    clickItem(oneNamed(section, "outputFolderNestedAck"));
+    assert(flag(approveButton, "enabled"));
+    clickItem(oneNamed(section, "outputFolderNestedAck"));
+    assert(!flag(approveButton, "enabled") && "un-ticking takes the permission back");
+    clickItem(oneNamed(section, "outputFolderNestedAck"));
+    clickItem(approveButton);
+    assert(waitForProperty(section, "approvals", [](const QVariant& v) { return v.toList().size() == 2; }));
+    assert(storedApprovals(workspace, project).size() == 2);
+
+    // Leaving the cached Projects page: the preview is dropped (and invalidated in the controller), Approve stays off on return.
+    const QString unicodeFolder = QString::fromUtf16(u"\u0421\u0431\u043e\u0440\u043a\u0430/\u0432\u044b\u0445\u043e\u0434");
+    assert(pathField->setProperty("text", unicodeFolder));
+    clickItem(previewButton);
+    assert(waitForProperty(section, "previewUsable", [](const QVariant& v) { return v.toBool(); }));
+    const quint64 shownPreviewId = static_cast<quint64>(section->property("previewRequestId").toDouble());
+    assert(shownPreviewId > 0);
+    assert(window->setProperty("currentSection", QStringLiteral("overview")));
+    assert(waitForProperty(section, "visible", [](const QVariant& v) { return !v.toBool(); })
+        && "leaving the page hides the section (pages are kept alive)");
+    assert(!flag(section, "previewUsable") && section->property("preview").isNull());
+    assert(backend.projectOutputApprovalController().approve(projectId, unicodeFolder, shownPreviewId, false, false) == 0
+        && backend.projectOutputApprovalController().lastErrorCode() == QLatin1String("output_approval.preview_stale")
+        && "the controller's preview was invalidated when the page was left");
+    assert(window->setProperty("currentSection", QStringLiteral("projects")));
+    assert(waitForProperty(section, "visible", [](const QVariant& v) { return v.toBool(); }));
+    assert(waitForProperty(section, "listLoaded", [](const QVariant& v) { return v.toBool(); }));
+    assert(!flag(section, "previewUsable") && !flag(approveButton, "enabled") && "coming back restores no permission");
+    assert(storedApprovals(workspace, project).size() == 2 && "leaving approved nothing");
+
+    // Revoke through the list: the row and the stored record go; the rest stay.
+    const QList<QQuickItem*> revokeButtons = namedItems(section, "outputFolderRevokeButton");
+    assert(revokeButtons.size() == 2);
+    clickItem(revokeButtons.constFirst());
+    assert(waitForProperty(section, "approvals", [](const QVariant& v) { return v.toList().size() == 1; }));
+    assert(storedApprovals(workspace, project).size() == 1);
+    clickItem(oneNamed(section, "outputFolderRevokeButton"));
+    assert(waitForProperty(section, "approvals", [](const QVariant& v) { return v.toList().isEmpty(); }));
+    assert(storedApprovals(workspace, project).empty() && flag(oneNamed(section, "outputFolderEmpty"), "visible"));
+    assert(qmlWarnings.isEmpty() && "the Output folders flow emitted QML warnings");
+    checkpoint("P3e: Output folders over the real bridge verified");
+}
+
+// ---- the controlled controller (test-only, QML) ----
+// The same properties, methods and signals as ProjectOutputApprovalController. A call is accepted with a fresh id and the section
+// stays busy until the test completes it; complete() ends the "worker" the way finish() does: busy first, then the terminal signal,
+// then approvalsChanged. calls is a log of everything the section asked for.
+const char* const kHarnessQml = R"QML(
+import QtQuick
+import UI_AI_Orchestrator
+
+Item {
+    id: root
+    objectName: "p3eHarness"
+    property var hostWindowRef: null
+    property var colorsRef: null
+    property string projectId: "p1"
+    property string projectPath: "C:/root-1"
+    width: 420
+    height: section.implicitHeight
+
+    Rectangle {
+        anchors.fill: parent
+        color: root.colorsRef ? root.colorsRef.windowBackground : "#0F172A"
+    }
+
+    QtObject {
+        id: fake
+        objectName: "p3eFake"
+        property bool available: true
+        property bool busy: false
+        property bool inspecting: false
+        property double activeRequestId: 0
+        property string activeProjectId: ""
+        property string activeOperation: ""
+        property string projectContextId: ""
+        property string lastErrorCode: ""
+        property string lastErrorText: ""
+        property bool cancelRequested: false
+        property int nextId: 100
+        property double knownPreviewId: 0
+        property var ops: ({})
+        property var calls: []
+        property var refuse: null
+
+        signal previewFinished(var requestId, string projectId, string requestedPath, var result)
+        signal approveFinished(var requestId, string projectId, string requestedPath, var result)
+        signal recheckFinished(var requestId, string projectId, string approvalId, var result)
+        signal listFinished(var requestId, string projectId, var result)
+        signal revokeFinished(var requestId, string projectId, string approvalId, var result)
+        signal approvalsChanged(string projectId)
+
+        function log(name, args) {
+            const next = calls.slice()
+            next.push({fn: name, args: args})
+            calls = next
+        }
+        function begin(operation, forProject, subject, cancellable) {
+            if (refuse !== null) {
+                lastErrorCode = refuse.code
+                lastErrorText = refuse.text
+                refuse = null
+                return 0
+            }
+            if (busy) {
+                lastErrorCode = "output_approval.busy"
+                lastErrorText = "Another output-approval operation is still running."
+                return 0
+            }
+            const id = nextId
+            nextId = id + 1
+            const entries = ops
+            entries[id] = {operation: operation, projectId: forProject, subject: subject}
+            ops = entries
+            busy = true
+            inspecting = cancellable
+            activeOperation = operation
+            activeProjectId = forProject
+            activeRequestId = id
+            cancelRequested = false
+            lastErrorCode = ""
+            lastErrorText = ""
+            return id
+        }
+        function previewApproval(forProject, path) { log("preview", [forProject, path]); return begin("preview", forProject, path, true) }
+        function approve(forProject, path, previewId, nested, incomplete) {
+            log("approve", [forProject, path, previewId, nested, incomplete])
+            if (previewId !== knownPreviewId) {
+                lastErrorCode = "output_approval.preview_stale"
+                lastErrorText = "There is no current preview of this folder for this project."
+                return 0
+            }
+            return begin("approve", forProject, path, true)
+        }
+        function recheckApproval(forProject, approvalId) { log("recheck", [forProject, approvalId]); return begin("recheck", forProject, approvalId, true) }
+        function listApprovals(forProject) { log("list", [forProject]); return begin("list", forProject, "", false) }
+        function revokeApproval(forProject, approvalId) { log("revoke", [forProject, approvalId]); return begin("revoke", forProject, approvalId, false) }
+        function cancelInspection() {
+            log("cancel", [])
+            if (!busy || !inspecting || cancelRequested) return false
+            cancelRequested = true
+            knownPreviewId = 0
+            return true
+        }
+        function invalidatePreview() { log("invalidate", []); knownPreviewId = 0 }
+        function setProjectContext(id) { log("context", [id]); projectContextId = id }
+
+        function complete(id, result) {
+            const entry = ops[id]
+            busy = false
+            inspecting = false
+            activeOperation = ""
+            activeProjectId = ""
+            activeRequestId = 0
+            if (entry.operation === "preview" && result.success === true && !cancelRequested) knownPreviewId = id
+            if (entry.operation === "approve" && result.success === true) knownPreviewId = 0
+            if (entry.operation === "preview") previewFinished(id, entry.projectId, entry.subject, result)
+            else if (entry.operation === "approve") approveFinished(id, entry.projectId, entry.subject, result)
+            else if (entry.operation === "recheck") recheckFinished(id, entry.projectId, entry.subject, result)
+            else if (entry.operation === "list") listFinished(id, entry.projectId, result)
+            else if (entry.operation === "revoke") revokeFinished(id, entry.projectId, entry.subject, result)
+            if (result.changed === true) approvalsChanged(entry.projectId)
+        }
+    }
+
+    ProjectOutputFoldersSection {
+        id: section
+        width: root.width
+        hostWindow: root.hostWindowRef
+        colors: root.colorsRef
+        backend: QtObject { property var projectOutputApprovals: fake }
+        projectId: root.projectId
+        projectPath: root.projectPath
+    }
+}
+)QML";
+
+struct Harness {
+    std::unique_ptr<QQuickWindow> window;
+    QObject* root {nullptr};
+    QObject* fake {nullptr};
+    QObject* section {nullptr};
+};
+
+Harness makeHarness(QQmlApplicationEngine& engine, QObject* hostWindow, const QVariant& colors, int width)
+{
+    QQmlComponent component(&engine);
+    component.setData(QByteArray(kHarnessQml), QUrl(QStringLiteral("qrc:/p3e-harness/Harness.qml")));
+    if (component.isError()) {
+        for (const auto& error : component.errors()) std::fprintf(stderr, "[harness] %s\n", error.toString().toLocal8Bit().constData());
+    }
+    assert(component.isReady());
+    QVariantMap initial;
+    initial.insert(QStringLiteral("hostWindowRef"), QVariant::fromValue(hostWindow));
+    initial.insert(QStringLiteral("colorsRef"), colors);
+    initial.insert(QStringLiteral("width"), width);
+    Harness harness;
+    harness.window = std::make_unique<QQuickWindow>();
+    harness.window->resize(width, 1200);
+    QObject* created = component.createWithInitialProperties(initial);
+    assert(created != nullptr);
+    harness.root = created;
+    qobject_cast<QQuickItem*>(created)->setParentItem(harness.window->contentItem());
+    harness.window->setColor(QColor(QStringLiteral("#0F172A")));
+    harness.window->show();
+    assert(ai::ui::test_support::waitForCondition("the harness window is exposed", [&] { return harness.window->isExposed(); }, 5s));
+    harness.fake = created->findChild<QObject*>(QStringLiteral("p3eFake"));
+    harness.section = created->findChild<QObject*>(QStringLiteral("projectOutputFoldersSection"));
+    assert(harness.fake && harness.section);
+    return harness;
+}
+
+void destroyHarness(Harness& harness)
+{
+    // The section lets go of its controller (cancel + invalidate) before the whole tree goes.
+    QMetaObject::invokeMethod(harness.section, "release");
+    harness.window->hide();
+    delete harness.root;
+    harness.root = nullptr;
+    harness.window.reset();
+}
+
+QVariantList callsOf(const Harness& harness) { return harness.fake->property("calls").toList(); }
+
+int countCalls(const Harness& harness, const char* fn)
+{
+    int count = 0;
+    for (const QVariant& call : callsOf(harness)) {
+        if (call.toMap().value(QStringLiteral("fn")).toString() == QLatin1String(fn)) ++count;
+    }
+    return count;
+}
+
+QVariantMap lastCall(const Harness& harness, const char* fn)
+{
+    QVariantMap found;
+    for (const QVariant& call : callsOf(harness)) {
+        if (call.toMap().value(QStringLiteral("fn")).toString() == QLatin1String(fn)) found = call.toMap();
+    }
+    return found;
+}
+
+double activeId(const Harness& harness) { return harness.fake->property("activeRequestId").toDouble(); }
+
+void completeOp(const Harness& harness, double id, const QVariantMap& result)
+{
+    assert(QMetaObject::invokeMethod(harness.fake, "complete", Q_ARG(QVariant, QVariant(id)), Q_ARG(QVariant, QVariant(result))));
+    settle(20);
+}
+
+QVariantMap errorResult(const QString& code, const QString& text, bool cancelled = false)
+{
+    QVariantMap map;
+    map.insert(QStringLiteral("success"), false);
+    map.insert(QStringLiteral("errorCode"), code);
+    map.insert(QStringLiteral("errorText"), text);
+    map.insert(QStringLiteral("cancelled"), cancelled);
+    map.insert(QStringLiteral("changed"), false);
+    map.insert(QStringLiteral("stale"), false);
+    map.insert(QStringLiteral("cancelRequested"), false);
+    return map;
+}
+
+QVariantMap previewResult(const QString& path, bool nested, bool incomplete, bool alreadyApproved = false)
+{
+    QVariantMap map;
+    map.insert(QStringLiteral("success"), true);
+    map.insert(QStringLiteral("workspaceRoot"), QStringLiteral("C:/root-1"));
+    map.insert(QStringLiteral("relativePath"), path);
+    map.insert(QStringLiteral("exists"), true);
+    map.insert(QStringLiteral("existingPrefix"), path);
+    map.insert(QStringLiteral("inspectionStatus"), incomplete ? QStringLiteral("incomplete") : QStringLiteral("complete"));
+    map.insert(QStringLiteral("inspectionComplete"), !incomplete);
+    map.insert(QStringLiteral("countsAreLowerBounds"), incomplete);
+    map.insert(QStringLiteral("entries"), static_cast<qulonglong>(12));
+    map.insert(QStringLiteral("files"), static_cast<qulonglong>(10));
+    map.insert(QStringLiteral("bytes"), static_cast<qulonglong>(4096));
+    map.insert(QStringLiteral("nestedSourceCount"), static_cast<qulonglong>(nested ? 2 : 0));
+    map.insert(QStringLiteral("nestedSourceSamples"),
+        nested ? QStringList {QStringLiteral("sub/CMakeLists.txt"), QStringLiteral("deep/er/CMakeLists.txt")} : QStringList {});
+    map.insert(QStringLiteral("skippedLinks"), static_cast<qulonglong>(incomplete ? 1 : 0));
+    map.insert(QStringLiteral("hitEntryLimit"), incomplete);
+    map.insert(QStringLiteral("hitDepthLimit"), false);
+    map.insert(QStringLiteral("requiresNestedConfirmation"), nested);
+    map.insert(QStringLiteral("requiresIncompleteConfirmation"), incomplete);
+    map.insert(QStringLiteral("alreadyApproved"), alreadyApproved);
+    map.insert(QStringLiteral("changed"), false);
+    map.insert(QStringLiteral("stale"), false);
+    map.insert(QStringLiteral("cancelRequested"), false);
+    return map;
+}
+
+QVariantMap approvedResult(bool cancelRequested = false)
+{
+    QVariantMap map;
+    map.insert(QStringLiteral("success"), true);
+    map.insert(QStringLiteral("changed"), true);
+    map.insert(QStringLiteral("alreadyApproved"), false);
+    map.insert(QStringLiteral("outcome"), QStringLiteral("inserted"));
+    map.insert(QStringLiteral("stale"), false);
+    map.insert(QStringLiteral("cancelRequested"), cancelRequested);
+    return map;
+}
+
+QVariantMap listResult(const QVariantList& rows)
+{
+    QVariantMap map;
+    map.insert(QStringLiteral("success"), true);
+    map.insert(QStringLiteral("approvals"), rows);
+    map.insert(QStringLiteral("changed"), false);
+    map.insert(QStringLiteral("stale"), false);
+    map.insert(QStringLiteral("cancelRequested"), false);
+    return map;
+}
+
+QVariantMap approvalRow(const QString& id, const QString& path, bool appliesToCurrentRoot, bool inspectionComplete = true)
+{
+    QVariantMap map;
+    map.insert(QStringLiteral("approvalId"), id);
+    map.insert(QStringLiteral("projectId"), QStringLiteral("p1"));
+    map.insert(QStringLiteral("relativePath"), path);
+    map.insert(QStringLiteral("workspaceRoot"), appliesToCurrentRoot ? QStringLiteral("C:/root-1") : QStringLiteral("C:/old-root"));
+    map.insert(QStringLiteral("appliesToCurrentRoot"), appliesToCurrentRoot);
+    map.insert(QStringLiteral("inspectionComplete"), inspectionComplete);
+    map.insert(QStringLiteral("nestedSourcesAcknowledged"), false);
+    map.insert(QStringLiteral("approvedBy"), QStringLiteral("tester"));
+    map.insert(QStringLiteral("approvedAtMs"), static_cast<qlonglong>(1760000000000LL));
+    return map;
+}
+
+// Brings the section to "idle with the first list answered".
+void answerFirstList(const Harness& harness, const QVariantList& rows = {})
+{
+    // The window is exposed after the section started, so the section may read the list twice (the first answer is then not drawn:
+    // it belongs to an earlier shown/hidden episode). Answer every read until the list is loaded and the controller is idle.
+    for (int round = 0; round < 6; ++round) {
+        ai::ui::test_support::waitForCondition("the section asks for a list or is settled", [&] {
+            return flag(harness.fake, "busy")
+                || (flag(harness.section, "listLoaded") && !flag(harness.section, "pendingRefresh"));
+        }, 3s);
+        if (!flag(harness.fake, "busy")) break;
+        assert(harness.fake->property("activeOperation").toString() == QStringLiteral("list"));
+        completeOp(harness, activeId(harness), listResult(rows));
+    }
+    assert(flag(harness.section, "listLoaded") && !flag(harness.fake, "busy"));
+}
+
+// A preview of `path` accepted and answered with `result`.
+void previewAnswered(const Harness& harness, const QString& path, const QVariantMap& result)
+{
+    QObject* pathField = oneNamed(harness.section, "outputFolderPathField");
+    assert(pathField->setProperty("text", path));
+    clickItem(oneNamed(harness.section, "outputFolderPreviewButton"));
+    assert(waitForProperty(harness.fake, "busy", [](const QVariant& v) { return v.toBool(); }));
+    completeOp(harness, activeId(harness), result);
+}
+
+void runOutputFoldersHarnessTests(QQmlApplicationEngine& engine, QObject* window, QObject* projectsPage, const QStringList& qmlWarnings)
+{
+    checkpoint("P3e: Output folders over the controlled controller");
+    const QVariant colors = projectsPage->property("colors");
+    assert(colors.isValid());
+
+    checkpoint("P3e harness scenario 1");
+    // 1. A stale or foreign answer changes nothing; the lifecycle asks for cancellation; refusals show their code.
+    {
+        Harness h = makeHarness(engine, window, colors, 460);
+        answerFirstList(h, {approvalRow(QStringLiteral("a1"), QStringLiteral("build/old"), true)});
+        assert(h.section->property("approvals").toList().size() == 1);
+        assert(h.fake->property("projectContextId").toString() == QStringLiteral("p1"));
+        QObject* approveButton = oneNamed(h.section, "outputFolderApproveButton");
+
+        // An answer for text that was edited meanwhile is dropped.
+        QObject* pathField = oneNamed(h.section, "outputFolderPathField");
+        assert(pathField->setProperty("text", QStringLiteral("A")));
+        clickItem(oneNamed(h.section, "outputFolderPreviewButton"));
+        const double editedId = activeId(h);
+        assert(editedId > 0 && flag(oneNamed(h.section, "outputFolderCancelButton"), "visible") && "a running inspection can be cancelled");
+        assert(!flag(oneNamed(h.section, "outputFolderPreviewButton"), "enabled") && "one operation at a time");
+        assert(pathField->setProperty("text", QStringLiteral("AB")));
+        completeOp(h, editedId, previewResult(QStringLiteral("A"), false, false));
+        assert(!flag(h.section, "previewUsable") && !flag(approveButton, "enabled") && "an answer for old text is not shown");
+        assert(h.section->property("preview").isNull());
+
+        // An answer that was already superseded by the Backend (stale / cancel requested) is not usable either.
+        clickItem(oneNamed(h.section, "outputFolderPreviewButton"));
+        QVariantMap superseded = previewResult(QStringLiteral("AB"), false, false);
+        superseded.insert(QStringLiteral("stale"), true);
+        completeOp(h, activeId(h), superseded);
+        assert(!flag(h.section, "previewUsable") && !flag(approveButton, "enabled"));
+
+        // A current answer is usable; a project change while another inspection runs cancels it and drops its late answer.
+        clickItem(oneNamed(h.section, "outputFolderPreviewButton"));
+        completeOp(h, activeId(h), previewResult(QStringLiteral("AB"), false, false));
+        assert(flag(h.section, "previewUsable") && flag(approveButton, "enabled"));
+        assert(pathField->setProperty("text", QStringLiteral("AC")));
+        clickItem(oneNamed(h.section, "outputFolderPreviewButton"));
+        const double foreignId = activeId(h);
+        const int cancelsBefore = countCalls(h, "cancel");
+        assert(h.root->setProperty("projectId", QStringLiteral("p2")));
+        settle();
+        assert(countCalls(h, "cancel") == cancelsBefore + 1 && "changing the project cancels the running inspection");
+        assert(h.fake->property("projectContextId").toString() == QStringLiteral("p2"));
+        assert(h.section->property("approvals").toList().isEmpty() && !flag(h.section, "listLoaded") && "the old list is not shown for the new project");
+        completeOp(h, foreignId, previewResult(QStringLiteral("AC"), false, false));
+        assert(!flag(h.section, "previewUsable") && h.section->property("preview").isNull() && "a foreign answer is not kept");
+        assert(waitForProperty(h.fake, "busy", [](const QVariant& v) { return v.toBool(); }));
+        assert(lastCall(h, "list").value(QStringLiteral("args")).toList().first().toString() == QStringLiteral("p2")
+            && "the new project's list is read once the controller is free");
+        completeOp(h, activeId(h), listResult({}));
+        assert(h.section->property("listLoaded").toBool() && h.section->property("approvals").toList().isEmpty());
+
+        // A call the controller refuses (request id 0) shows its code.
+        assert(h.fake->setProperty("refuse", QVariantMap {{QStringLiteral("code"), QStringLiteral("output_approval.busy")},
+            {QStringLiteral("text"), QStringLiteral("Another output-approval operation is still running.")}}));
+        assert(pathField->setProperty("text", QStringLiteral("Z")));
+        clickItem(oneNamed(h.section, "outputFolderPreviewButton"));
+        assert(textOf(oneNamed(h.section, "outputFolderError")).contains(QStringLiteral("output_approval.busy")));
+        assert(!flag(h.fake, "busy") && !flag(h.section, "previewUsable"));
+        destroyHarness(h);
+    }
+
+    checkpoint("P3e harness scenario 2");
+    // 2. Two independent confirmations and honest lower bounds.
+    {
+        Harness h = makeHarness(engine, window, colors, 460);
+        answerFirstList(h);
+        QObject* approveButton = oneNamed(h.section, "outputFolderApproveButton");
+        QObject* nestedAck = oneNamed(h.section, "outputFolderNestedAck");
+        QObject* incompleteAck = oneNamed(h.section, "outputFolderIncompleteAck");
+
+        previewAnswered(h, QStringLiteral("build/huge"), previewResult(QStringLiteral("build/huge"), true, true));
+        assert(flag(h.section, "previewUsable") && flag(nestedAck, "visible") && flag(incompleteAck, "visible"));
+        assert(!flag(nestedAck, "checked") && !flag(incompleteAck, "checked") && !flag(approveButton, "enabled"));
+        const QString counts = textOf(oneNamed(h.section, "outputFolderPreviewCounts"));
+        assert(counts.contains(QStringLiteral("lower bounds")) && counts.contains(QStringLiteral("at least 12 entries"))
+            && !counts.contains(QStringLiteral("Inspected completely")) && "an incomplete walk never claims exact figures");
+        assert(textOf(oneNamed(h.section, "outputFolderPreviewNested")).startsWith(QStringLiteral("At least 2 CMakeLists.txt")));
+        assert(textOf(oneNamed(h.section, "outputFolderPreviewReasons")).contains(QStringLiteral("entry limit")));
+        saveShot(h.root, QStringLiteral("p3e-confirmations-wide"));
+        clickItem(nestedAck);
+        assert(flag(nestedAck, "checked") && !flag(approveButton, "enabled") && "the nested box alone is not enough");
+        clickItem(incompleteAck);
+        assert(flag(approveButton, "enabled"));
+        saveShot(h.root, QStringLiteral("p3e-confirmations-ticked"));
+        clickItem(approveButton);
+        {
+            const QVariantList args = lastCall(h, "approve").value(QStringLiteral("args")).toList();
+            assert(args.size() == 5 && args[0].toString() == QStringLiteral("p1") && args[1].toString() == QStringLiteral("build/huge")
+                && args[2].toDouble() > 0 && args[3].toBool() && args[4].toBool()
+                && "approve carries the project, the previewed text, the preview id and both boxes");
+        }
+        assert(flag(oneNamed(h.section, "outputFolderCancelButton"), "visible"));
+        completeOp(h, activeId(h), approvedResult());
+        assert(textOf(oneNamed(h.section, "outputFolderNotice")).contains(QStringLiteral("Approved")));
+        assert(!flag(h.section, "previewUsable") && !flag(nestedAck, "checked") && !flag(incompleteAck, "checked"));
+        answerFirstList(h);   // the written record makes the section read the list again
+
+        // New data, new preview: the boxes start unticked again; only the one that is required is asked for.
+        previewAnswered(h, QStringLiteral("build/huge2"), previewResult(QStringLiteral("build/huge2"), false, true));
+        assert(!flag(nestedAck, "visible") && flag(incompleteAck, "visible") && !flag(incompleteAck, "checked"));
+        assert(!flag(approveButton, "enabled"));
+        clickItem(incompleteAck);
+        assert(flag(approveButton, "enabled"));
+        clickItem(approveButton);
+        {
+            const QVariantList args = lastCall(h, "approve").value(QStringLiteral("args")).toList();
+            assert(!args[3].toBool() && args[4].toBool() && "only the confirmation that was asked for is sent");
+        }
+        completeOp(h, activeId(h), errorResult(QStringLiteral("output_dir.inspection_incomplete"), QStringLiteral("The folder could not be inspected completely.")));
+        assert(textOf(oneNamed(h.section, "outputFolderError")).contains(QStringLiteral("output_dir.inspection_incomplete")));
+        assert(textOf(oneNamed(h.section, "outputFolderError")).contains(QStringLiteral("build/huge2")));
+
+        // A preview that fails shows its code and none of the earlier facts.
+        previewAnswered(h, QStringLiteral("build/ok"), previewResult(QStringLiteral("build/ok"), false, false));
+        assert(flag(h.section, "previewUsable"));
+        previewAnswered(h, QStringLiteral("build/gone"), errorResult(QStringLiteral("output_dir.inspection_failed"), QStringLiteral("The folder could not be inspected.")));
+        assert(!flag(h.section, "previewUsable") && !flag(oneNamed(h.section, "outputFolderPreviewCard"), "visible"));
+        assert(textOf(oneNamed(h.section, "outputFolderError")).contains(QStringLiteral("output_dir.inspection_failed")));
+        assert(!flag(approveButton, "enabled"));
+        destroyHarness(h);
+    }
+
+    checkpoint("P3e harness scenario 3");
+    // 3. Recheck: current facts are not the stored ones; a dormant approval is never checked against the new folder.
+    {
+        Harness h = makeHarness(engine, window, colors, 460);
+        answerFirstList(h, {approvalRow(QStringLiteral("a1"), QStringLiteral("build/live"), true, true),
+            approvalRow(QStringLiteral("a2"), QStringLiteral("build/dormant"), false, true)});
+        const int listsAtStart = countCalls(h, "list");
+        const QList<QQuickItem*> rows = namedItems(h.section, "outputFolderRow");
+        assert(rows.size() == 2);
+        const QList<QQuickItem*> applies = namedItems(h.section, "outputFolderRowApplies");
+        assert(textOf(applies[0]).contains(QStringLiteral("Applies")) && textOf(applies[1]).contains(QStringLiteral("Not active")));
+        saveShot(h.root, QStringLiteral("p3e-list-wide"));
+
+        QList<QQuickItem*> recheckButtons = namedItems(h.section, "outputFolderRecheckButton");
+        clickItem(recheckButtons[0]);
+        {
+            QVariantMap now = previewResult(QStringLiteral("build/live"), false, true);
+            now.insert(QStringLiteral("storedInspectionComplete"), true);
+            completeOp(h, activeId(h), now);
+        }
+        QString first = textOf(namedItems(h.section, "outputFolderRecheckResult")[0]);
+        assert(first.contains(QStringLiteral("Checked now")) && first.contains(QStringLiteral("lower bounds"))
+            && first.contains(QStringLiteral("complete")) && "the stored metadata is labelled as the one of the approval");
+        assert(!first.contains(QStringLiteral("Inspected completely")) && "today's partial walk is not reported as complete");
+
+        recheckButtons = namedItems(h.section, "outputFolderRecheckButton");
+        clickItem(recheckButtons[1]);
+        completeOp(h, activeId(h), errorResult(QStringLiteral("output_approval.root_changed"), QStringLiteral("This approval was made for an earlier folder.")));
+        const QList<QQuickItem*> results = namedItems(h.section, "outputFolderRecheckResult");
+        QString dormant;
+        for (QQuickItem* result : results) {
+            if (flag(result, "visible") && textOf(result).contains(QStringLiteral("root_changed"))) dormant = textOf(result);
+        }
+        assert(dormant.contains(QStringLiteral("earlier folder")) && !dormant.contains(QStringLiteral("Checked now")));
+        saveShot(h.root, QStringLiteral("p3e-recheck-wide"));
+        const QList<QQuickItem*> revokeButtons = namedItems(h.section, "outputFolderRevokeButton");
+        assert(revokeButtons.size() == 2 && flag(revokeButtons[1], "enabled") && "a dormant approval can still be revoked");
+        clickItem(revokeButtons[1]);
+        assert(lastCall(h, "revoke").value(QStringLiteral("args")).toList()[1].toString() == QStringLiteral("a2"));
+        {
+            QVariantMap revoked;
+            revoked.insert(QStringLiteral("success"), true);
+            revoked.insert(QStringLiteral("removed"), true);
+            revoked.insert(QStringLiteral("changed"), true);
+            completeOp(h, activeId(h), revoked);
+        }
+        // approvalsChanged made the section read the list again, exactly once.
+        assert(waitForProperty(h.fake, "busy", [](const QVariant& v) { return v.toBool(); }));
+        assert(h.fake->property("activeOperation").toString() == QStringLiteral("list") && countCalls(h, "list") == listsAtStart + 1);
+        completeOp(h, activeId(h), listResult({approvalRow(QStringLiteral("a1"), QStringLiteral("build/live"), true, true)}));
+        assert(h.section->property("approvals").toList().size() == 1);
+        destroyHarness(h);
+    }
+
+    checkpoint("P3e harness scenario 4");
+    // 4. Busy and queued refreshes, a late success after a cancel request, hiding while a write is running.
+    {
+        Harness h = makeHarness(engine, window, colors, 460);
+        answerFirstList(h);
+        // A list in flight: nothing else can start, nothing is queued twice.
+        assert(QMetaObject::invokeMethod(h.section, "requestRefresh"));
+        assert(waitForProperty(h.fake, "busy", [](const QVariant& v) { return v.toBool(); }));
+        assert(h.fake->property("activeOperation").toString() == QStringLiteral("list"));
+        assert(!flag(h.fake, "inspecting") && !flag(oneNamed(h.section, "outputFolderCancelButton"), "visible") && "a list has no Cancel");
+        assert(!flag(oneNamed(h.section, "outputFolderPreviewButton"), "enabled") && "no second request next to a running one");
+        QMetaObject::invokeMethod(h.section, "startRevoke", Q_ARG(QVariant, QVariant(QStringLiteral("x"))));
+        QMetaObject::invokeMethod(h.section, "startPreview");
+        assert(countCalls(h, "revoke") == 0 && countCalls(h, "preview") == 0 && "nothing is started next to a running list");
+        completeOp(h, activeId(h), listResult({}));
+        const int lists0 = countCalls(h, "list");
+
+        previewAnswered(h, QStringLiteral("out"), previewResult(QStringLiteral("out"), false, false));
+        clickItem(oneNamed(h.section, "outputFolderApproveButton"));
+        const double approveId = activeId(h);
+        // approvalsChanged while the controller is busy: the list is not asked for until it is free.
+        assert(QMetaObject::invokeMethod(h.fake, "approvalsChanged", Q_ARG(QString, QStringLiteral("p1"))));
+        settle();
+        assert(countCalls(h, "list") == lists0 && "a refresh waits for the running operation");
+        // A cancel request, then the write turns out to have happened: reported as written, never as "nothing written".
+        clickItem(oneNamed(h.section, "outputFolderCancelButton"));
+        assert(textOf(oneNamed(h.section, "outputFolderBusy")).contains(QStringLiteral("Cancelling")));
+        assert(!flag(oneNamed(h.section, "outputFolderCancelButton"), "enabled") && "a second Cancel is not offered");
+        completeOp(h, approveId, approvedResult(true));
+        const QString notice = textOf(oneNamed(h.section, "outputFolderNotice"));
+        assert(notice.contains(QStringLiteral("too late")) && notice.contains(QStringLiteral("recorded")) && !notice.contains(QStringLiteral("nothing was written")));
+        saveShot(h.root, QStringLiteral("p3e-late-success"));
+        assert(waitForProperty(h.fake, "busy", [](const QVariant& v) { return v.toBool(); }));
+        assert(countCalls(h, "list") == lists0 + 1 && "the queued refresh ran once, after the write");
+        completeOp(h, activeId(h), listResult({approvalRow(QStringLiteral("n1"), QStringLiteral("out"), true)}));
+        assert(countCalls(h, "list") == lists0 + 1 && "no refresh loop");
+
+        // The section is hidden while an approve runs: the inspection is cancelled, the preview dropped, the late result not drawn.
+        previewAnswered(h, QStringLiteral("out2"), previewResult(QStringLiteral("out2"), false, false));
+        clickItem(oneNamed(h.section, "outputFolderApproveButton"));
+        const double hiddenId = activeId(h);
+        const int cancels = countCalls(h, "cancel");
+        const int invalidates = countCalls(h, "invalidate");
+        assert(h.root->setProperty("visible", false));
+        settle();
+        assert(countCalls(h, "cancel") == cancels + 1 && countCalls(h, "invalidate") > invalidates && "hiding cancels and invalidates");
+        assert(!flag(h.section, "previewUsable"));
+        completeOp(h, hiddenId, approvedResult(true));
+        assert(h.section->property("notice").toString().isEmpty() && "a result that arrives while hidden is not drawn");
+        assert(countCalls(h, "list") == lists0 + 1 && "a hidden section reads nothing");
+        assert(h.root->setProperty("visible", true));
+        assert(waitForProperty(h.fake, "busy", [](const QVariant& v) { return v.toBool(); }));
+        assert(countCalls(h, "list") == lists0 + 2 && "coming back reads the list once, and the old preview is not restored");
+        assert(!flag(h.section, "previewUsable") && !flag(oneNamed(h.section, "outputFolderApproveButton"), "enabled"));
+        completeOp(h, activeId(h), listResult({}));
+        destroyHarness(h);
+    }
+
+    checkpoint("P3e harness scenario 5");
+    // 5. No durable storage: an explanation and no controls that could be used.
+    {
+        Harness h = makeHarness(engine, window, colors, 460);
+        answerFirstList(h);
+        assert(h.fake->setProperty("available", false));
+        settle();
+        assert(flag(oneNamed(h.section, "outputFolderUnavailable"), "visible") && !flag(oneNamed(h.section, "outputFolderPathField"), "visible"));
+        assert(!flag(oneNamed(h.section, "outputFolderPreviewButton"), "visible"));
+        saveShot(h.root, QStringLiteral("p3e-unavailable"));
+        destroyHarness(h);
+    }
+
+    checkpoint("P3e harness scenario 6");
+    // 6. Renders: long Unicode path and error, a narrow window, busy with Cancel.
+    {
+        Harness h = makeHarness(engine, window, colors, 300);
+        answerFirstList(h, {approvalRow(QStringLiteral("a1"), QString::fromUtf16(u"\u0421\u0431\u043e\u0440\u043a\u0430/\u0432\u044b\u0445\u043e\u0434/\u043e\u0447\u0435\u043d\u044c-\u0434\u043b\u0438\u043d\u043d\u044b\u0439-\u043f\u0443\u0442\u044c/x64-debug/\u0433\u0435\u043d\u0435\u0440\u0438\u0440\u0443\u0435\u043c\u044b\u0435-\u0444\u0430\u0439\u043b\u044b"), true),
+            approvalRow(QStringLiteral("a2"), QStringLiteral("build/old"), false, false)});
+        previewAnswered(h, QString::fromUtf16(u"\u0421\u0431\u043e\u0440\u043a\u0430/\u0432\u044b\u0445\u043e\u0434/\u043e\u0447\u0435\u043d\u044c-\u0434\u043b\u0438\u043d\u043d\u044b\u0439-\u043f\u0443\u0442\u044c"),
+            previewResult(QString::fromUtf16(u"\u0421\u0431\u043e\u0440\u043a\u0430/\u0432\u044b\u0445\u043e\u0434/\u043e\u0447\u0435\u043d\u044c-\u0434\u043b\u0438\u043d\u043d\u044b\u0439-\u043f\u0443\u0442\u044c"), true, true));
+        assert(h.fake->setProperty("refuse", QVariantMap {{QStringLiteral("code"), QStringLiteral("output_approval.path_invalid")},
+            {QStringLiteral("text"), QString::fromUtf16(u"\u041f\u0443\u0442\u044c \u0432\u044b\u0445\u043e\u0434\u0438\u0442 \u0437\u0430 \u043f\u0440\u0435\u0434\u0435\u043b\u044b \u043a\u043e\u0440\u043d\u044f \u043f\u0440\u043e\u0435\u043a\u0442\u0430 \u0438 \u0431\u0443\u0434\u0435\u0442 \u043e\u0442\u043a\u043b\u043e\u043d\u0451\u043d")}}));
+        QMetaObject::invokeMethod(h.section, "startRevoke", Q_ARG(QVariant, QVariant(QStringLiteral("a1"))));
+        saveShot(h.root, QStringLiteral("p3e-narrow-unicode"));
+        clickItem(oneNamed(h.section, "outputFolderPreviewButton"));
+        saveShot(h.root, QStringLiteral("p3e-narrow-busy"));
+        completeOp(h, activeId(h), previewResult(QStringLiteral("x"), false, false));
+        destroyHarness(h);
+    }
+    checkpoint("P3e harness scenario 7");
+    // 7. Cancel takes the local preview and both confirmations with it: the Backend dropped its own preview when the cancel was
+    // accepted, so a form that still showed Approve would offer an id the Backend no longer takes.
+    {
+        Harness h = makeHarness(engine, window, colors, 460);
+        answerFirstList(h, {approvalRow(QStringLiteral("a1"), QStringLiteral("build/live"), true)});
+        QObject* approveButton = oneNamed(h.section, "outputFolderApproveButton");
+        QObject* nestedAck = oneNamed(h.section, "outputFolderNestedAck");
+        QObject* incompleteAck = oneNamed(h.section, "outputFolderIncompleteAck");
+        const auto approvable = [&](const char* folder) {
+            previewAnswered(h, QString::fromLatin1(folder), previewResult(QString::fromLatin1(folder), true, true));
+            assert(flag(h.section, "previewUsable") && !flag(approveButton, "enabled"));
+            clickItem(nestedAck);
+            clickItem(incompleteAck);
+            assert(flag(approveButton, "enabled"));
+        };
+        const auto nothingApprovable = [&](const char* what) {
+            if (flag(h.section, "previewUsable") || !h.section->property("preview").isNull() || flag(approveButton, "enabled")
+                || flag(nestedAck, "checked") || flag(incompleteAck, "checked")) {
+                std::fprintf(stderr, "after %s the form still holds a preview or a confirmation\n", what);
+            }
+            assert(!flag(h.section, "previewUsable") && h.section->property("preview").isNull() && !flag(approveButton, "enabled"));
+            assert(!flag(nestedAck, "checked") && !flag(incompleteAck, "checked") && "the confirmations are dropped too");
+        };
+
+        // 7a. preview -> approve -> Cancel -> the cancelled terminal.
+        approvable("build/r1");
+        clickItem(approveButton);
+        const double approveId = activeId(h);
+        clickItem(oneNamed(h.section, "outputFolderCancelButton"));
+        completeOp(h, approveId, errorResult(QStringLiteral("output_approval.cancelled"), QStringLiteral("The approval was cancelled"), true));
+        nothingApprovable("a cancelled approve");
+        assert(textOf(oneNamed(h.section, "outputFolderNotice")).contains(QStringLiteral("cancelled")));
+        const int approvesBefore = countCalls(h, "approve");
+        assert(QMetaObject::invokeMethod(h.section, "startApprove"));
+        settle();
+        assert(countCalls(h, "approve") == approvesBefore && "a forced approve sends nothing to the controller");
+        approvable("build/r1");   // only a NEW successful preview restores the permission, with the boxes unticked again
+        saveShot(h.root, QStringLiteral("p3e-cancel-restored"));
+
+        // 7b. an accepted Cancel of a recheck also drops the earlier, now invalidated, preview.
+        clickItem(namedItems(h.section, "outputFolderRecheckButton").constFirst());
+        const double recheckId = activeId(h);
+        assert(flag(oneNamed(h.section, "outputFolderCancelButton"), "visible"));
+        clickItem(oneNamed(h.section, "outputFolderCancelButton"));
+        completeOp(h, recheckId, errorResult(QStringLiteral("output_approval.cancelled"), QStringLiteral("The inspection was cancelled"), true));
+        nothingApprovable("a cancelled recheck");
+        const int approvesAfterRecheck = countCalls(h, "approve");
+        assert(QMetaObject::invokeMethod(h.section, "startApprove"));
+        settle();
+        assert(countCalls(h, "approve") == approvesAfterRecheck);
+        saveShot(h.root, QStringLiteral("p3e-cancel-dropped"));
+        destroyHarness(h);
+    }
+
+    assert(qmlWarnings.isEmpty() && "the Output folders harness emitted QML warnings");
+    checkpoint("P3e: Output folders over the controlled controller verified");
+}
+
 } // namespace
 
 int main(int argc, char* argv[])
@@ -353,6 +1236,15 @@ int main(int argc, char* argv[])
     QObject* projectsPage = waitForChild(window, "projectsPage");
     checkpoint(projectsPage ? "found projectsPage" : "MISSING projectsPage");
     assert(projectsPage && "ProjectsPage was not found in the loaded QML tree");
+
+    // Scoped run of the P3e scenarios only (same real Main.qml and bridge). It does not replace the full run below.
+    if (argc == 2 && std::string(argv[1]) == "--output-folders-only") {
+        runOutputFoldersBridgeTests(backend, window, projectsPage, workspace, qmlWarnings);
+        runOutputFoldersHarnessTests(engine, window, projectsPage, qmlWarnings);
+        assert(qmlWarnings.isEmpty() && "QML runtime warnings were emitted");
+        checkpoint("output-folders scenarios passed");
+        return 0;
+    }
 
     // Settings > Diagnostics shows the application version the process was given, not a placeholder.
     QObject* applicationVersionText = waitForChild(window, "applicationVersionText");
@@ -4244,6 +5136,9 @@ int main(int argc, char* argv[])
         assert(QMetaObject::invokeMethod(waitForChild(window, "nextRunPlanCloseButton"), "clicked"));
         checkpoint("PC-3D Prompt Workshop verified in real QML");
     }
+
+    runOutputFoldersBridgeTests(backend, window, projectsPage, workspace, qmlWarnings);
+    runOutputFoldersHarnessTests(engine, window, projectsPage, qmlWarnings);
 
     assert(qmlWarnings.isEmpty() && "QML runtime warnings were emitted");
 
