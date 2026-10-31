@@ -2,6 +2,8 @@
 
 #include <ai/application/execution/IWorkflowRunner.hpp>
 #include <ai/application/verification/ManifestVerificationManualHandoffTypes.hpp>
+#include <ai/application/workspace/RecordedWorkspaceExclusions.hpp>
+#include <ai/application/workspace/WorkspaceBaselineProvenance.hpp>
 #include <ai/ui/ProviderBudgetVariant.hpp>
 #include <ai/ui/RunContractVariant.hpp>
 
@@ -24,6 +26,103 @@
 namespace {
 
 constexpr std::chrono::milliseconds kDefaultRunTimeout {300000};
+
+// This read model explains recorded artifacts; it neither restores a policy nor
+// reads today's project approvals. File access stays behind ArtifactService and
+// runs on the existing refresh worker, never on QML's GUI thread.
+QVariantMap recordedWorkspaceDiagnostics(
+    const QString& runId, const std::vector<ai::application::Artifact>& artifacts,
+    ai::application::ArtifactService& service)
+{
+    using namespace ai::application;
+    const Artifact* baseline = nullptr;
+    const Artifact* comparison = nullptr;
+    bool duplicateBaseline = false;
+    for (const auto& artifact : artifacts) {
+        if (artifact.runId != runId.toStdString()) continue;
+        if (artifact.name == "workspace-baseline.v1.json") {
+            duplicateBaseline = baseline != nullptr;
+            baseline = &artifact;
+        }
+        const bool apply = artifact.name == "manifest-workspace-apply-provenance.md";
+        if (apply || artifact.name == "manifest-workspace-provenance.md") {
+            const bool previousApply = comparison
+                && comparison->name == "manifest-workspace-apply-provenance.md";
+            if (!comparison || (apply && !previousApply)
+                || (apply == previousApply && artifact.createdAt > comparison->createdAt))
+                comparison = &artifact;
+        }
+    }
+    QVariantMap scope {{"state", "missing"}};
+    QVariantMap result {{"state", "missing"}};
+    const auto failure = [](const std::string& code) {
+        return QVariantMap {{"state", "unavailable"},
+            {"errorCode", QString::fromStdString(code)}};
+    };
+    if (baseline) {
+        if (duplicateBaseline) scope = failure("workspace_baseline.recorded_baseline_ambiguous");
+        else if (baseline->byteSize > WorkspaceBaselineLimits {}.maxManifestBytes)
+            scope = failure("workspace_baseline.manifest_limit");
+        else {
+            const auto content = service.getArtifactContent(baseline->id);
+            if (!content.success()) scope = failure(content.error()->code);
+            else {
+                const auto parsed = WorkspaceBaselineProvenance::parseJson(content.value());
+                if (!parsed.success()) scope = failure(parsed.error()->code);
+                else {
+                    const auto paths = RecordedWorkspaceExclusions::parsePaths(parsed.value().exclusions);
+                    if (!paths.success()) scope = failure(paths.error()->code);
+                    else {
+                        QStringList exclusions;
+                        QStringList dynamicPaths;
+                        for (const auto& entry : parsed.value().exclusions) {
+                            exclusions.push_back(QString::fromStdString(entry));
+                            if (entry.starts_with("path:"))
+                                dynamicPaths.push_back(QString::fromStdString(entry.substr(5)));
+                        }
+                        scope = {{"state", "recorded"}, {"exclusions", exclusions},
+                            {"outputPaths", dynamicPaths},
+                            {"fingerprint", QString::fromStdString(parsed.value().fingerprint)}};
+                    }
+                }
+            }
+        }
+    }
+    if (comparison) {
+        // The report format is textual. Only known schema/classification pairs
+        // become compact facts; unfamiliar reports remain available in the viewer.
+        if (comparison->byteSize > 512 * 1024) result = failure("workspace_provenance.report_limit");
+        else {
+            const auto content = service.getArtifactContent(comparison->id);
+            if (!content.success()) result = failure(content.error()->code);
+            else {
+                const QString text = QString::fromStdString(content.value());
+                const auto field = [&text](const QString& prefix) {
+                    QString value;
+                    int count = 0;
+                    for (const auto& line : text.split('\n')) {
+                        if (line.startsWith(prefix)) { value = line.mid(prefix.size()).trimmed(); ++count; }
+                    }
+                    return count == 1 ? value : QString {};
+                };
+                const auto schema = field(QStringLiteral("Schema: "));
+                const auto classification = field(QStringLiteral("Classification: "));
+                const bool apply = comparison->name == "manifest-workspace-apply-provenance.md";
+                const QStringList known = apply
+                    ? QStringList {"applied_proposal_set", "applied_with_manual_or_external_drift"}
+                    : QStringList {"unchanged", "manual_or_external_drift", "not_verifiable"};
+                if (schema != (apply ? "workspace-apply-provenance.v1" : "workspace-provenance.v1")
+                    || !known.contains(classification)) result = failure("workspace_provenance.report_unrecognized");
+                else result = {{"state", "recorded"}, {"classification", classification},
+                    {"errorCode", field(QStringLiteral("Error: ")).left(256)},
+                    {"details", field(QStringLiteral("Details: ")).left(2304)}};
+            }
+        }
+    }
+    if (baseline) scope["artifactId"] = QString::fromStdString(baseline->id);
+    if (comparison) result["artifactId"] = QString::fromStdString(comparison->id);
+    return {{"runId", runId}, {"baseline", scope}, {"comparison", result}};
+}
 
 bool isTerminalEvent(ai::application::RunEventType type)
 {
@@ -701,6 +800,8 @@ void RunController::selectRun(const QString& runId)
         stageModel_.replace({});
         artifactModel_.replace({});
         warningModel_.replace({});
+        workspaceDiagnostics_.clear();
+        emit workspaceDiagnosticsChanged();
     }
     pendingStages_ = true;
     pendingArtifacts_ = true;
@@ -926,6 +1027,8 @@ void RunController::startPendingRefresh()
                 auto listed = artifacts->listArtifacts(
                     outcome.request.selectedRunId.toStdString());
                 if (listed.success()) {
+                    outcome.workspaceDiagnostics = recordedWorkspaceDiagnostics(
+                        outcome.request.selectedRunId, listed.value(), *artifacts);
                     outcome.artifacts = std::move(listed.value());
                 } else {
                     outcome.artifactError = *listed.error();
@@ -988,11 +1091,20 @@ void RunController::finishRefresh()
 
         if (outcome.artifactError.has_value()) {
             artifactModel_.replace({});
+            workspaceDiagnostics_ = {{"runId", selectedRunId_},
+                {"baseline", QVariantMap {{"state", "unavailable"},
+                    {"errorCode", QString::fromStdString(outcome.artifactError->code)}}},
+                {"comparison", QVariantMap {{"state", "unavailable"}}}};
+            emit workspaceDiagnosticsChanged();
             reportError(*outcome.artifactError);
         } else if (outcome.artifacts.has_value()) {
             artifactModel_.replace(std::move(*outcome.artifacts));
+            workspaceDiagnostics_ = std::move(outcome.workspaceDiagnostics);
+            emit workspaceDiagnosticsChanged();
         } else if (request.refreshArtifacts && selectedRunId_.isEmpty()) {
             artifactModel_.replace({});
+            workspaceDiagnostics_.clear();
+            emit workspaceDiagnosticsChanged();
         }
 
         if (outcome.warningError.has_value()) {

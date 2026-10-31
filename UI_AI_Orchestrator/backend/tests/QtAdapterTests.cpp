@@ -4632,6 +4632,104 @@ void testRunWarningsReachTheRunDetailsModelAndSurviveARestart()
     }
 }
 
+// Read-only diagnostics use artifacts of the selected Run, including after a
+// restart. They must not synthesize an empty area from a missing/corrupt record.
+void testRunWorkspaceDiagnosticsUseRecordedArtifactsAndClearOnSelection()
+{
+    using namespace ai::application;
+    TempWorkspace workspace;
+    QString recordedRun;
+    QString invalidRun;
+    QString emptyRun;
+    std::vector<std::string> recordedRules;
+    {
+        BackendBridge bridge(workspace.databasePathQt());
+        const auto projectId = bridge.projectController().createProject(
+            QStringLiteral("Recorded scope"), QStringLiteral("Display only"), workspace.projectPathQt());
+        assert(!projectId.isEmpty());
+        const auto database = ai::infrastructure::SqliteDatabase::open(workspace.databasePath);
+        assert(database.success());
+        ai::infrastructure::SqliteRunRepository repository(database.value());
+        for (const auto& id : {"recorded-scope-run", "invalid-scope-run", "empty-scope-run"}) {
+            Run run;
+            run.id = id;
+            run.projectId = projectId.toStdString();
+            run.workflowId = kExecutionManifestWorkflowId;
+            run.workspacePath = workspace.projectPath;
+            run.status = RunStatus::Completed;
+            run.createdAt = std::chrono::system_clock::now();
+            assert(repository.insertRun(run).success());
+        }
+        recordedRun = QStringLiteral("recorded-scope-run");
+        invalidRun = QStringLiteral("invalid-scope-run");
+        emptyRun = QStringLiteral("empty-scope-run");
+        auto policy = WorkspaceReadPolicy::secureDefaults(workspace.projectPath);
+        policy.deniedPaths = {fs::path("Out2"), fs::u8path("Сборка/выход")};
+        const auto snapshot = WorkspaceBaselineProvenance::capture(policy);
+        assert(snapshot.success());
+        recordedRules = snapshot.value().exclusions;
+        const auto json = WorkspaceBaselineProvenance::renderJson(snapshot.value());
+        assert(json.success());
+        ai::backend::BackendRuntime seed(workspace.guestRuntimeConfig());
+        assert(seed.storageAvailable());
+        assert(seed.artifactService().createArtifact(recordedRun.toStdString(), std::nullopt,
+            ArtifactKind::Report, "workspace-baseline.v1.json", "application/json", json.value()).success());
+        assert(seed.artifactService().createArtifact(recordedRun.toStdString(), std::nullopt,
+            ArtifactKind::Report, "manifest-workspace-provenance.md", "text/markdown",
+            "# Workspace provenance\nSchema: workspace-provenance.v1\nClassification: not_verifiable\n"
+            "Error: workspace_baseline.file_limit\nDetails: Out2/source.cpp: 307200 bytes, limit 262144\n").success());
+        auto corrupt = snapshot.value();
+        corrupt.exclusions.push_back("path:../escape");
+        const auto corruptJson = WorkspaceBaselineProvenance::renderJson(corrupt);
+        assert(corruptJson.success());
+        assert(seed.artifactService().createArtifact(invalidRun.toStdString(), std::nullopt,
+            ArtifactKind::Report, "workspace-baseline.v1.json", "application/json", corruptJson.value()).success());
+        assert(seed.artifactService().createArtifact(invalidRun.toStdString(), std::nullopt,
+            ArtifactKind::Report, "manifest-workspace-provenance.md", "text/markdown",
+            "Schema: workspace-provenance.v99\nClassification: unchanged\n").success());
+    }
+    BackendBridge bridge(workspace.databasePathQt());
+    RunController& runs = bridge.runController();
+    const auto select = [&](const QString& id) {
+        runs.selectRun(id);
+        assert(runs.workspaceDiagnostics().isEmpty() && "Outgoing diagnostics leaked into a new selection");
+        assert(ai::ui::test_support::waitForCondition("Recorded workspace diagnostics", [&] {
+            return runs.workspaceDiagnostics().value("runId").toString() == id;
+        }, 5s));
+        return runs.workspaceDiagnostics();
+    };
+    auto facts = select(recordedRun);
+    auto baseline = facts.value("baseline").toMap();
+    assert(baseline.value("state").toString() == "recorded");
+    assert(baseline.value("outputPaths").toStringList()
+        == (QStringList {QStringLiteral("Out2"), QString::fromUtf8("Сборка/выход")}));
+    QStringList expected;
+    for (const auto& rule : recordedRules) expected.push_back(QString::fromStdString(rule));
+    assert(baseline.value("exclusions").toStringList() == expected);
+    auto comparison = facts.value("comparison").toMap();
+    assert(comparison.value("classification").toString() == "not_verifiable");
+    assert(comparison.value("errorCode").toString() == "workspace_baseline.file_limit");
+    assert(comparison.value("details").toString().contains("307200 bytes, limit 262144"));
+    assert(!comparison.value("details").toString().contains(workspace.projectPathQt()));
+    facts = select(invalidRun);
+    assert(facts.value("baseline").toMap().value("state").toString() == "unavailable");
+    assert(facts.value("baseline").toMap().value("errorCode").toString()
+        == "workspace_baseline.recorded_exclusion_invalid");
+    assert(!facts.value("baseline").toMap().contains("outputPaths"));
+    assert(facts.value("comparison").toMap().value("state").toString() == "unavailable");
+    assert(!facts.value("comparison").toMap().contains("classification"));
+    facts = select(emptyRun);
+    assert(facts.value("baseline").toMap().value("state").toString() == "missing");
+    assert(facts.value("comparison").toMap().value("state").toString() == "missing");
+    // Selecting B while A's read is outstanding must never publish A under B.
+    runs.selectRun(recordedRun);
+    runs.selectRun(emptyRun);
+    assert(ai::ui::test_support::waitForCondition("Final diagnostics selection", [&] {
+        return runs.workspaceDiagnostics().value("runId").toString() == emptyRun;
+    }, 5s));
+    assert(runs.workspaceDiagnostics().value("baseline").toMap().value("state").toString() == "missing");
+}
+
 // The folder of the temporary verification copies is validated by the Backend, not by the page: a refused folder is reported in the
 // Backend's own words and leaves the previous setting; an accepted one is created and survives a restart; empty goes back to the
 // default.
@@ -6279,6 +6377,7 @@ int main(int argc, char* argv[])
     testRunWarningListModelProjectsRowsAndHidesAMissingStage();
     testVerificationFolderSettingIsValidatedByTheBackendAndSurvivesARestart();
     testRunWarningsReachTheRunDetailsModelAndSurviveARestart();
+    testRunWorkspaceDiagnosticsUseRecordedArtifactsAndClearOnSelection();
     testRunListModelPublishesTheConversionMarkerAndRefusesAMisalignedProjection();
     testRunListModelExposesTheFrozenInterfaceContracts();
     testRunContractScopesSurviveTheEditorTextRoundTrip();

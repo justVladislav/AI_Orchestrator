@@ -1147,6 +1147,90 @@ void runOutputFoldersHarnessTests(QQmlApplicationEngine& engine, QObject* window
     checkpoint("P3e: Output folders over the controlled controller verified");
 }
 
+void runRecordedWorkspaceCardTests(QQmlApplicationEngine& engine, QObject* hostWindow, const QVariant& colors)
+{
+    QQmlComponent component(&engine);
+    component.setData(R"QML(
+import QtQuick
+import QtQuick.Layouts
+import UI_AI_Orchestrator
+RunWorkspaceProvenanceCard {
+    width: 660
+    height: Layout.preferredHeight
+    property string requestedArtifactId: ""
+    onArtifactRequested: (runId, artifactId) => requestedArtifactId = artifactId
+}
+)QML", QUrl(QStringLiteral("qrc:/p4b-harness/Card.qml")));
+    if (component.isError()) {
+        for (const auto& error : component.errors()) std::fprintf(stderr, "[p4b] %s\n", error.toString().toUtf8().constData());
+    }
+    assert(component.isReady());
+    const QString unicode = QString::fromUtf8("Сборка/выход");
+    const QStringList rules {QStringLiteral("directory-name:.git"), QStringLiteral("path:Out2"), "path:" + unicode};
+    QVariantMap facts {{"runId", "recorded-run"},
+        {"baseline", QVariantMap {{"state", "recorded"}, {"outputPaths", QStringList {"Out2", unicode}}, {"exclusions", rules}}},
+        {"comparison", QVariantMap {{"state", "recorded"}, {"artifactId", "latest-report"}, {"classification", "not_verifiable"},
+            {"errorCode", "workspace_baseline.file_limit"}, {"details", unicode + "/big.obj: 307200 bytes, limit 262144"}}}};
+    QVariantMap initial {{"hostWindow", QVariant::fromValue(hostWindow)}, {"colors", colors},
+        {"runData", QVariantMap {{"runId", "recorded-run"}, {"workflowId", "execution-manifest-v1"}}},
+        {"workspaceBaselineArtifact", QVariantMap {{"artifactId", "baseline-1"}}},
+        {"workspaceProvenanceArtifact", QVariantMap {{"artifactId", "report-1"}}}, {"diagnostics", facts}};
+    QQuickWindow window;
+    window.resize(680, 1100);
+    std::unique_ptr<QObject> owner(component.createWithInitialProperties(initial));
+    assert(owner);
+    auto* card = qobject_cast<QQuickItem*>(owner.get());
+    assert(card);
+    card->setParentItem(window.contentItem());
+    window.show();
+    assert(ai::ui::test_support::waitForCondition("Provenance card exposed", [&] { return window.isExposed(); }, 5s));
+    auto* paths = card->findChild<QObject*>("workspaceRecordedOutputPaths");
+    auto* details = card->findChild<QObject*>("workspaceComparisonDetails");
+    auto* notice = card->findChild<QObject*>("workspaceFrozenScopeNotice");
+    auto* action = card->findChild<QObject*>("workspaceProvenanceNextAction");
+    auto* comparison = card->findChild<QObject*>("workspaceRecordedComparison");
+    auto* toggle = card->findChild<QObject*>("workspaceRecordedRulesToggle");
+    auto* allRules = card->findChild<QObject*>("workspaceRecordedRules");
+    assert(paths && details && notice && action && comparison && toggle && allRules);
+    settle();
+    assert(paths->property("text").toString().contains(unicode));
+    assert(details->property("text").toString().contains("307200 bytes, limit 262144"));
+    assert(notice->property("text").toString().contains("does not change this Run"));
+    assert(action->property("visible").toBool());
+    assert(action->property("text").toString().contains("new Run"));
+    assert(comparison->property("text").toString().contains("could not be completed"));
+    clickItem(toggle);
+    settle();
+    assert(allRules->property("visible").toBool());
+    assert(allRules->property("text").toString() == rules.join('\n'));
+    clickItem(card->findChild<QObject*>("viewWorkspaceProvenanceButton"));
+    assert(card->property("requestedArtifactId").toString() == "latest-report");
+    saveShot(card, QStringLiteral("p4b-recorded-scope"));
+    card->setWidth(360);
+    saveShot(card, QStringLiteral("p4b-recorded-scope-narrow"));
+    facts["comparison"] = QVariantMap {{"state", "recorded"}, {"classification", "manual_or_external_drift"}};
+    assert(card->setProperty("diagnostics", facts));
+    settle();
+    assert(comparison->property("text").toString().contains("manual or external"));
+    assert(action->property("text").toString().contains("does not identify which tool"));
+    assert(allRules->property("visible").toBool() && "Refreshing this Run must not collapse the rules being read");
+    facts["baseline"] = QVariantMap {{"state", "unavailable"}, {"errorCode", "workspace_baseline.recorded_exclusion_invalid"}};
+    facts["comparison"] = QVariantMap {{"state", "unavailable"}};
+    assert(card->setProperty("diagnostics", facts));
+    settle();
+    assert(paths->property("text").toString().contains("No empty scope is inferred"));
+    assert(!toggle->property("visible").toBool());
+    assert(!action->property("visible").toBool());
+    // Another selection cannot reuse even a perfectly valid outgoing projection.
+    facts["runId"] = "other-run";
+    assert(card->setProperty("diagnostics", facts));
+    settle();
+    assert(paths->property("text").toString().contains("not been loaded"));
+    assert(!paths->property("text").toString().contains(unicode));
+    assert(comparison->property("text").toString().isEmpty());
+    checkpoint("P4b: recorded workspace diagnostics card verified");
+}
+
 } // namespace
 
 int main(int argc, char* argv[])
@@ -1970,6 +2054,7 @@ int main(int argc, char* argv[])
         [](const QVariant& value) { return value.toBool(); }));
     assert(workspaceProvenanceSummary->property("text").toString().contains(
         QStringLiteral("exact fingerprint"), Qt::CaseInsensitive));
+    runRecordedWorkspaceCardTests(engine, window, projectsPage->property("colors"));
 
     // Durable Run warnings (a diagnostic artifact that could not be stored): a Run without any has no section; with
     // warnings the section appears and shows every one of them.
@@ -5139,6 +5224,61 @@ int main(int argc, char* argv[])
 
     runOutputFoldersBridgeTests(backend, window, projectsPage, workspace, qmlWarnings);
     runOutputFoldersHarnessTests(engine, window, projectsPage, qmlWarnings);
+
+    // P4b: real artifacts -> asynchronous RunController -> the real details
+    // panel's binding. The separate card harness cannot prove this wiring.
+    {
+        using namespace ai::application;
+        const auto root = workspace.root / "p4b-ui-project";
+        fs::create_directories(root);
+        const auto id = backend.projectController().createProject(
+            QStringLiteral("Recorded UI scope"), QStringLiteral("No providers"), QString::fromStdWString(root.wstring()));
+        assert(!id.isEmpty());
+        ai::backend::BackendRuntime seed(workspace.guestRuntimeConfig());
+        assert(seed.storageAvailable());
+        const auto database = ai::infrastructure::SqliteDatabase::open(workspace.databasePath);
+        assert(database.success());
+        ai::infrastructure::SqliteRunRepository repository(database.value());
+        Run run;
+        run.id = "p4b-ui-recorded-run";
+        run.projectId = id.toStdString();
+        run.workflowId = kExecutionManifestWorkflowId;
+        run.workspacePath = root;
+        run.status = RunStatus::Completed;
+        run.createdAt = std::chrono::system_clock::now();
+        assert(repository.insertRun(run).success());
+        auto policy = WorkspaceReadPolicy::secureDefaults(root);
+        policy.deniedPaths = {fs::path("Out2")};
+        const auto baseline = WorkspaceBaselineProvenance::capture(policy);
+        assert(baseline.success());
+        const auto json = WorkspaceBaselineProvenance::renderJson(baseline.value());
+        assert(json.success());
+        assert(seed.artifactService().createArtifact(run.id, std::nullopt, ArtifactKind::Report,
+            "workspace-baseline.v1.json", "application/json", json.value()).success());
+        assert(seed.artifactService().createArtifact(run.id, std::nullopt, ArtifactKind::Report,
+            "manifest-workspace-provenance.md", "text/markdown",
+            "Schema: workspace-provenance.v1\nClassification: not_verifiable\nError: workspace_baseline.file_limit\n"
+            "Details: visible/generated.obj: 307200 bytes, limit 262144\n").success());
+        assert(runsPage->setProperty("projectFilter", QStringLiteral("all")));
+        assert(window->setProperty("currentSection", QStringLiteral("runs")));
+        backend.runController().refresh();
+        assert(QMetaObject::invokeMethod(runsPage, "focusRunToday",
+            Q_ARG(QVariant, QString::fromStdString(run.id))));
+        assert(ai::ui::test_support::waitForCondition("P4b actual Run card", [&] {
+            return runDetailsPanel->property("runData").toMap().value("runId").toString()
+                == QString::fromStdString(run.id);
+        }, 5s));
+        auto* paths = workspaceProvenanceCard->findChild<QObject*>("workspaceRecordedOutputPaths");
+        auto* details = workspaceProvenanceCard->findChild<QObject*>("workspaceComparisonDetails");
+        assert(paths && details);
+        assert(waitForProperty(paths, "text", [](const QVariant& value) {
+            return value.toString().contains("Out2");
+        }));
+        assert(details->property("text").toString().contains("visible/generated.obj"));
+        assert(details->property("text").toString().contains("307200 bytes, limit 262144"));
+        assert(waitForProperty(workspaceProvenanceCard, "visible", [](const QVariant& value) { return value.toBool(); }));
+        checkpoint("P4b: real artifacts reach the selected Run card");
+    }
 
     assert(qmlWarnings.isEmpty() && "QML runtime warnings were emitted");
 
