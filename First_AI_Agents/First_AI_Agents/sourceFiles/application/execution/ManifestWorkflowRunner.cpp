@@ -278,6 +278,20 @@ std::string boundedTerminalMessage(std::string value)
     return value;
 }
 
+// The full capture diagnostic remains in workspace provenance, rather than the verification record used by other failures.
+std::string boundedProvenanceMessage(std::string value)
+{
+    constexpr std::string_view marker = " [truncated: see workspace provenance record for the complete diagnostic]";
+    if (value.size() > kMaximumTerminalFailureBytes) {
+        std::size_t keep = kMaximumTerminalFailureBytes - marker.size();
+        // Keep the terminal text valid UTF-8 when a relative path crosses the boundary.
+        while (keep > 0 && (static_cast<unsigned char>(value[keep]) & 0xC0U) == 0x80U) --keep;
+        value.resize(keep);
+        value += marker;
+    }
+    return value;
+}
+
 std::string executionFailureMessage(
     const ExecutionManifestExecutionOutcome& outcome)
 {
@@ -430,7 +444,7 @@ std::string renderWorkspaceProvenanceReport(
     const std::optional<WorkspaceBaselineDifference>& difference,
     const WorkspaceCMakePreflightResult& preflight,
     const std::vector<ChangeSetId>& orderedProposalIds,
-    std::string_view errorCode = {})
+    std::string_view errorCode = {}, std::string_view errorMessage = {})
 {
     std::ostringstream out;
     out << "# Workspace provenance\n\n";
@@ -448,6 +462,7 @@ std::string renderWorkspaceProvenanceReport(
     if (!difference.has_value()) {
         out << "Classification: not_verifiable\n";
         if (!errorCode.empty()) out << "Error: " << errorCode << "\n";
+        if (!errorMessage.empty()) out << "Details: " << errorMessage << "\n";
     } else {
         out << "Classification: " << difference->classification << "\n";
         out << "Current fingerprint: " << difference->currentFingerprint << "\n";
@@ -938,6 +953,12 @@ WorkflowResult ManifestWorkflowRunner::run(
         struct ProvenanceResult {
             bool success {false};
             std::string errorCode;
+            std::string errorMessage;
+
+            std::string failureText() const
+            {
+                return errorCode + (errorMessage.empty() ? std::string {} : ": " + errorMessage);
+            }
         } result;
         const auto current = WorkspaceBaselineProvenance::capture(inspectPolicy);
         std::optional<WorkspaceBaselineDifference> difference;
@@ -945,18 +966,23 @@ WorkflowResult ManifestWorkflowRunner::run(
             const auto compared = WorkspaceBaselineProvenance::compare(
                 baseline.value(), current.value());
             if (compared.success()) difference = compared.value();
-            else result.errorCode = compared.error()->code;
+            else {
+                result.errorCode = compared.error()->code;
+                result.errorMessage = compared.error()->message;
+            }
         } else {
             result.errorCode = current.error()->code;
+            result.errorMessage = current.error()->message;
         }
         const auto report = renderWorkspaceProvenanceReport(
             baseline.value(), difference, preflight.value(), proposalIds,
-            result.errorCode);
+            result.errorCode, result.errorMessage);
         const auto artifact = artifactService_->createArtifact(
             context.run.id, stageId, ArtifactKind::Report,
             "manifest-workspace-provenance.md", "text/markdown", report);
         if (!artifact.success()) {
             result.errorCode = "workspace_provenance.persistence_failed";
+            result.errorMessage.clear(); // The failed mandatory write retains its precedence; do not label capture details as its cause.
             return result;
         }
         if (!difference.has_value()) return result;
@@ -1346,8 +1372,8 @@ WorkflowResult ManifestWorkflowRunner::run(
 
         const auto provenance = persistCurrentProvenance(planningStage.id, {});
         if (!provenance.success) {
-            const std::string message = provenance.errorCode
-                + ": Workspace provenance did not remain verifiable and unchanged";
+            const std::string message = boundedProvenanceMessage(provenance.failureText()
+                + ": Workspace provenance did not remain verifiable and unchanged");
             eventSink.publish(stageEvent(RunEventType::StageFailed, context.run.id,
                 planningStage.id, 0.0, message));
             eventSink.publish(stageEvent(RunEventType::StageSkipped, context.run.id,
@@ -1904,7 +1930,7 @@ WorkflowResult ManifestWorkflowRunner::run(
     }
     if (!provenance.success) {
         summary += "\n## Workspace provenance\n\nFailed: "
-            + provenance.errorCode + "\n";
+            + provenance.failureText() + "\n";
     }
     if (!bootstrapTransitionPersistenceError.empty()) {
         summary += "\n## Bootstrap transition persistence\n\nFailed: "
@@ -1919,7 +1945,7 @@ WorkflowResult ManifestWorkflowRunner::run(
         terminalMessage = "Manifest execution failed: "
             + verificationIdentityPersistenceError;
     } else if (!provenance.success) {
-        terminalMessage = "Manifest execution failed: " + provenance.errorCode;
+        terminalMessage = boundedProvenanceMessage("Manifest execution failed: " + provenance.failureText());
     } else if (!bootstrapTransitionPersistenceError.empty()) {
         terminalMessage = "Manifest execution failed: "
             + bootstrapTransitionPersistenceError;

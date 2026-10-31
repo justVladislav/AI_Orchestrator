@@ -6033,6 +6033,97 @@ void writeOutputFixtureTree(const fs::path& root)
     writeFile(root / "Out2-source" / "real.txt", "a neighbour that only shares the name prefix");
 }
 
+void checkPostCaptureFailureDiagnostics(bool afterPlanning, bool rejectReport = false)
+{
+    Harness harness;
+    giveWorkspaceAnExistingCmakePreset(harness);
+    const auto setup = prepareReadinessRun(harness);
+    writeOutputFixtureTree(harness.workspace.path);
+    const fs::path relativePath(u"Out2/сборка.obj");
+    const auto encodedPath = relativePath.generic_u8string();
+    const std::string relativeUtf8(encodedPath.begin(), encodedPath.end());
+    constexpr std::size_t fileSize = 300 * 1024;
+    const auto createOversizedFile = [root = harness.workspace.path, relativePath] {
+        std::string content = "PROVENANCE_CONTENT_MUST_STAY_PRIVATE";
+        content.resize(fileSize, 'x');
+        writeFile(root / relativePath, content);
+    };
+    if (rejectReport) harness.artifactStore.rejectedNames.push_back("manifest-workspace-provenance.md");
+
+    auto planner = std::make_unique<ScriptedProviderAgentSession>();
+    if (afterPlanning) {
+        planner->beforeNextResponse = createOversizedFile;
+        planner->responses.push(common::Result<ProviderAgentTurnResponse>::ok(
+            toolCallResponse("read-1", "workspace_read_file", R"({"path":"README.md"})")));
+        planner->responses.push(common::Result<ProviderAgentTurnResponse>::ok(
+            toolCallResponse("no-changes-1", kSubmitNoChangesNeededToolName, noChangesSubmission("README.md"))));
+    } else {
+        planner->responses.push(common::Result<ProviderAgentTurnResponse>::ok(
+            toolCallResponse("submit-1", kSubmitExecutionManifestDraftToolName, manifestSubmission("notes", "propose"))));
+    }
+    harness.sessionFactory.preparedSessions.push(std::move(planner));
+    if (!afterPlanning) {
+        auto worker = std::make_unique<ScriptedProviderAgentSession>();
+        worker->beforeNextResponse = createOversizedFile;
+        worker->responses.push(common::Result<ProviderAgentTurnResponse>::ok(
+            stopResponse(proposalSubmission("notes/file.md"))));
+        harness.sessionFactory.preparedSessions.push(std::move(worker));
+    }
+
+    const auto runId = startReadinessRun(harness, setup,
+        afterPlanning ? PlanningCompletionPolicy::AllowEvidenceBackedNoChanges : PlanningCompletionPolicy::RequireManifest);
+    const auto finished = waitForTerminalRun(harness.runs, runId);
+    require(finished.status == RunStatus::Failed, "A refused post-capture must still fail the Run");
+    const auto artifacts = harness.artifactService.listArtifacts(runId);
+    require(artifacts.success(), "Could not list post-capture diagnostics");
+    const auto provenance = std::find_if(artifacts.value().begin(), artifacts.value().end(), [](const Artifact& artifact) {
+        return artifact.name == "manifest-workspace-provenance.md";
+    });
+    if (rejectReport) {
+        require(finished.errorMessage.find("workspace_provenance.persistence_failed") != std::string::npos
+                && finished.errorMessage.find("workspace_baseline.file_limit") == std::string::npos,
+            "The report persistence failure keeps priority over the capture refusal");
+        require(provenance == artifacts.value().end(), "A rejected provenance write must not leave a report");
+        return;
+    }
+    require(provenance != artifacts.value().end(), "A refused capture must leave its provenance report");
+    const auto report = harness.artifactService.getArtifactContent(provenance->id);
+    require(report.success() && report.value().find("Classification: not_verifiable") != std::string::npos,
+        "The report must not classify an unavailable comparison as unchanged");
+    const auto hasDetails = [&](const std::string& text) {
+        return text.find("workspace_baseline.file_limit") != std::string::npos
+            && text.find(relativeUtf8) != std::string::npos
+            && text.find("307200 bytes") != std::string::npos
+            && text.find("per-file limit is 262144 bytes") != std::string::npos;
+    };
+    require(hasDetails(report.value()), "Post-capture report lost the relative UTF-8 path, size or limit");
+    require(hasDetails(finished.errorMessage), "Post-capture Run failure lost the relative UTF-8 path, size or limit");
+    const std::string privateRootName = harness.workspace.path.filename().string();
+    for (const auto* text : {&report.value(), &finished.errorMessage}) {
+        require(text->find("PROVENANCE_CONTENT_MUST_STAY_PRIVATE") == std::string::npos
+                && text->find(privateRootName) == std::string::npos,
+            "Diagnostics must contain metadata, never file content or the absolute workspace root");
+    }
+    if (afterPlanning) {
+        require(harness.sessionFactory.invocationSnapshot().size() == 1 && harness.clientFactory.client->callCount() == 0,
+            "The planning-level refusal must not launch a worker or integration call");
+    } else {
+        const auto runReport = std::find_if(artifacts.value().begin(), artifacts.value().end(), [](const Artifact& artifact) {
+            return artifact.name == "manifest-run-report.md";
+        });
+        require(runReport != artifacts.value().end(), "The execution-level failure must leave a Run report");
+        const auto summary = harness.artifactService.getArtifactContent(runReport->id);
+        require(summary.success(), "Could not read the failed Run report");
+        const auto provenanceSection = summary.value().find("## Workspace provenance\n\nFailed:");
+        require(provenanceSection != std::string::npos && hasDetails(summary.value().substr(provenanceSection)),
+            "The execution summary lost the post-capture diagnostic details");
+    }
+}
+
+void testPostPlanningCaptureFailureKeepsItsDiagnosticDetails() { checkPostCaptureFailureDiagnostics(true); }
+void testPostExecutionCaptureFailureKeepsItsDiagnosticDetails() { checkPostCaptureFailureDiagnostics(false); }
+void testProvenanceWriteFailureStillHasPriority() { checkPostCaptureFailureDiagnostics(true, true); }
+
 // A Run on a project whose output folder the user approved: its baseline carries path:Out2, the folder is invisible to the planner's
 // tools and to provenance, and output that appears there after the baseline is no external drift. Without the producer the same
 // fixture is an external drift.
@@ -6390,6 +6481,9 @@ int main()
         testAFailingPolicySourceStopsTheRunBeforeAnyProviderOrBaseline();
         testABaselinePersistenceFailureStillStopsTheRunBeforeTheProvider();
         testARevocationAfterTheFreezeIsForTheNextRunOnly();
+        testPostPlanningCaptureFailureKeepsItsDiagnosticDetails();
+        testPostExecutionCaptureFailureKeepsItsDiagnosticDetails();
+        testProvenanceWriteFailureStillHasPriority();
         testTheFrozenAreaRefusesAWriteUnderTheApprovedFolder();
         return 0;
     } catch (const std::exception& exception) {
