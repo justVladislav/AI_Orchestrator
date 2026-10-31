@@ -35,6 +35,7 @@ class RunController final : public QObject
     // The durable warnings of the selected Run (see ArtifactService::createDiagnosticArtifact).
     Q_PROPERTY(QAbstractItemModel* warningModel READ warningModel CONSTANT)
     Q_PROPERTY(QString selectedRunId READ selectedRunId NOTIFY selectedRunIdChanged)
+    Q_PROPERTY(QVariantMap workspaceDiagnostics READ workspaceDiagnostics NOTIFY workspaceDiagnosticsChanged)
     Q_PROPERTY(QString lastError READ lastError NOTIFY lastErrorChanged)
     Q_PROPERTY(QVariantList agentChoices READ agentChoices NOTIFY agentChoicesChanged)
     Q_PROPERTY(bool agentChoicesLoading READ agentChoicesLoading NOTIFY agentChoicesLoadingChanged)
@@ -53,6 +54,8 @@ public:
     [[nodiscard]] QAbstractItemModel* artifactModel() noexcept;
     [[nodiscard]] QAbstractItemModel* warningModel() noexcept;
     [[nodiscard]] QString selectedRunId() const;
+    // Display-only projection of the selected Run's own artifacts. Never a policy source.
+    [[nodiscard]] QVariantMap workspaceDiagnostics() const { return workspaceDiagnostics_; }
     [[nodiscard]] QString lastError() const;
 
     // projectTaskId, when non-empty, links this Run to that ProjectTask
@@ -163,6 +166,7 @@ signals:
     void runUpdated(const QString& runId);
     void runFinished(const QString& runId, const QString& status);
     void selectedRunIdChanged();
+    void workspaceDiagnosticsChanged();
     void operationFailed(const QString& code, const QString& message);
     void lastErrorChanged();
     void agentChoicesChanged();
@@ -190,6 +194,7 @@ private:
         std::optional<ai::common::Error> legacyConversionIndexError;
         std::optional<std::vector<ai::application::RunStage>> stages;
         std::optional<std::vector<ai::application::Artifact>> artifacts;
+        QVariantMap workspaceDiagnostics;
         std::optional<std::vector<ai::application::RunWarning>> warnings;
         std::optional<ai::common::Error> runError;
         std::optional<ai::common::Error> stageError;
@@ -227,6 +232,7 @@ private:
     ArtifactListModel artifactModel_;
     RunWarningListModel warningModel_;
     QString selectedRunId_;
+    QVariantMap workspaceDiagnostics_;
     QString projectFilter_;
     QString lastError_;
     QVariantList agentChoices_;

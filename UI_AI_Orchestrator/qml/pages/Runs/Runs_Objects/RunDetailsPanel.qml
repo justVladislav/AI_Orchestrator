@@ -736,6 +736,8 @@ Rectangle {
                 runData: panel.runData
                 workspaceBaselineArtifact: panel.workspaceBaselineArtifact
                 workspaceProvenanceArtifact: panel.workspaceProvenanceArtifact
+                diagnostics: panel.runsController
+                             ? panel.runsController.workspaceDiagnostics : ({})
                 onArtifactRequested: (runId, artifactId) => panel.artifactRequested(runId, artifactId)
             }
 
