@@ -7,6 +7,7 @@
 #include "ai/application/verification/ManifestVerificationRepairability.hpp"
 #include "ai/application/agents/ModelExecutionService.hpp"
 #include "ai/application/Sha256.hpp"
+#include "ai/application/text/DiagnosticText.hpp"
 #include "ai/application/verification/VerificationEnvironmentDiscoveryService.hpp"
 
 #include <algorithm>
@@ -1132,6 +1133,7 @@ ExecutionManifestExecutor::TaskAttemptResult ExecutionManifestExecutor::runOneTa
     attempt.totalReturnedBytes = result.totalReturnedBytes;
     attempt.repairAttempted = result.repairAttempted;
     attempt.nonEmptyRejected = result.nonEmptyRejected;
+    attempt.diagnosticWarnings = result.diagnosticWarnings;
     attempt.workerNoChanges = result.workerNoChanges;
     attempt.taskVerification = result.taskVerification;
 
@@ -1171,6 +1173,30 @@ ExecutionManifestExecutor::TaskAttemptResult ExecutionManifestExecutor::runOneTa
     state.errorMessage = result.errorMessage;
     return attempt;
 }
+
+namespace {
+
+constexpr std::size_t kMaxDiagnosticWarningsPerTask = 8;
+constexpr std::size_t kMaxDiagnosticWarningBytes = 320;
+
+// Keeps one attempt's warnings next to those of the task's earlier attempts (never replacing them).
+// Bounded per task and per line; the text only ever comes from the Backend's own codes.
+void accumulateTaskWarnings(
+    ExecutionManifestExecutionOutcome& aggregate, const std::string& taskId,
+    std::size_t attemptNumber, const std::vector<std::string>& warnings, const char* kind)
+{
+    if (warnings.empty()) return;
+    auto& kept = aggregate.taskDiagnosticWarnings[taskId];
+    for (const auto& warning : warnings) {
+        if (kept.size() >= kMaxDiagnosticWarningsPerTask) return;
+        std::string line = std::string(kind) + " " + std::to_string(attemptNumber) + ": " + warning;
+        if (line.size() > kMaxDiagnosticWarningBytes)
+            line.resize(utf8SafePrefixLength(line, kMaxDiagnosticWarningBytes));
+        kept.push_back(std::move(line));
+    }
+}
+
+} // namespace
 
 ExecutionManifestExecutionOutcome ExecutionManifestExecutor::execute(
     ExecutionManifestExecutionRequest request, std::stop_token stopToken) const
@@ -1468,6 +1494,8 @@ ExecutionManifestExecutionOutcome ExecutionManifestExecutor::execute(
             }
         }
         mergeAccumulatedUsage(aggregate.usage, attemptResult.usage);
+        accumulateTaskWarnings(aggregate, taskId, attemptCounts[taskId] + 1,
+            attemptResult.diagnosticWarnings, "attempt");
         aggregate.totalTurns += attemptResult.totalTurns;
         aggregate.totalToolCalls += attemptResult.totalToolCalls;
         aggregate.successfulInspectionCalls += attemptResult.successfulInspectionCalls;
@@ -1947,6 +1975,8 @@ ExecutionManifestExecutionOutcome ExecutionManifestExecutor::execute(
                     break;
                 }
                 mergeAccumulatedUsage(aggregate.usage, repairAttempt.usage);
+                accumulateTaskWarnings(aggregate, taskId, stateIt->second.attempts + 1,
+                    repairAttempt.diagnosticWarnings, "repair attempt");
                 aggregate.totalTurns += repairAttempt.totalTurns;
                 aggregate.totalToolCalls += repairAttempt.totalToolCalls;
                 aggregate.successfulInspectionCalls += repairAttempt.successfulInspectionCalls;

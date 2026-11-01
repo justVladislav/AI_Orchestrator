@@ -263,6 +263,20 @@ std::string renderDeterministicSummary(
         }
         out << "\n";
     }
+    // Report-only notes about the run itself (for example a provider-turn record the store refused). They
+    // never change a status above or the verification below.
+    bool warningsHeaderWritten = false;
+    for (const auto& task : manifest.tasks) {
+        const auto warnings = outcome.taskDiagnosticWarnings.find(task.id);
+        if (warnings == outcome.taskDiagnosticWarnings.end()) continue;
+        if (!warningsHeaderWritten) {
+            out << "\n## Diagnostic warnings\n\n"
+                   "These notes concern the recording of the run, not its result: no task status, usage "
+                   "figure or verification verdict was changed because of them.\n\n";
+            warningsHeaderWritten = true;
+        }
+        for (const auto& warning : warnings->second) out << "- " << task.id << ": " << warning << "\n";
+    }
     return out.str();
 }
 

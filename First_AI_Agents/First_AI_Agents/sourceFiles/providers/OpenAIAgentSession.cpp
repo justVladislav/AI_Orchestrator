@@ -8,6 +8,8 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -15,6 +17,18 @@
 namespace ai::providers {
 
 namespace {
+
+// A non-negative integer member, or nullopt when the member is absent, null, negative or not an integer:
+// "the provider did not say" must never read as zero.
+std::optional<std::uint64_t> nonNegativeCounter(const nlohmann::json& object, const char* field)
+{
+    if (!object.is_object()) return std::nullopt;
+    const auto it = object.find(field);
+    if (it == object.end() || !it->is_number_integer()) return std::nullopt;
+    if (it->is_number_unsigned()) return it->get<std::uint64_t>();
+    const auto value = it->get<std::int64_t>();
+    return value < 0 ? std::nullopt : std::optional<std::uint64_t>(static_cast<std::uint64_t>(value));
+}
 
 template <typename T>
 common::Result<T> httpStatusError(int statusCode, const std::string& responseBody)
@@ -426,6 +440,7 @@ common::Result<ProviderAgentTurnResponse> OpenAIAgentSession::doTurn(
             (json.contains("incomplete_details") && json["incomplete_details"].is_object())
             ? json["incomplete_details"].value("reason", std::string{})
             : std::string{};
+        resp.diagnostics.incompleteReason = application::toBoundedDiagnosticToken(reason);
         if (reason == "max_output_tokens") {
             resp.finishReason = ProviderAgentFinishReason::MaxOutputTokens;
         } else {
@@ -445,6 +460,18 @@ common::Result<ProviderAgentTurnResponse> OpenAIAgentSession::doTurn(
     // The shared parser also reports the cached/cache-write subsets of
     // input_tokens, exactly as the single-shot OpenAIProvider sees them.
     resp.usage = openai_detail::parseOpenAITokenUsage(json);
+
+    // Bounded diagnostics, kept apart from the error fields: the limit this session put on the wire, the
+    // limit the response reported back (absent or null stays absent - never a guessed 0), the reasoning share
+    // of the output (a SUBSET of usage.output_tokens, not an addition to it) and the provider's status word.
+    resp.diagnostics.requestedMaxOutputTokens = maxOutputTokens_;
+    resp.diagnostics.echoedMaxOutputTokens = nonNegativeCounter(json, "max_output_tokens");
+    if (json.contains("usage") && json["usage"].is_object() && json["usage"].contains("output_tokens_details")
+            && json["usage"]["output_tokens_details"].is_object()) {
+        resp.diagnostics.reasoningTokens =
+            nonNegativeCounter(json["usage"]["output_tokens_details"], "reasoning_tokens");
+    }
+    resp.diagnostics.providerStatus = application::toBoundedDiagnosticToken(status);
 
     if (auto v = validateTurnResponse(resp, turnIndex_, maxToolCallsPerTurn_); !v.success())
         return common::Result<ProviderAgentTurnResponse>::failure(*v.error());

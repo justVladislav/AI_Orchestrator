@@ -441,6 +441,13 @@ struct AgentToolTurnLoopOutcome {
     // a fresh unrelated attempt's own answer could otherwise paper over a
     // real, durably-recorded rejection.
     bool nonEmptyRejected {false};
+
+    // Diagnostic warnings about the run itself, never about its result: today the provider-turn
+    // records the store refused ("provider turn N record not stored (code)"). They are audit data
+    // only - success, errorCode, usage and every gate are untouched, nothing is retried - but they
+    // travel with the outcome on EVERY return path (success included) so a caller can put them in a
+    // persisted report instead of letting them vanish. Bounded and free of provider text.
+    std::vector<std::string> diagnosticWarnings;
 };
 
 class AgentToolTurnLoopRunner {

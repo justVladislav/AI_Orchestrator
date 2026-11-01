@@ -82,6 +82,9 @@ common::Result<AgentProviderTurn> AgentToolExecutionService::recordTurn(
 {
     if (const auto check = checkAvailable(); !check.success())
         return common::Result<AgentProviderTurn>::failure(*check.error());
+    // Only allow-listed provider words are ever stored (the single choke point of both turn recorders).
+    turn.diagnostics.providerStatus = toBoundedDiagnosticToken(turn.diagnostics.providerStatus);
+    turn.diagnostics.incompleteReason = toBoundedDiagnosticToken(turn.diagnostics.incompleteReason);
     return sessions_.insertTurn(std::move(turn));
 }
 

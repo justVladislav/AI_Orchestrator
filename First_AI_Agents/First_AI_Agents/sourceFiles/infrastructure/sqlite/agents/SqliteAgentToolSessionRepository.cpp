@@ -117,6 +117,25 @@ using sqlite_detail::readRunDraftGroupDrafts;
 
 
 
+// A diagnostic counter that may be absent: NULL means "not reported / not recorded", which is a different
+// fact from a recorded zero.
+common::Result<void> bindOptionalCount(sqlite3* handle, sqlite3_stmt* statement, int index,
+    const std::optional<std::uint64_t>& value)
+{
+    if (value.has_value()) return bindUnsigned(handle, statement, index, *value);
+    if (sqlite3_bind_null(statement, index) != SQLITE_OK)
+        return common::Result<void>::failure(
+            databaseError(handle, "persistence.bind_failed", "bind null"));
+    return common::Result<void>::ok();
+}
+
+std::optional<std::uint64_t> optionalCount(sqlite3_stmt* statement, int column)
+{
+    if (sqlite3_column_type(statement, column) == SQLITE_NULL) return std::nullopt;
+    const auto value = sqlite3_column_int64(statement, column);
+    return value < 0 ? std::nullopt : std::optional<std::uint64_t>(static_cast<std::uint64_t>(value));
+}
+
 std::string agentToolSessionStateToString(application::AgentToolSessionState s)
 {
     switch (s) {
@@ -300,8 +319,10 @@ SqliteAgentToolSessionRepository::insertTurn(application::AgentProviderTurn turn
     auto prepared = prepare(database_->impl_->handle,
         R"sql(INSERT INTO agent_provider_turns
               (id,session_id,turn_index,finish_reason,
-               input_tokens,output_tokens,call_count,created_at_ms)
-              VALUES (?,?,?,?,?,?,?,?))sql",
+               input_tokens,output_tokens,call_count,created_at_ms,
+               requested_max_output_tokens,echoed_max_output_tokens,reasoning_tokens,
+               provider_status,incomplete_reason)
+              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?))sql",
         stmt);
     if (!prepared.success()) return common::Result<application::AgentProviderTurn>::failure(*prepared.error());
 
@@ -315,6 +336,12 @@ SqliteAgentToolSessionRepository::insertTurn(application::AgentProviderTurn turn
     if (auto r = bindInt64(h,s,6,static_cast<std::int64_t>(turn.outputTokens)); !r.success()) return common::Result<application::AgentProviderTurn>::failure(*r.error());
     if (auto r = bindUnsigned(h,s,7,turn.callCount);       !r.success()) return common::Result<application::AgentProviderTurn>::failure(*r.error());
     if (auto r = bindInt64(h,s,8,toMilliseconds(turn.createdAt)); !r.success()) return common::Result<application::AgentProviderTurn>::failure(*r.error());
+    // Diagnostics: an absent value is stored as NULL ("not reported"), never as 0.
+    if (auto r = bindOptionalCount(h,s,9,turn.diagnostics.requestedMaxOutputTokens);  !r.success()) return common::Result<application::AgentProviderTurn>::failure(*r.error());
+    if (auto r = bindOptionalCount(h,s,10,turn.diagnostics.echoedMaxOutputTokens);    !r.success()) return common::Result<application::AgentProviderTurn>::failure(*r.error());
+    if (auto r = bindOptionalCount(h,s,11,turn.diagnostics.reasoningTokens);          !r.success()) return common::Result<application::AgentProviderTurn>::failure(*r.error());
+    if (auto r = bindText(h,s,12,application::toBoundedDiagnosticToken(turn.diagnostics.providerStatus));                    !r.success()) return common::Result<application::AgentProviderTurn>::failure(*r.error());
+    if (auto r = bindText(h,s,13,application::toBoundedDiagnosticToken(turn.diagnostics.incompleteReason));                  !r.success()) return common::Result<application::AgentProviderTurn>::failure(*r.error());
 
     if (sqlite3_step(s) != SQLITE_DONE)
         return common::Result<application::AgentProviderTurn>::failure(
@@ -330,7 +357,9 @@ SqliteAgentToolSessionRepository::listTurns(const std::string& sessionId) const
     Statement stmt;
     auto prepared = prepare(database_->impl_->handle,
         R"sql(SELECT id,session_id,turn_index,finish_reason,
-                     input_tokens,output_tokens,call_count,created_at_ms
+                     input_tokens,output_tokens,call_count,created_at_ms,
+                     requested_max_output_tokens,echoed_max_output_tokens,reasoning_tokens,
+                     provider_status,incomplete_reason
               FROM agent_provider_turns WHERE session_id=? ORDER BY turn_index ASC)sql",
         stmt);
     if (!prepared.success())
@@ -352,6 +381,11 @@ SqliteAgentToolSessionRepository::listTurns(const std::string& sessionId) const
         turn.outputTokens = static_cast<int>(sqlite3_column_int64(stmt.get(), 5));
         turn.callCount    = static_cast<std::size_t>(sqlite3_column_int64(stmt.get(), 6));
         turn.createdAt    = fromMilliseconds(sqlite3_column_int64(stmt.get(), 7));
+        turn.diagnostics.requestedMaxOutputTokens = optionalCount(stmt.get(), 8);
+        turn.diagnostics.echoedMaxOutputTokens    = optionalCount(stmt.get(), 9);
+        turn.diagnostics.reasoningTokens          = optionalCount(stmt.get(), 10);
+        turn.diagnostics.providerStatus           = columnText(stmt.get(), 11);
+        turn.diagnostics.incompleteReason         = columnText(stmt.get(), 12);
         result.push_back(std::move(turn));
     }
     if (rc != SQLITE_DONE)

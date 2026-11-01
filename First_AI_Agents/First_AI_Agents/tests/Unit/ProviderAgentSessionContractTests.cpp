@@ -665,6 +665,54 @@ void testValidateTurnResponse_WrongTurnIndex()
     assert(r.error()->code == "agent_session.response.unexpected_turn_index");
 }
 
+// A cut response carries its explanation in the dedicated diagnostics metadata, NOT in errorCode/errorMessage:
+// the metadata is accepted, the ban on error fields for a non-Error response is unchanged.
+void testValidateTurnResponse_MaxOutputTokensCarriesDiagnosticsNotErrorFields()
+{
+    ProviderAgentTurnResponse cut;
+    cut.finishReason = ProviderAgentFinishReason::MaxOutputTokens;
+    cut.turnIndex = 0;
+    cut.diagnostics.requestedMaxOutputTokens = 64000;
+    cut.diagnostics.echoedMaxOutputTokens = 64000;
+    cut.diagnostics.reasoningTokens = 12;
+    cut.diagnostics.providerStatus = "incomplete";
+    cut.diagnostics.incompleteReason = "max_output_tokens";
+    assert(validateTurnResponse(cut, 0, 8).success());
+
+    auto withError = cut;
+    withError.errorCode = "provider.max_output_tokens";
+    const auto rejected = validateTurnResponse(withError, 0, 8);
+    assert(!rejected.success());
+    assert(rejected.error()->code == "agent_session.response.error_fields_without_error");
+}
+
+void testValidateTurnResponse_DiagnosticsTextMustBeABoundedToken()
+{
+    ProviderAgentTurnResponse resp = stopTurn(0);
+    resp.diagnostics.incompleteReason = "free text with spaces";
+    auto r = validateTurnResponse(resp, 0, 8);
+    assert(!r.success());
+    assert(r.error()->code == "agent_session.response.invalid_diagnostics");
+
+    // A secret-shaped value made only of permitted characters is still not a provider word.
+    resp.diagnostics.incompleteReason = "content_filter_sk-secret-key_0123456789";
+    r = validateTurnResponse(resp, 0, 8);
+    assert(!r.success());
+    assert(r.error()->code == "agent_session.response.invalid_diagnostics");
+
+    resp.diagnostics.incompleteReason.clear();
+    resp.diagnostics.providerStatus = std::string(app::kMaxDiagnosticTokenBytes, 'x');
+    r = validateTurnResponse(resp, 0, 8);
+    assert(!r.success());
+
+    // Known words and the safe marker are accepted.
+    resp.diagnostics.providerStatus = "incomplete";
+    resp.diagnostics.incompleteReason = "content_filter";
+    assert(validateTurnResponse(resp, 0, 8).success());
+    resp.diagnostics.incompleteReason = app::kUnrecognizedDiagnosticWord;
+    assert(validateTurnResponse(resp, 0, 8).success());
+}
+
 void testValidateTurnResponse_HappyPath()
 {
     // Well-formed ToolUse response at turn 0 with distinct calls should pass.
@@ -932,6 +980,8 @@ int runProviderAgentSessionContractTests()
     testValidateTurnResponse_EmptyCallId();
     testValidateTurnResponse_WrongTurnIndex();
     testValidateTurnResponse_HappyPath();
+    testValidateTurnResponse_MaxOutputTokensCarriesDiagnosticsNotErrorFields();
+    testValidateTurnResponse_DiagnosticsTextMustBeABoundedToken();
 
     // Group 6: validateSessionRequest
     testValidateSessionRequest_EmptyProviderId();

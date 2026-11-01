@@ -437,6 +437,144 @@ void testIncompleteMaxTokens()
 }
 
 // ---------------------------------------------------------------------------
+// Turn diagnostics: requested limit vs reported limit vs nothing, reasoning, status
+// ---------------------------------------------------------------------------
+
+// The incident shape: a response cut well below the requested limit. The adapter must keep what it ASKED for
+// (the value it put on the wire), what the provider REPORTED back, the reasoning share, and the provider's own
+// status words - and must not touch the usage figures.
+void testIncompleteTurnKeepsRequestedReportedAndReasoning()
+{
+    auto client = std::make_shared<ScriptedHttpClient>();
+    client->enqueue(makeJsonResponse(200, R"({
+        "id": "r1",
+        "status": "incomplete",
+        "incomplete_details": {"reason": "max_output_tokens"},
+        "max_output_tokens": 800,
+        "output": [{"type": "message", "content": [{"type": "output_text", "text": "partial"}]}],
+        "usage": {"input_tokens": 50, "output_tokens": 700,
+                  "output_tokens_details": {"reasoning_tokens": 600}}
+    })"));
+
+    OpenAIAgentSession session("key", "https://fake", client);
+    std::stop_source ss;
+    auto resp = session.beginSession(makeRequest(), ss.get_token());   // maxOutputTokens = 1024
+
+    req(resp.success(), "cutDiag: expected success");
+    const auto& turn = resp.value();
+    req(turn.finishReason == ProviderAgentFinishReason::MaxOutputTokens, "cutDiag: expected MaxOutputTokens");
+    req(turn.errorCode.empty() && turn.errorMessage.empty(),
+        "cutDiag: a cut is not an error response - errorCode/errorMessage stay empty");
+    req(turn.diagnostics.requestedMaxOutputTokens == std::optional<std::uint64_t>(1024),
+        "cutDiag: the requested limit (what was sent) must be kept");
+    req(turn.diagnostics.echoedMaxOutputTokens == std::optional<std::uint64_t>(800),
+        "cutDiag: the limit the provider reported back must be kept separately");
+    req(turn.diagnostics.reasoningTokens == std::optional<std::uint64_t>(600), "cutDiag: reasoning tokens must be kept");
+    req(turn.diagnostics.providerStatus == "incomplete", "cutDiag: provider status must be kept");
+    req(turn.diagnostics.incompleteReason == "max_output_tokens", "cutDiag: incomplete reason must be kept");
+    // Usage is untouched: reasoning tokens are a subset of output_tokens, never an addition to it.
+    req(turn.usage.inputTokens == 50 && turn.usage.outputTokens == 700, "cutDiag: usage figures must not change");
+
+    // The value recorded as "requested" is the value that was really on the wire.
+    const auto sent = nlohmann::json::parse(client->capturedRequests().at(0).body);
+    req(sent.value("max_output_tokens", 0) == 1024, "cutDiag: the request body must carry the limit that is recorded");
+}
+
+// Absent is not zero: a response without the echo, without incomplete details and without reasoning detail.
+void testTurnDiagnosticsDistinguishAbsentFromZero()
+{
+    {
+        auto client = std::make_shared<ScriptedHttpClient>();
+        client->enqueue(makeJsonResponse(200, R"({
+            "id": "r1", "status": "incomplete",
+            "incomplete_details": {"reason": "max_output_tokens"},
+            "output": [], "usage": {"input_tokens": 5, "output_tokens": 1024}
+        })"));
+        OpenAIAgentSession session("key", "https://fake", client);
+        std::stop_source ss;
+        auto resp = session.beginSession(makeRequest(), ss.get_token());
+        req(resp.success(), "absent: expected success");
+        req(!resp.value().diagnostics.echoedMaxOutputTokens.has_value(), "absent: no echo means nullopt, not 0");
+        req(!resp.value().diagnostics.reasoningTokens.has_value(), "absent: no reasoning detail means nullopt, not 0");
+        req(resp.value().diagnostics.requestedMaxOutputTokens == std::optional<std::uint64_t>(1024),
+            "absent: the requested limit is known to the adapter");
+    }
+    {
+        // Explicit zero and explicit null are different statements.
+        auto client = std::make_shared<ScriptedHttpClient>();
+        client->enqueue(makeJsonResponse(200, R"({
+            "id": "r1", "status": "incomplete",
+            "incomplete_details": {"reason": "max_output_tokens"}, "max_output_tokens": null,
+            "output": [], "usage": {"input_tokens": 5, "output_tokens": 10,
+                                    "output_tokens_details": {"reasoning_tokens": 0}}
+        })"));
+        OpenAIAgentSession session("key", "https://fake", client);
+        std::stop_source ss;
+        auto resp = session.beginSession(makeRequest(), ss.get_token());
+        req(resp.success(), "zero/null: expected success");
+        req(!resp.value().diagnostics.echoedMaxOutputTokens.has_value(), "zero/null: a null echo is absent");
+        req(resp.value().diagnostics.reasoningTokens == std::optional<std::uint64_t>(0),
+            "zero/null: a reported 0 reasoning tokens is kept as 0");
+    }
+}
+
+// A completed turn after tool results still says what it asked for and what status the provider gave.
+void testCompletedFollowUpTurnCarriesDiagnostics()
+{
+    auto client = std::make_shared<ScriptedHttpClient>();
+    client->enqueue(makeJsonResponse(200, R"({
+        "id": "r1", "status": "completed",
+        "output": [{"type": "function_call", "call_id": "c1", "name": "workspace_read_file", "arguments": "{}"}],
+        "usage": {}
+    })"));
+    client->enqueue(makeJsonResponse(200, R"({
+        "id": "r2", "status": "completed", "max_output_tokens": 1024,
+        "output": [{"type": "message", "content": [{"type": "output_text", "text": "done"}]}],
+        "usage": {"input_tokens": 9, "output_tokens": 3}
+    })"));
+    OpenAIAgentSession session("key", "https://fake", client);
+    std::stop_source ss;
+    auto first = session.beginSession(makeRequest("read", {makeToolDef("workspace_read_file")}), ss.get_token());
+    req(first.success() && first.value().finishReason == ProviderAgentFinishReason::ToolUse, "followUp: expected ToolUse");
+    AgentToolResult result;
+    result.callId = "c1";
+    result.toolName = "workspace_read_file";
+    result.success = true;
+    result.contentJson = "{}";
+    auto second = session.submitToolResults({std::move(result)}, ss.get_token());
+    req(second.success(), "followUp: expected success");
+    const auto& d = second.value().diagnostics;
+    req(d.requestedMaxOutputTokens == std::optional<std::uint64_t>(1024), "followUp: requested limit missing");
+    req(d.echoedMaxOutputTokens == std::optional<std::uint64_t>(1024), "followUp: echoed limit missing");
+    req(d.providerStatus == "completed" && d.incompleteReason.empty(), "followUp: status words are wrong");
+}
+
+// Provider text is never copied verbatim: a hostile or merely long reason becomes a short, safe token and the
+// response still passes the session contract.
+void testDiagnosticTextIsBoundedAndSanitised()
+{
+    auto client = std::make_shared<ScriptedHttpClient>();
+    client->enqueue(makeJsonResponse(200, R"({
+        "id": "r1", "status": "incomplete",
+        "incomplete_details": {"reason": "content filter\nsk-secret-key and a very long tail aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+        "output": [], "usage": {}
+    })"));
+    OpenAIAgentSession session("key", "https://fake", client);
+    std::stop_source ss;
+    auto resp = session.beginSession(makeRequest(), ss.get_token());
+    req(resp.success(), "sanitise: expected success (an unknown reason is an Error TURN, not a failed call)");
+    const auto& d = resp.value().diagnostics;
+    req(d.incompleteReason == kUnrecognizedDiagnosticWord,
+        "sanitise: an unknown reason must become the safe marker, not a filtered copy of the provider text");
+    const std::string everything = d.providerStatus + "|" + d.incompleteReason + "|" + resp.value().errorCode
+        + "|" + resp.value().errorMessage + "|" + resp.value().assistantText;
+    req(everything.find("sk-secret-key") == std::string::npos && everything.find("secret") == std::string::npos
+            && everything.find("content") == std::string::npos,
+        "sanitise: no part of the provider text may survive anywhere in the turn response");
+    req(d.providerStatus == "incomplete", "sanitise: the known status word is kept");
+}
+
+// ---------------------------------------------------------------------------
 // State machine: submitToolResults before beginSession → not_started
 // ---------------------------------------------------------------------------
 
@@ -1421,6 +1559,10 @@ int runOpenAIAgentSessionTests()
     testMalformedJson();
     testMissingCallId();
     testIncompleteMaxTokens();
+    testIncompleteTurnKeepsRequestedReportedAndReasoning();
+    testTurnDiagnosticsDistinguishAbsentFromZero();
+    testCompletedFollowUpTurnCarriesDiagnostics();
+    testDiagnosticTextIsBoundedAndSanitised();
     testSubmitBeforeBegin();
     testBeginTwice();
     testUnknownCallId();

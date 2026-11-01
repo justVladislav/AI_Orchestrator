@@ -680,6 +680,13 @@ common::Result<ProviderAgentTurnResponse> AnthropicAgentSession::doTurn(
 
     resp.usage = parsedUsage.value();
 
+    // Bounded diagnostics: the limit that was on the wire and the provider's own stop word. Anthropic echoes
+    // no limit and reports no reasoning split, so those stay absent (never a guessed zero).
+    resp.diagnostics.requestedMaxOutputTokens = maxOutputTokens_;
+    resp.diagnostics.providerStatus = application::toBoundedDiagnosticToken(stopReason);
+    if (resp.finishReason == ProviderAgentFinishReason::MaxOutputTokens)
+        resp.diagnostics.incompleteReason = application::toBoundedDiagnosticToken(stopReason);
+
     if (auto v = validateTurnResponse(resp, turnIndex_, maxToolCallsPerTurn_); !v.success())
         return common::Result<ProviderAgentTurnResponse>::failure(*v.error());
 

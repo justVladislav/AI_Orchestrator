@@ -1,4 +1,5 @@
 #include "ai/application/execution/ExecutionManifestPlanner.hpp"
+#include "FailableTurnSessionRepository.hpp"
 #include "ai/application/execution/ExecutionManifestDraftParser.hpp"
 #include "ai/application/execution/ExecutionManifestExecutionCapacity.hpp"
 #include "ai/application/execution/ExecutionManifestPlannerTurnBudget.hpp"
@@ -142,7 +143,7 @@ ToolRegistry defaultRegistry()
 struct Fixture {
     InMemoryRunRepository runs;
     InMemoryExecutionManifestRepository manifestRepository;
-    InMemoryAgentToolSessionRepository auditSessions;
+    ai::application::testing::FailableTurnSessionRepository auditSessions;
     InMemoryAgentToolAuditRepository audits;
     PolicyAwareExecutor executor;
     ScriptedSessionFactory sessionFactory;
@@ -2320,6 +2321,118 @@ void testEmptyManifestTasksStillRejectedAsEmptyTasks()
         "Final manifest findings were not preserved");
     require(!outcome.manifest.has_value() && !outcome.noChangesNeeded.has_value(),
         "Exhausted empty-tasks submission must not carry a manifest or no-op result");
+}
+
+// Item 2 (cut diagnostics) for the Planner: a Planner response cut at its output-token limit must explain itself
+// in the failure text and in the stored turn record, and must not change the usage the Planner reports.
+void testPlannerOutputTokenCutCarriesProviderDiagnostics()
+{
+    Fixture fixture;
+    ProviderAgentTurnResponse cut;
+    cut.turnIndex = 0;
+    cut.finishReason = ProviderAgentFinishReason::MaxOutputTokens;
+    cut.usage.inputTokens = 40;
+    cut.usage.outputTokens = 6000;
+    cut.diagnostics.requestedMaxOutputTokens = 64000;
+    cut.diagnostics.reasoningTokens = 5000;
+    cut.diagnostics.providerStatus = "incomplete";
+    cut.diagnostics.incompleteReason = "max_output_tokens";
+    fixture.addSession({std::move(cut)});
+
+    const auto outcome = fixture.planner.plan(noChangesRequest(), {});
+    require(!outcome.success && outcome.errorCode == "provider.max_output_tokens",
+        "A cut Planner response must fail with provider.max_output_tokens");
+    require(outcome.errorMessage.find("requested limit 64000") != std::string::npos
+            && outcome.errorMessage.find("provider reported limit none") != std::string::npos
+            && outcome.errorMessage.find("produced 6000 (reasoning 5000)") != std::string::npos
+            && outcome.errorMessage.find("incomplete reason max_output_tokens") != std::string::npos,
+        ("The Planner failure text lost the provider diagnostics: " + outcome.errorMessage).c_str());
+    require(outcome.usage.outputTokens == 6000, "Reasoning tokens must not be added to the Planner's usage");
+
+    const auto sessions = fixture.auditSessions.listForRun("planner-run");
+    require(sessions.success() && sessions.value().size() == 1, "The Planner session record is missing");
+    const auto turns = fixture.auditSessions.listTurns(sessions.value().front().sessionId);
+    require(turns.success() && turns.value().size() == 1, "The cut Planner turn was not recorded");
+    const auto& stored = turns.value().front().diagnostics;
+    require(stored.requestedMaxOutputTokens == std::optional<std::uint64_t>(64000)
+            && !stored.echoedMaxOutputTokens.has_value()
+            && stored.reasoningTokens == std::optional<std::uint64_t>(5000)
+            && stored.providerStatus == "incomplete" && stored.incompleteReason == "max_output_tokens",
+        "The stored Planner turn lost the provider diagnostics");
+}
+
+// R1 for the Planner: a refused turn record is named - on a failed outcome in its message (the cut cause, the
+// code and the usage are untouched), on a success as an audit line - and nothing is requested twice.
+void testRefusedTurnRecordIsNamedOnAFailedPlannerOutcome()
+{
+    Fixture fixture;
+    fixture.auditSessions.failTurnInserts = true;
+    ProviderAgentTurnResponse cut;
+    cut.turnIndex = 0;
+    cut.finishReason = ProviderAgentFinishReason::MaxOutputTokens;
+    cut.usage.inputTokens = 40;
+    cut.usage.outputTokens = 6000;
+    cut.diagnostics.requestedMaxOutputTokens = 64000;
+    cut.diagnostics.incompleteReason = "max_output_tokens";
+    fixture.addSession({std::move(cut)});
+
+    const auto outcome = fixture.planner.plan(noChangesRequest(), {});
+    require(!outcome.success && outcome.errorCode == "provider.max_output_tokens",
+        "A refused turn record must not change the Planner's failure cause");
+    require(outcome.errorMessage.find("requested limit 64000") != std::string::npos
+            && outcome.errorMessage.find("provider turn 0 record not stored (persistence.insert_failed)")
+                != std::string::npos,
+        ("The Planner failure text must keep the cut details and name the lost record: " + outcome.errorMessage).c_str());
+    require(outcome.usage.inputTokens == 40 && outcome.usage.outputTokens == 6000,
+        "A refused turn record must not change the Planner's usage");
+    require(fixture.sessionFactory.createCalls == 1 && fixture.auditSessions.refusedTurnInserts == 1,
+        "The provider must be asked once and the store tried once");
+}
+
+void testRefusedTurnRecordIsNamedOnASuccessfulPlannerOutcome()
+{
+    Fixture fixture;
+    fixture.auditSessions.failTurnInserts = true;
+    fixture.addSession({
+        toolTurn(0, "read-1", "workspace_read_file", R"({"path":"README.md"})"),
+        noChangesTurn(1, noChangesJson())});
+
+    const auto outcome = fixture.planner.plan(noChangesRequest(), {});
+    require(outcome.success && outcome.disposition == PlanningDisposition::NoChangesNeeded,
+        "A refused turn record must not turn a valid Planner answer into a failure");
+    bool named = false;
+    for (const auto& line : outcome.normalizations)
+        if (line.find("provider turn 0 record not stored (persistence.insert_failed)") != std::string::npos
+                && line.find("provider turn 1 record not stored") != std::string::npos)
+            named = true;
+    require(named, "A successful Planner outcome must carry the lost-record audit line");
+    require(fixture.sessionFactory.createCalls == 1, "No extra session may be opened");
+}
+
+// R2 for the Planner: a secret-shaped provider word reaches neither the failure text nor the stored record.
+void testSecretShapedProviderWordNeverReachesThePlannerMessageOrRecord()
+{
+    Fixture fixture;
+    ProviderAgentTurnResponse cut;
+    cut.turnIndex = 0;
+    cut.finishReason = ProviderAgentFinishReason::MaxOutputTokens;
+    cut.usage.outputTokens = 100;
+    cut.diagnostics.incompleteReason = "content_filter_sk-secret-key_0123456789";
+    cut.diagnostics.providerStatus = "sk-secret-key";
+    fixture.addSession({std::move(cut)});
+
+    const auto outcome = fixture.planner.plan(noChangesRequest(), {});
+    require(!outcome.success && outcome.errorCode == "provider.max_output_tokens", "The cut must fail the plan");
+    require(outcome.errorMessage.find("secret") == std::string::npos
+            && outcome.errorMessage.find("incomplete reason unrecognized") != std::string::npos,
+        ("The Planner failure text leaked a provider word: " + outcome.errorMessage).c_str());
+    const auto sessions = fixture.auditSessions.listForRun("planner-run");
+    require(sessions.success() && sessions.value().size() == 1, "The Planner session record is missing");
+    const auto turns = fixture.auditSessions.listTurns(sessions.value().front().sessionId);
+    require(turns.success() && turns.value().size() == 1, "The cut turn was not recorded");
+    require(turns.value().front().diagnostics.incompleteReason == kUnrecognizedDiagnosticWord
+            && turns.value().front().diagnostics.providerStatus == kUnrecognizedDiagnosticWord,
+        "The stored Planner turn must hold the safe marker, not the provider text");
 }
 
 void testMissingSubmissionRepairsIntoValidNoChangesNeeded()
@@ -4825,6 +4938,10 @@ int main()
     testEmptyManifestTasksStillRejectedAsEmptyTasks();
     testWorkTaskMissingAcceptanceContractKeyFailsToParseNotARuntimeRule();
     testMissingSubmissionRepairsIntoValidNoChangesNeeded();
+    testPlannerOutputTokenCutCarriesProviderDiagnostics();
+    testRefusedTurnRecordIsNamedOnAFailedPlannerOutcome();
+    testRefusedTurnRecordIsNamedOnASuccessfulPlannerOutcome();
+    testSecretShapedProviderWordNeverReachesThePlannerMessageOrRecord();
     testSuccessfulRepairPreservesPrimaryManifestFindings();
     testPrimaryAndFinalRejectionCodesBothSurvive();
     testIncidentChainRecoversAfterTerminalizationAndValidationRepair();

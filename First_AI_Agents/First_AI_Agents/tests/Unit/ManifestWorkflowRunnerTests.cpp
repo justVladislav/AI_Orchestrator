@@ -37,6 +37,7 @@
 #include "ai/application/execution/RunManager.hpp"
 #include "ai/application/execution/WorkflowRouter.hpp"
 #include "ai/infrastructure/FileChangeProposalStore.hpp"
+#include "FailableTurnSessionRepository.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -985,7 +986,7 @@ struct Harness {
     InMemoryExecutionManifestRepository manifestRepository;
     InMemoryManifestTaskExecutionRepository taskExecutions;
     InMemoryManifestWorkLedgerRepository workLedger;
-    InMemoryAgentToolSessionRepository toolSessions;
+    ai::application::testing::FailableTurnSessionRepository toolSessions;
     InMemoryAgentToolAuditRepository toolAudits;
     InMemoryArtifactRepository artifacts;
     InMemoryRunWarningRepository runWarnings;
@@ -3802,6 +3803,69 @@ void testTheSelectedPairIsTheOnlyPairTheRunOffersThePlanner()
     require(snapshot.unlinkedBuildPresets.empty(), "...and nothing else");
 }
 
+// The whole production path (RunManager -> workflow -> executor -> worker -> persisted report), with a store that refuses
+// every provider-turn record: the Run still completes exactly as before, the task states and the verification record are
+// untouched, and the loss is written into the PERSISTED run report - found again by listing the artifacts and reading the
+// stored content, not taken from an in-memory value.
+void testRefusedTurnRecordsOfASuccessfulWorkerReachThePersistedRunReport()
+{
+    Harness harness;
+    giveWorkspaceAnExistingCmakePreset(harness);
+    harness.toolSessions.failTurnInserts = true;
+    const auto provider = harness.makeProvider("Manifest Provider");
+    const auto model = harness.makeModel(provider.id, "manifest-model");
+    StageModelAssignment architect {"architect", provider.id, model.id, 5000ms};
+    const auto profile = harness.profileService.createProfile(
+        {"Manifest Profile", kExecutionManifestWorkflowId, true, {architect}});
+    require(profile.success(), "Could not create manifest-workflow profile");
+    const auto project = harness.makeProject();
+
+    auto plannerSession = std::make_unique<ScriptedProviderAgentSession>();
+    plannerSession->responses.push(common::Result<ProviderAgentTurnResponse>::ok(
+        toolCallResponse("submit-1", kSubmitExecutionManifestDraftToolName,
+            manifestSubmission("notes", "propose"))));
+    harness.sessionFactory.preparedSessions.push(std::move(plannerSession));
+    auto workerSession = std::make_unique<ScriptedProviderAgentSession>();
+    workerSession->responses.push(common::Result<ProviderAgentTurnResponse>::ok(
+        stopResponse(proposalSubmission("notes/file.md"))));
+    harness.sessionFactory.preparedSessions.push(std::move(workerSession));
+
+    StartRunRequest request;
+    request.projectId = project.id;
+    request.title = "Manifest run whose turn records are refused";
+    request.task = "Add a notes file";
+    request.executionProfileId = profile.value();
+    const auto started = harness.orchestration.startRun(request);
+    require(started.success(), "Could not start manifest-workflow run");
+
+    const auto finished = waitForTerminalRun(harness.runs, started.value());
+    require(finished.status == RunStatus::Completed,
+        ("A refused turn record must not change the Run's result: " + finished.errorMessage).c_str());
+
+    const auto artifacts = harness.artifactService.listArtifacts(started.value());
+    require(artifacts.success(), "Could not list the artifacts");
+    const auto report = std::find_if(artifacts.value().begin(), artifacts.value().end(),
+        [](const Artifact& artifact) { return artifact.name == "manifest-run-report.md"; });
+    require(report != artifacts.value().end(), "The run report must be persisted");
+    const auto content = harness.artifactService.getArtifactContent(report->id);
+    require(content.success(), "The persisted run report could not be read back");
+    require(content.value().find("## Diagnostic warnings") != std::string::npos
+            && content.value().find("attempt 1: provider turn 0 record not stored (persistence.insert_failed)")
+                != std::string::npos,
+        ("The persisted run report must name the refused record: " + content.value()).c_str());
+    require(content.value().find("no task status, usage figure or verification verdict was changed")
+            != std::string::npos,
+        "The report must say the warning does not change any result");
+    // The mandatory verification record is still persisted and carries no warning of its own.
+    const auto verification = std::find_if(artifacts.value().begin(), artifacts.value().end(),
+        [](const Artifact& artifact) { return artifact.name == "manifest-verification.md"; });
+    require(verification != artifacts.value().end(), "The verification record must still be persisted");
+    const auto verificationContent = harness.artifactService.getArtifactContent(verification->id);
+    require(verificationContent.success()
+            && verificationContent.value().find("Diagnostic warnings") == std::string::npos,
+        "The verification verdict must not be touched by the warning");
+}
+
 // A DIAGNOSTIC artifact (the run report: nothing looks it up by name) that cannot be stored must not fail a Run that did its
 // work - but the loss must leave a durable, explicit warning on the Run, once, naming the artifact and the stage. The
 // MANDATORY verification record stays what it was (see testManifestWorkflowFailsClosedWhenVerificationCannotBePersisted): it
@@ -6514,6 +6578,7 @@ int main()
         testManifestWorkflowFailsClosedWhenVerificationCannotBePersisted();
         testAnUnserialisableVerificationIdentityFailsTheRunAndLeavesNoIdentityArtifact();
         testLostDiagnosticArtifactLeavesAWarningAndTheRunStillCompletes();
+        testRefusedTurnRecordsOfASuccessfulWorkerReachThePersistedRunReport();
         testManifestRunWithNonAnsiFileNamesCompletes();
         testRefusedVerificationFolderStopsAManifestRunBeforeThePlannerIsPaid();
         testManifestRunCompletesWithTheRootTheBackendValidated();

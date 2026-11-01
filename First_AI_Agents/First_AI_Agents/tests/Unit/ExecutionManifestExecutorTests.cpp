@@ -18,6 +18,7 @@
 #include "ai/application/execution/RunWorkspaceScopeService.hpp"
 #include "ai/application/Sha256.hpp"
 #include "ai/infrastructure/FileChangeProposalStore.hpp"
+#include "FailableTurnSessionRepository.hpp"
 #include "ai/infrastructure/SqliteRepositories.hpp"
 
 #include <cassert>
@@ -469,7 +470,7 @@ public:
 struct Fixture {
     TempDir tempDir;
     TempDir workspace;
-    InMemoryAgentToolSessionRepository toolSessions;
+    ai::application::testing::FailableTurnSessionRepository toolSessions;
     InMemoryAgentToolAuditRepository toolAudits;
     AlwaysSucceedExecutor executor;
     ScriptedProviderAgentSessionFactory sessionFactory;
@@ -1333,6 +1334,48 @@ void testExecutorRetryRecoversTransientFailureThenSucceeds()
     require(outcome.status == ManifestExecutionStatus::Completed, "Second attempt must succeed");
     require(outcome.taskStates.at("a").attempts == 2, "Exactly two attempts should have been consumed");
     require(fx.sessionFactory.createCalls == 2, "Retry must create a fresh provider session");
+}
+
+// The executor passes no event sink to its workers, so before this the loss of a provider-turn record was
+// invisible when the task succeeded. The warnings now reach the outcome per task, one entry per attempt - the
+// failed first attempt's warning is kept next to the successful retry's - and nothing else moves.
+void testExecutorKeepsTurnRecordWarningsOfEveryAttemptWithoutChangingTheResult()
+{
+    const auto runOnce = [](bool refuse) {
+        Fixture fx;
+        fx.toolSessions.failTurnInserts = refuse;
+        auto toolExecution = fx.makeToolExecution();
+        auto changeProposals = fx.makeChangeProposals();
+        ExecutionManifestExecutor executorUnderTest(fx.sessionFactory, toolExecution, changeProposals);
+        fx.sessionFactory.preparedSessions.push(failingSession());
+        fx.sessionFactory.preparedSessions.push(sessionEndingWith(proposalJson("a/one.md")));
+        auto manifest = makeManifest({makeTask("a", {}, {"a/one.md"})}, 1);
+        auto request = makeExecutionRequest(fx, std::move(manifest), /*maxAttempts=*/2);
+        std::stop_source ss;
+        auto outcome = executorUnderTest.execute(std::move(request), ss.get_token());
+        return std::make_pair(std::move(outcome), fx.sessionFactory.createCalls);
+    };
+
+    const auto control = runOnce(false);
+    require(control.first.status == ManifestExecutionStatus::Completed && control.first.taskDiagnosticWarnings.empty(),
+        "A healthy store must produce no warnings");
+
+    const auto refused = runOnce(true);
+    const auto& outcome = refused.first;
+    require(outcome.status == ManifestExecutionStatus::Completed, "A refused turn record must not fail the execution");
+    require(outcome.taskStates.at("a").attempts == 2 && refused.second == 2,
+        "The attempts and provider sessions are exactly those of the healthy run: nothing is retried because of the loss");
+    require(outcome.taskStates.at("a").errorCode.empty(), "The task result must be untouched");
+    require(outcome.usage.inputTokens == control.first.usage.inputTokens
+            && outcome.usage.outputTokens == control.first.usage.outputTokens,
+        "The usage must be exactly that of the healthy run");
+    const auto found = outcome.taskDiagnosticWarnings.find("a");
+    require(found != outcome.taskDiagnosticWarnings.end() && found->second.size() == 2,
+        "One warning per attempt must be kept for the task");
+    require(found->second[0].find("attempt 1: provider turn 0 record not stored (persistence.insert_failed)")
+                    != std::string::npos
+            && found->second[1].find("attempt 2: provider turn") != std::string::npos,
+        "The earlier attempt's warning must survive the successful retry");
 }
 
 void testExecutorRetryExhaustedMarksFailed()
@@ -7231,6 +7274,7 @@ int main()
         testExecutorClaimRegistryIsFinalRaceGuardBetweenTasks();
         testExecutorCancellationBeforeDispatchStopsImmediately();
         testExecutorRetryRecoversTransientFailureThenSucceeds();
+        testExecutorKeepsTurnRecordWarningsOfEveryAttemptWithoutChangingTheResult();
         testExecutorRetryExhaustedMarksFailed();
         testExecutorRepairAbandonmentDoesNotTriggerOuterRetry();
         testExecutorClosesOuterRetryAfterNonEmptyNonRepairableRejection();

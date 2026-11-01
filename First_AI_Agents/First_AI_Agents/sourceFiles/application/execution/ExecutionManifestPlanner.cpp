@@ -1535,6 +1535,10 @@ ExecutionManifestPlannerOutcome ExecutionManifestPlanner::plan(
     std::size_t totalBytes = 0;
     std::size_t persistedTurns = 0;
     models::TokenUsage totalUsage;
+    // Turn records the store refused: audit/diagnostic data only, so the Planner's result, usage and error code
+    // are untouched and nothing is re-requested from the provider - but the loss is named on a failed outcome's
+    // message and, on a success, as an audit line next to the normalizations.
+    std::string lostTurnRecords;
 
     const auto finishAudit = [&](AgentToolSessionState state) {
         auditSession.state = state;
@@ -1545,6 +1549,14 @@ ExecutionManifestPlannerOutcome ExecutionManifestPlanner::plan(
         static_cast<void>(toolExecution_.updateSession(auditSession));
     };
     const auto fillEvidence = [&] {
+        if (!lostTurnRecords.empty()) {
+            if (outcome.success) {
+                outcome.normalizations.push_back(lostTurnRecords);
+            } else {
+                if (!outcome.errorMessage.empty()) outcome.errorMessage += " ";
+                outcome.errorMessage += "[" + lostTurnRecords + "]";
+            }
+        }
         outcome.totalTurns = persistedTurns;
         outcome.totalToolCalls = totalCalls;
         outcome.successfulInspectionCalls = successfulCalls;
@@ -1649,7 +1661,14 @@ ExecutionManifestPlannerOutcome ExecutionManifestPlanner::plan(
             turnRecord.outputTokens = static_cast<int>(turn.usage.outputTokens);
             turnRecord.callCount = turn.toolCalls.size();
             turnRecord.createdAt = std::chrono::system_clock::now();
-            static_cast<void>(toolExecution_.recordTurn(std::move(turnRecord)));
+            turnRecord.diagnostics = providers::turnDiagnosticsOf(turn, attemptRequest.maxOutputTokens);
+            if (const auto stored = toolExecution_.recordTurn(turnRecord); !stored.success()) {
+                if (lostTurnRecords.size() < 256) {
+                    if (!lostTurnRecords.empty()) lostTurnRecords += "; ";
+                    lostTurnRecords += "provider turn " + std::to_string(turnRecord.turnIndex)
+                        + " record not stored (" + stored.error()->code + ")";
+                }
+            }
 
             if (turn.finishReason == providers::ProviderAgentFinishReason::ToolUse) {
                 // Package 2: defense-in-depth against a misbehaving/mocked
@@ -1800,7 +1819,10 @@ ExecutionManifestPlannerOutcome ExecutionManifestPlanner::plan(
             if (turn.finishReason == providers::ProviderAgentFinishReason::MaxOutputTokens) {
                 return {false, false, false, {},
                         "provider.max_output_tokens",
-                        "Planner response reached its output-token limit"};
+                        "Planner response reached its output-token limit ("
+                            + describeOutputTokenCut(turn.usage.outputTokens,
+                                providers::turnDiagnosticsOf(turn, attemptRequest.maxOutputTokens))
+                            + ")"};
             }
             if (turn.finishReason == providers::ProviderAgentFinishReason::Error) {
                 return {false, false, false, {},
