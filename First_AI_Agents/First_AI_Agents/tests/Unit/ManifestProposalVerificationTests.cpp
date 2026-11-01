@@ -1,4 +1,5 @@
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
+#include "ai/application/text/DiagnosticText.hpp"
 #include "ai/application/verification/ManifestProposalOverlay.hpp"
 #include "ai/application/verification/ManifestProposalSetVerifier.hpp"
 #include "ai/application/verification/ManifestVerificationEnvironmentPreflight.hpp"
@@ -3463,6 +3464,133 @@ void testIsIgnorableNonRepairDiagnosticCodeRecognizesQmlWarningAdvisory()
 
 } // namespace
 
+// ---- Diagnostic text that is not UTF-8 -------------------------------------------------------------
+// Real Runs on a Russian Windows (09020c95, 98eb2364): cl.exe writes its errors in the OEM code page
+// (CP866), the excerpt kept those raw bytes, and the strict JSON of the verification identity threw on
+// them - an escaped exception ended the application. The excerpt is now always well-formed UTF-8, and a
+// byte cap never cuts a character in half; the strict identity itself is unchanged.
+
+bool wellFormedUtf8(const std::string& text)
+{
+    return ai::application::isWellFormedUtf8(text);
+}
+
+// Runs one failing build whose output is `buildOutput` and returns the command_failed diagnostic text, after
+// checking that the whole verification still fails (a broken build is never turned into a pass) and that its
+// strict identity serialises.
+std::string failedBuildDiagnosticFor(const std::string& buildOutput)
+{
+    Fixture fixture;
+    const auto overlay = ManifestProposalOverlay::build(
+        overlayRequest(fixture, {}), fixture.service);
+    require(overlay.success(), "Fixture overlay failed to build");
+
+    ExecutionAcceptanceRequirement build;
+    build.id = "build";
+    build.description = "Build succeeds";
+    build.verificationKind = ExecutionVerificationKind::CMakeBuild;
+    build.verificationArguments = {
+        {"preset", "local-qt-debug"}, {"buildPreset", "local-qt-debug"}};
+    ManifestProposalSetVerifierRequest request {overlay.value(), {taskWithRequirement(build)}};
+
+    FakeCommandRunner runner;
+    runner.outcomes.push_back(successfulProbe("configure ok"));
+    ManifestVerificationCommandOutcome buildFailure;
+    buildFailure.started = true;
+    buildFailure.exitCode = 2;
+    buildFailure.boundedOutput = buildOutput;
+    runner.outcomes.push_back(std::move(buildFailure));
+
+    const auto verification = ManifestProposalSetVerifier::verify(
+        request, fixture.service, runner, {});
+    require(verification.success(), "Build failure must produce a typed verification result");
+    require(verification.value().buildLintTestStatus == ExecutionVerificationStatus::Failed
+            && verification.value().acceptanceStatus == ExecutionVerificationStatus::Failed,
+        "A build that failed must stay a failed verification");
+    const auto commandFailure = std::find_if(
+        verification.value().diagnostics.begin(), verification.value().diagnostics.end(),
+        [](const ManifestVerificationDiagnostic& diagnostic) {
+            return diagnostic.code == "verification.command_failed";
+        });
+    require(commandFailure != verification.value().diagnostics.end(),
+        "Expected a command_failed diagnostic for the build failure");
+    std::string message = commandFailure->message;
+    require(wellFormedUtf8(message), "The diagnostic message is not well-formed UTF-8");
+    // The strict serialisation used for the identity artifact must accept it.
+    bool serialised = false;
+    try {
+        serialised = !renderManifestProposalSetVerificationJson(verification.value()).empty();
+    } catch (const std::exception&) {
+    }
+    require(serialised, "The strict verification identity could not serialise the diagnostic");
+    require(ManifestProposalOverlay::cleanup(overlay.value()).success(), "Cleanup failed");
+    return message;
+}
+
+void testOemEncodedCompilerOutputBecomesValidUtf8AndStaysAFailure()
+{
+    // "<file>(80): error C2668: <OEM bytes> ..." - CP866 for the Russian word "ambiguous".
+    const std::string oemWord = "\xAD\xA5\xAE\xA4\xAD\xAE\xA7\xAD\xA0\xE7\xAD\xEB\xA9";
+    const std::string message = failedBuildDiagnosticFor(
+        "Main.cpp\nMain.cpp(80): error C2668: unexpected: " + oemWord + " call\nninja: build stopped\n");
+    require(message.find("C2668") != std::string::npos, "The OEM-encoded error line was lost");
+}
+
+void testByteCapNeverSplitsAMultiByteCharacter()
+{
+    // A long diagnostic line made of two-byte characters; the prefix length is varied so that the byte cap
+    // lands inside a character for at least one alignment, on both truncation paths.
+    const std::string cyrillic = "\xD0\xB6"; // U+0436
+    for (std::size_t pad = 0; pad < 4; ++pad) {
+        std::string longLine = "Main.cpp(1): error C2668: " + std::string(pad, 'x');
+        for (int i = 0; i < 2000; ++i) longLine += cyrillic;
+        const std::string message = failedBuildDiagnosticFor("Main.cpp\n" + longLine + "\nninja: build stopped\n");
+        require(message.find("[truncated") != std::string::npos, "The long line must have been truncated");
+    }
+    // Several mid-sized lines: the marker trim (second path) must also stay on a character boundary.
+    for (std::size_t pad = 0; pad < 4; ++pad) {
+        std::string output = "Main.cpp\n";
+        for (int line = 0; line < 12; ++line) {
+            output += "File" + std::to_string(line) + ".cpp(1): error C2668: " + std::string(pad, 'x');
+            for (int i = 0; i < 90; ++i) output += cyrillic;
+            output += "\n";
+        }
+        static_cast<void>(failedBuildDiagnosticFor(output));
+    }
+}
+
+void testDiagnosticTextNormalisation()
+{
+    using ai::application::isWellFormedUtf8;
+    using ai::application::toValidUtf8Diagnostic;
+    using ai::application::utf8SafePrefixLength;
+
+    const std::string wellFormed = "\xD0\xBE\xD1\x88\xD0\xB8\xD0\xB1\xD0\xBA\xD0\xB0 ok\n second line";
+    require(toValidUtf8Diagnostic(wellFormed) == wellFormed, "Well-formed UTF-8 must be kept byte for byte");
+
+    // Malformed shapes are never accepted as well-formed ...
+    require(!isWellFormedUtf8("\xC0\xAF"), "An overlong form was accepted");
+    require(!isWellFormedUtf8("\xED\xA0\x80"), "A surrogate was accepted");
+    require(!isWellFormedUtf8("\xF4\x90\x80\x80"), "A code point above U+10FFFF was accepted");
+    require(!isWellFormedUtf8("\xD0"), "A truncated sequence was accepted");
+    require(!isWellFormedUtf8("\xFF"), "An impossible byte was accepted");
+    require(isWellFormedUtf8("plain ascii") && isWellFormedUtf8(""), "ASCII and empty are well-formed");
+
+    // ... and whatever comes out is always well-formed, line by line, with every newline kept.
+    const std::string mixed = "good \xD0\xBE line\n\xAD\xA5\xFF bad line\nlast \xD0";
+    const std::string repaired = toValidUtf8Diagnostic(mixed);
+    require(isWellFormedUtf8(repaired), "Normalised text is not well-formed");
+    require(std::count(repaired.begin(), repaired.end(), '\n') == 2, "Newlines must be preserved");
+    require(repaired.rfind("good \xD0\xBE line\n", 0) == 0, "A well-formed line must be kept as it was");
+
+    // A cut lands on a character boundary.
+    const std::string text = "ab\xD0\xB6\xD0\xB6";
+    require(utf8SafePrefixLength(text, 3) == 2, "The cut must step back over a split character");
+    require(utf8SafePrefixLength(text, 4) == 4 && utf8SafePrefixLength(text, 100) == text.size(),
+        "A cut on a boundary or beyond the end must be kept");
+    require(utf8SafePrefixLength(text, 0) == 0, "Cutting to nothing must be allowed");
+}
+
 int main()
 {
     try {
@@ -3571,6 +3699,9 @@ int main()
         testProjectWideQmlLintUnchangedBehaviorWithoutBaselineOverlay();
         testVerificationQmlWarningAdvisoryDiagnosticRoundTripsThroughJson();
         testIsIgnorableNonRepairDiagnosticCodeRecognizesQmlWarningAdvisory();
+        testDiagnosticTextNormalisation();
+        testOemEncodedCompilerOutputBecomesValidUtf8AndStaysAFailure();
+        testByteCapNeverSplitsAMultiByteCharacter();
         return 0;
     } catch (const std::exception& exception) {
         std::cerr << "Manifest proposal verification tests failed: "

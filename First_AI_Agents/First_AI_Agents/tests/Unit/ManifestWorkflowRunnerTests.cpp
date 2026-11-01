@@ -3242,6 +3242,88 @@ void testManifestWorkflowFailsClosedWhenVerificationCannotBePersisted()
         "Execution stage must not be marked complete without verification persistence");
 }
 
+// The verification identity is serialised STRICTLY: a string that is not UTF-8 is an error, never silently repaired. When a
+// diagnostic still carries such bytes (here a tool error code from the command runner, which no text sanitiser touches), the
+// serialisation failure must end the Run as an ordinary failed one - with the exact reason recorded, the readable verification
+// report kept, and NO identity artifact that could later be mistaken for a valid record - and must not escape as an exception.
+void testAnUnserialisableVerificationIdentityFailsTheRunAndLeavesNoIdentityArtifact()
+{
+    Harness harness;
+    giveWorkspaceAnExistingCmakePreset(harness);
+    const auto provider = harness.makeProvider("Manifest Provider");
+    const auto model = harness.makeModel(provider.id, "manifest-model");
+    StageModelAssignment architect {"architect", provider.id, model.id, 5000ms};
+    const auto profile = harness.profileService.createProfile(
+        {"Manifest Profile", kExecutionManifestWorkflowId, true, {architect}});
+    require(profile.success(), "Could not create manifest-workflow profile");
+    const auto project = harness.makeProject();
+
+    auto plannerSession = std::make_unique<ScriptedProviderAgentSession>();
+    plannerSession->responses.push(common::Result<ProviderAgentTurnResponse>::ok(
+        toolCallResponse("submit-1", kSubmitExecutionManifestDraftToolName,
+            cmakeBuildManifestSubmission("local-qt-debug"))));
+    harness.sessionFactory.preparedSessions.push(std::move(plannerSession));
+    auto workerSession = std::make_unique<ScriptedProviderAgentSession>();
+    workerSession->responses.push(common::Result<ProviderAgentTurnResponse>::ok(
+        stopResponse(proposalSubmission("qml/components/navigation/AppSidebar.qml"))));
+    harness.sessionFactory.preparedSessions.push(std::move(workerSession));
+    // A command-backed failure may be eligible for one bounded repair wave: script that session too.
+    auto repairSession = std::make_unique<ScriptedProviderAgentSession>();
+    repairSession->responses.push(common::Result<ProviderAgentTurnResponse>::ok(
+        stopResponse(proposalSubmission("qml/components/navigation/AppSidebar.qml"))));
+    harness.sessionFactory.preparedSessions.push(std::move(repairSession));
+
+    // The preflight's own pair of preset probes, then configure succeeds and the BUILD "could not start" with an
+    // error code that is not UTF-8 (the fake command runner is the only seam that can put such bytes there).
+    ManifestVerificationCommandOutcome presetListOutcome;
+    presetListOutcome.started = true;
+    presetListOutcome.exitCode = 0;
+    presetListOutcome.boundedOutput =
+        "Available configure presets:\n\n  \"local-qt-debug\"   - Desktop Qt 6.11.1 Debug\n";
+    harness.verificationCommandRunner.outcomes.push_back(presetListOutcome);
+    presetListOutcome.boundedOutput =
+        "Available build presets:\n\n  \"local-qt-debug\"   - Desktop Qt 6.11.1 Debug\n";
+    harness.verificationCommandRunner.outcomes.push_back(presetListOutcome);
+    ManifestVerificationCommandOutcome configureOutcome;
+    configureOutcome.started = true;
+    configureOutcome.exitCode = 0;
+    ManifestVerificationCommandOutcome unusableBuild;
+    unusableBuild.started = false;
+    unusableBuild.errorCode = "verification.tool_\xAD\xA5\xFF";
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        harness.verificationCommandRunner.outcomes.push_back(configureOutcome);
+        harness.verificationCommandRunner.outcomes.push_back(unusableBuild);
+    }
+
+    StartRunRequest request;
+    request.projectId = project.id;
+    request.title = "Manifest run with an unserialisable verification identity";
+    request.task = "Add a notes file";
+    request.executionProfileId = profile.value();
+    const auto started = harness.orchestration.startRun(request);
+    require(started.success(), "Could not start manifest-workflow run");
+
+    const auto finished = waitForTerminalRun(harness.runs, started.value());
+    require(finished.status == RunStatus::Failed,
+        "A Run whose verification identity cannot be serialised must stay Failed");
+    require(finished.errorMessage.find("verification.identity_serialization_failed") != std::string::npos,
+        ("The Run lost the exact reason for the failure: " + finished.errorMessage).c_str());
+
+    const auto artifacts = harness.artifactService.listArtifacts(started.value());
+    require(artifacts.success(), "Could not list the Run's artifacts");
+    require(std::any_of(artifacts.value().begin(), artifacts.value().end(), [](const Artifact& artifact) {
+                return artifact.name == "manifest-verification.md";
+            }),
+        "The readable verification report must still be recorded");
+    require(std::none_of(artifacts.value().begin(), artifacts.value().end(), [](const Artifact& artifact) {
+                return artifact.name == "manifest-verification-identity.v1.json";
+            }),
+        "No identity artifact may exist for an identity that could not be serialised");
+    const auto stages = harness.runs.listStages(started.value());
+    require(stages.success() && stages.value().size() == 2 && stages.value()[1].status == StageStatus::Failed,
+        "The execution stage must be Failed, not left running or completed");
+}
+
 // A whole Manifest Run (planner validation, dependency graph, executor prompts, proposal, verification, read model, Work Ledger)
 // whose files have names the ANSI code page of this machine cannot hold (Cyrillic on an English Windows, Chinese on a Russian
 // one - one name has both, so the test is not machine-dependent). path::generic_string() throws std::system_error for such a name;
@@ -6430,6 +6512,7 @@ int main()
         testManifestTaskWorkerNoChangesEvidencePersistsAndProjectsInReadModel();
         testManifestWorkflowRejectsInvalidPersistedProfileBeforeRun();
         testManifestWorkflowFailsClosedWhenVerificationCannotBePersisted();
+        testAnUnserialisableVerificationIdentityFailsTheRunAndLeavesNoIdentityArtifact();
         testLostDiagnosticArtifactLeavesAWarningAndTheRunStillCompletes();
         testManifestRunWithNonAnsiFileNamesCompletes();
         testRefusedVerificationFolderStopsAManifestRunBeforeThePlannerIsPaid();

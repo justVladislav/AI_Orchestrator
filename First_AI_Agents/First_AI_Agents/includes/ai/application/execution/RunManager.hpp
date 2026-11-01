@@ -141,6 +141,8 @@ private:
         const LegacyConversionDraft* conversion = nullptr);
     void workerLoop(std::stop_token shutdownToken);
     void executeRun(const RunId& runId);
+    // The worker's exception boundary: settles a Run whose execution threw as Failed (see workerLoop).
+    void failRunAfterException(const RunId& runId, const char* what) noexcept;
     void publish(const RunEvent& event) override;
     common::Result<void> persistProviderBudgetUsage(
         const RunId& runId,

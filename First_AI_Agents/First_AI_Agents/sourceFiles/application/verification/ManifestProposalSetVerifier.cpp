@@ -4,6 +4,7 @@
 #include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/verification/QmlLintDiagnosticPolicy.hpp"
 #include "ai/application/Sha256.hpp"
+#include "ai/application/text/DiagnosticText.hpp"
 #include "ai/application/verification/VerificationToolchain.hpp"
 
 #include <algorithm>
@@ -476,6 +477,11 @@ std::vector<ManifestVerificationDiagnosticFinding> boundedFindingsPerFile(
 DiagnosticExcerpt leakSafeDiagnosticExcerpt(
     std::string output, const fs::path& workingDirectory)
 {
+    // The raw bytes of a build tool (cl.exe writes the console's OEM code page) are not UTF-8. The excerpt
+    // is stored, shown and serialised into the strict verification identity, so it is made well-formed
+    // UTF-8 FIRST: well-formed lines are kept, OEM lines are decoded, anything else is replaced. The
+    // working-directory and secret scrubbing below then runs on text with its real characters.
+    output = toValidUtf8Diagnostic(output);
     replaceAll(output, workingDirectory.string(), "<candidate>");
     replaceAll(output, workingDirectory.generic_string(), "<candidate>");
 
@@ -617,7 +623,9 @@ DiagnosticExcerpt leakSafeDiagnosticExcerpt(
         excerpt += separator;
         const auto remaining = kMaximumExcerptBytes - excerpt.size();
         if (line.size() > remaining) {
-            excerpt.append(line, 0, remaining);
+            // Never cut a multi-byte character in half: the byte cap is a limit on size, not a licence to
+            // produce malformed UTF-8.
+            excerpt.append(line, 0, utf8SafePrefixLength(line, remaining));
             byteCapTruncated = true;
             break;
         }
@@ -627,7 +635,7 @@ DiagnosticExcerpt leakSafeDiagnosticExcerpt(
         const std::size_t markerSize = kExcerptTruncationMarker.size();
         const std::size_t keep =
             kMaximumExcerptBytes > markerSize ? kMaximumExcerptBytes - markerSize : 0;
-        if (excerpt.size() > keep) excerpt.resize(keep);
+        if (excerpt.size() > keep) excerpt.resize(utf8SafePrefixLength(excerpt, keep));
         excerpt += std::string(kExcerptTruncationMarker);
     }
 

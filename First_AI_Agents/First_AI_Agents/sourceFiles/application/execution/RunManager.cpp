@@ -5,6 +5,7 @@
 
 #include "ai/application/IdGenerator.hpp"
 #include "ai/application/execution/RunStageSettlement.hpp"
+#include "ai/application/text/DiagnosticText.hpp"
 
 #include <algorithm>
 #include <filesystem>
@@ -433,7 +434,18 @@ void RunManager::workerLoop(std::stop_token shutdownToken)
             currentRunStopSource_ = std::stop_source {};
         }
 
-        executeRun(runId);
+        // The execution boundary. A C++ exception that escapes the workflow (or any code around it) must
+        // not leave this thread: nothing above it catches, so it would call std::terminate and end the
+        // whole application, taking every other Run and the usage of work already paid for with it. It
+        // becomes an ordinary Failed Run and the worker goes on with the queue. This cannot catch an
+        // abort(), a failed assert or a memory fault - those are not C++ exceptions.
+        try {
+            executeRun(runId);
+        } catch (const std::exception& exception) {
+            failRunAfterException(runId, exception.what());
+        } catch (...) {
+            failRunAfterException(runId, nullptr);
+        }
 
         {
             std::lock_guard lock(mutex_);
@@ -441,6 +453,38 @@ void RunManager::workerLoop(std::stop_token shutdownToken)
                 currentRunId_.reset();
             }
         }
+    }
+}
+
+void RunManager::failRunAfterException(const RunId& runId, const char* what) noexcept
+{
+    // Best effort and never throws: if even this cannot be written, the Run stays unfinished and the
+    // next startup's recovery settles it, exactly as for a crash.
+    try {
+        constexpr std::size_t kMaximumExceptionDetailBytes = 512;
+        std::string message = "Unexpected internal error: the workflow threw an exception";
+        if (what != nullptr && *what != '\0') {
+            std::string detail = toValidUtf8Diagnostic(what);
+            detail.resize(utf8SafePrefixLength(detail, kMaximumExceptionDetailBytes));
+            message += ": " + detail;
+        } else {
+            message += " of an unknown type";
+        }
+
+        bool shuttingDown = false;
+        models::TokenUsage usage;
+        {
+            std::lock_guard lock(mutex_);
+            shuttingDown = shuttingDown_;
+            const auto found = runRepository_.findRun(runId);
+            if (!found.success() || !found.value().has_value()) return;
+            // The exception may have come after the Run was already settled (an event handler that
+            // threw while being notified): that outcome is final, it is never rewritten.
+            if (isTerminal(found.value()->status)) return;
+            usage = found.value()->usage;
+        }
+        finishRun(runId, WorkflowResult {false, RunStatus::Failed, std::move(message), usage}, shuttingDown);
+    } catch (...) {
     }
 }
 
@@ -641,7 +685,14 @@ void RunManager::notify(const RunEvent& event)
     // Never invoke external code while holding mutex_: Qt adapters may enqueue
     // work back onto the application boundary.
     if (handler) {
-        handler(event);
+        // A handler is observer code (the UI adapter). Its failure is its own: it must not unwind into the
+        // caller, because notify() runs from finishRun() right after the terminal status is committed - an
+        // exception here would skip the Work Ledger, the path-claim release and the model-execution
+        // reconciliation that follow, and from publish() it would abort the runner mid-stage.
+        try {
+            handler(event);
+        } catch (...) {
+        }
     }
 }
 
