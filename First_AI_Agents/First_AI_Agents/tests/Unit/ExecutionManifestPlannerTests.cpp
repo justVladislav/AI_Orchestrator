@@ -9,6 +9,7 @@
 #include "ai/application/verification/ManifestMandatoryVerificationPolicy.hpp"
 #include "ai/application/execution/ManifestRouting.hpp"
 #include "ai/application/execution/RunWorkspaceScopeService.hpp"
+#include "ai/application/workspace/FilesystemPathUtils.hpp"
 #include "ai/application/workspace/WorkspaceReadPolicy.hpp"
 
 #include <nlohmann/json.hpp>
@@ -1157,6 +1158,8 @@ void testWriteAndDeferredConflictsAreNotResolved()
     created.plannedCreatePaths = {"src/new.cpp"};
     created.referencePaths = {"src/new.cpp"};
     created.excludedPaths = {scopeNote("src/new.cpp")};
+    // The excluded pass never looks at deferredPaths: read + deferred is a separate pass
+    // (canonicalizeDeferredReadConflicts below), so this pass leaves it as it found it.
     auto deferred = scopeTask("deferred");
     deferred.referencePaths = {"docs/r.md"};
     deferred.deferredPaths = {scopeNote("docs/r.md")};
@@ -1166,7 +1169,87 @@ void testWriteAndDeferredConflictsAreNotResolved()
             && manifest.tasks[1].excludedPaths.size() == 1
             && manifest.tasks[2].deferredPaths.size() == 1
             && manifest.tasks[2].referencePaths.size() == 1,
-        "owned_write / planned_create + excluded and read + deferred must stay untouched");
+        "owned_write / planned_create + excluded must stay untouched by the excluded pass, "
+        "which must not touch deferredPaths");
+}
+
+std::string deferredLine(const std::string& taskId, const std::string& path, const std::string& role)
+{
+    return "task '" + taskId + "': '" + path + "' is read as " + role
+        + ", so its deferredPaths entry was removed";
+}
+
+// Runs 97f60f8/c05e264e (2026-10-31): the Planner listed a path it READS (reference or required read) as
+// deferred in the same task, the validator rejected manifest.conflicting_path_role, and the one repair
+// regressed. A deferred note beside a read is not a contradiction ("not changed now" and "read for
+// context"), so the Backend drops the note and keeps the read - exactly like the excluded note.
+void testReadRemovesTheSameTasksDeferredEntry()
+{
+    ExecutionManifest manifest;
+    auto task = scopeTask("t1");
+    task.requiredReadPaths = {"docs/a.md"};
+    task.referencePaths = {"docs/r.md"};
+    task.deferredPaths = {scopeNote("docs/a.md"), scopeNote("DOCS\\R.MD"), scopeNote("docs/keep.md")};
+    manifest.tasks.push_back(task);
+    const auto audit = canonicalizeDeferredReadConflicts(manifest);
+    require(audit
+                == std::vector<std::string> {
+                    deferredLine("t1", "docs/a.md", "required_read"),
+                    deferredLine("t1", "docs/r.md", "reference_only")},
+        "A read must drop the same task's deferred entry, one exact audit line per path");
+    require(manifest.tasks[0].deferredPaths.size() == 1
+            && manifest.tasks[0].deferredPaths[0].path == std::filesystem::path("docs/keep.md")
+            && manifest.tasks[0].requiredReadPaths.size() == 1
+            && manifest.tasks[0].referencePaths.size() == 1,
+        "Only the conflicting deferred entry may go; the reads and unrelated notes stay");
+}
+
+void testDeferredReadCanonicalizationNeverTouchesWritesOrOtherTasks()
+{
+    ExecutionManifest manifest;
+    auto owned = scopeTask("owned");
+    owned.ownedPaths = {"src/a.cpp"};
+    owned.requiredReadPaths = {"src/a.cpp"}; // defensive: a caller may have skipped the active pass
+    owned.deferredPaths = {scopeNote("src/a.cpp")};
+    auto created = scopeTask("created");
+    created.plannedCreatePaths = {"src/new.cpp"};
+    created.referencePaths = {"src/new.cpp"};
+    created.deferredPaths = {scopeNote("src/new.cpp")};
+    auto deferrer = scopeTask("deferrer");
+    deferrer.deferredPaths = {scopeNote("docs/a.md")};
+    auto reader = scopeTask("reader");
+    reader.requiredReadPaths = {"docs/a.md"};
+    auto excluded = scopeTask("excluded");
+    excluded.referencePaths = {"docs/e.md"};
+    excluded.excludedPaths = {scopeNote("docs/e.md")};
+    manifest.tasks = {owned, created, deferrer, reader, excluded};
+    const auto before = manifest;
+    require(canonicalizeDeferredReadConflicts(manifest).empty(),
+        "owned_write / planned_create + deferred, another task's read, and excluded stay untouched");
+    for (std::size_t index = 0; index < manifest.tasks.size(); ++index) {
+        require(manifest.tasks[index].deferredPaths.size() == before.tasks[index].deferredPaths.size()
+                && manifest.tasks[index].excludedPaths.size() == before.tasks[index].excludedPaths.size()
+                && manifest.tasks[index].ownedPaths == before.tasks[index].ownedPaths
+                && manifest.tasks[index].plannedCreatePaths == before.tasks[index].plannedCreatePaths
+                && manifest.tasks[index].requiredReadPaths == before.tasks[index].requiredReadPaths
+                && manifest.tasks[index].referencePaths == before.tasks[index].referencePaths,
+            "A deferred pass must change nothing but the conflicting deferred entry of a reading task");
+    }
+}
+
+void testDeferredReadCanonicalizationIsIdempotent()
+{
+    ExecutionManifest manifest;
+    auto task = scopeTask("t1");
+    task.referencePaths = {"docs/r.md"};
+    task.deferredPaths = {scopeNote("docs/r.md"), scopeNote("docs/r.md")};
+    manifest.tasks.push_back(task);
+    require(canonicalizeDeferredReadConflicts(manifest)
+                == std::vector<std::string> {deferredLine("t1", "docs/r.md", "reference_only")}
+            && manifest.tasks[0].deferredPaths.empty(),
+        "Every deferred duplicate goes, with a single audit line");
+    require(canonicalizeDeferredReadConflicts(manifest).empty(),
+        "A second canonicalization must change and report nothing");
 }
 
 void testTheSamePathInAnotherTaskIsNotCanonicalized()
@@ -1277,9 +1360,12 @@ void testWriteAndDeferredExcludedConflictsStillFailThroughPlan()
         {"planned_create + reference + excluded",
             taskJsonWithScope("t1", "src/app.cpp", {}, {"src/app.cpp"}, {"src/app.cpp"}, {}),
             {}},
-        {"reference + deferred",
-            taskJsonWithScope("t1", "src/app.cpp", {}, {"docs/r.md"}, {}, {"docs/r.md"}),
-            {"docs/r.md"}},
+        {"owned_write + deferred",
+            taskJsonWithScope("t1", "src/app.cpp", {}, {}, {}, {"src/app.cpp"}),
+            {"src/app.cpp"}},
+        {"planned_create + deferred",
+            taskJsonWithScope("t1", "src/app.cpp", {}, {}, {}, {"src/app.cpp"}),
+            {}},
     };
     for (const auto& testCase : cases) {
         Fixture fixture;
@@ -1291,6 +1377,147 @@ void testWriteAndDeferredExcludedConflictsStillFailThroughPlan()
         require(!outcome.success && outcome.primaryRejectionCode == "manifest.conflicting_path_role",
             message.c_str());
     }
+}
+
+// path::generic_string() THROWS on Windows for a character the ANSI code page lacks. The canonicalizations
+// key and report paths, so a perfectly valid Unicode path (docs/Ж表.md: Cyrillic and Chinese, which no single
+// ANSI page holds) must be normalized like any other, keep its exact spelling and appear in the audit as UTF-8.
+const std::string kUnicodeDocPath = "docs/\xD0\x96\xE8\xA1\xA8.md"; // docs/Ж表.md
+
+void testUnicodePathsAreCanonalizedWithoutThrowing()
+{
+    const auto unicode = detail::pathFromUtf8(kUnicodeDocPath);
+    const ManifestExcludedOrDeferredPath note {unicode, "not needed"};
+
+    ExecutionManifest deferredManifest;
+    auto deferredTask = scopeTask("t1");
+    deferredTask.requiredReadPaths = {unicode};
+    deferredTask.deferredPaths = {note};
+    deferredManifest.tasks.push_back(deferredTask);
+    std::vector<std::string> deferredAudit;
+    try {
+        deferredAudit = canonicalizeDeferredReadConflicts(deferredManifest);
+    } catch (const std::exception& exception) {
+        require(false, ("canonicalizeDeferredReadConflicts threw on a valid Unicode path: "
+            + std::string(exception.what())).c_str());
+    }
+    require(deferredAudit == std::vector<std::string> {deferredLine("t1", kUnicodeDocPath, "required_read")}
+            && deferredManifest.tasks[0].deferredPaths.empty()
+            && deferredManifest.tasks[0].requiredReadPaths == std::vector<std::filesystem::path> {unicode},
+        "A Unicode path must be normalized with a UTF-8 audit line and keep its exact spelling");
+
+    ExecutionManifest excludedManifest;
+    auto excludedTask = scopeTask("t1");
+    excludedTask.referencePaths = {unicode};
+    excludedTask.excludedPaths = {note};
+    excludedManifest.tasks.push_back(excludedTask);
+    std::vector<std::string> excludedAudit;
+    try {
+        excludedAudit = canonicalizeExcludedReadConflicts(excludedManifest);
+    } catch (const std::exception& exception) {
+        require(false, ("canonicalizeExcludedReadConflicts threw on a valid Unicode path: "
+            + std::string(exception.what())).c_str());
+    }
+    require(excludedAudit == std::vector<std::string> {scopeLine("t1", kUnicodeDocPath, "reference_only")}
+            && excludedManifest.tasks[0].excludedPaths.empty(),
+        "The excluded pass must handle a Unicode path as well");
+}
+
+// Runs a97f60f8/c05e264e: a path the task reads (reference or required read) was also deferred in the same
+// task. The primary submission must freeze WITHOUT a paid repair session, the read stays, the deferred note
+// is recorded as a Backend normalization, and no write authority or dependency edge appears.
+void testDeferredReadConflictPassesWithoutRepairThroughPlan()
+{
+    Fixture fixture;
+    const auto manifest = manifestJson({
+        taskJsonWithScope("t1", "src/app.cpp", {"docs/g.md"}, {"docs/r.md"}, {}, {"docs/g.md", "docs/r.md", "docs/later.md"})});
+    fixture.addSession({submitTurn(0, manifest)});
+
+    const auto outcome = fixture.planner.plan(requestWithBaselineFiles({"docs/g.md", "docs/r.md"}), {});
+    require(outcome.success && outcome.manifest.has_value(),
+        "A deferred note beside the task's own read must be accepted");
+    require(outcome.repairAttempts == 0 && fixture.sessionFactory.createCalls == 1
+            && outcome.primaryRejectionCode.empty() && outcome.primaryFindings.empty(),
+        "No repair session may be spent on a deferred/read conflict");
+
+    std::vector<std::string> removed;
+    for (const auto& line : outcome.normalizations) {
+        if (line.find("deferredPaths entry was removed") != std::string::npos) removed.push_back(line);
+    }
+    require(removed
+                == std::vector<std::string> {
+                    deferredLine("t1", "docs/g.md", "required_read"),
+                    deferredLine("t1", "docs/r.md", "reference_only")},
+        "Each removed deferred note must be recorded as a Backend normalization");
+
+    const auto& task = outcome.manifest->tasks.front();
+    require(task.requiredReadPaths == std::vector<std::filesystem::path> {"docs/g.md"}
+            && task.referencePaths == std::vector<std::filesystem::path> {"docs/r.md"}
+            && task.deferredPaths.size() == 1
+            && task.deferredPaths[0].path == std::filesystem::path("docs/later.md"),
+        "The reads stay and only the genuinely deferred path remains deferred");
+    require(task.ownedPaths.empty()
+            && task.plannedCreatePaths == std::vector<std::filesystem::path> {"src/app.cpp"}
+            && task.dependencies.empty(),
+        "Normalizing a deferred note must not add write authority or a dependency");
+}
+
+// The same conflict on a Unicode path through the whole Planner: it must freeze without a repair, keep the
+// exact path and record the normalization with the UTF-8 spelling.
+void testUnicodeDeferredReadConflictPassesThroughPlan()
+{
+    Fixture fixture;
+    const auto manifest = manifestJson({
+        taskJsonWithScope("t1", "src/app.cpp", {}, {kUnicodeDocPath}, {}, {kUnicodeDocPath})});
+    fixture.addSession({submitTurn(0, manifest)});
+
+    const auto outcome = fixture.planner.plan(requestWithBaselineFiles({kUnicodeDocPath}), {});
+    std::string why = "A deferred note beside a Unicode read must be normalized without a repair session: error="
+        + outcome.errorCode + " primary=" + outcome.primaryRejectionCode + " repairs="
+        + std::to_string(outcome.repairAttempts);
+    for (const auto& finding : outcome.primaryFindings) why += " | " + finding.code + ": " + finding.message;
+    require(outcome.success && outcome.manifest.has_value()
+            && outcome.repairAttempts == 0 && fixture.sessionFactory.createCalls == 1,
+        why.c_str());
+    require(std::find(outcome.normalizations.begin(), outcome.normalizations.end(),
+                deferredLine("t1", kUnicodeDocPath, "reference_only"))
+                != outcome.normalizations.end(),
+        "The normalization of a Unicode path must be recorded with its UTF-8 spelling");
+    const auto& task = outcome.manifest->tasks.front();
+    require(task.referencePaths == std::vector<std::filesystem::path> {detail::pathFromUtf8(kUnicodeDocPath)}
+            && task.deferredPaths.empty(),
+        "The Unicode read must be kept exactly and its deferred note removed");
+}
+
+// Runs a97f60f8/c05e264e: the repair prompt for manifest.conflicting_path_role told the model to rebuild EVERY
+// task's six lists and to MERGE tasks, while the monotonic guard rejects any change to a task the findings
+// do not name and any change of the task count (planner.repair_regressed). The prompt must instead ask for
+// exactly what the guard accepts, and a repair that follows it must be accepted.
+void testConflictingPathRoleRepairPromptAsksForWhatTheGuardAccepts()
+{
+    Fixture fixture;
+    const auto other = taskJson("t2", "[]", "src/b.cpp", "propose");
+    // owned_write + excluded is a hard conflict the Backend does not normalize.
+    const auto bad = manifestJson({
+        taskJsonWithScope("t1", "src/app.cpp", {}, {}, {"src/app.cpp"}, {}), other});
+    const auto fixed = manifestJson({
+        taskJsonWithScope("t1", "src/app.cpp", {}, {}, {}, {}), other});
+    fixture.addSession({submitTurn(0, bad)});
+    fixture.addSession({submitTurn(0, fixed)});
+
+    const auto outcome = fixture.planner.plan(requestWithBaselineFiles({"src/app.cpp", "src/b.cpp"}), {});
+    require(outcome.primaryRejectionCode == "manifest.conflicting_path_role",
+        "The fixture must produce the unresolved conflict that needs a repair");
+    require(outcome.success && outcome.manifest.has_value() && outcome.repairAttempts == 1,
+        "A repair that changes only the named task must be accepted by the monotonic guard");
+
+    const auto& prompt = fixture.sessionFactory.log.requests[1].userContent;
+    require(prompt.find("rebuild every task") == std::string::npos
+            && prompt.find("merge those two tasks") == std::string::npos,
+        "The repair prompt must not demand what the monotonic guard rejects");
+    require(prompt.find("Change ONLY the task(s) named in the findings") != std::string::npos
+            && prompt.find("do not add, remove or merge tasks") != std::string::npos,
+        "The repair prompt must state the exact scope the guard enforces");
 }
 
 // The Run de6d81fb shape: three required reads that were also excluded, across the machine and
@@ -2968,7 +3195,7 @@ void testConflictingPathRoleRepairPromptWarnsAboutCycleRisk()
         "\"proposedDependencyReadPaths\":[\"qml/pagehost.qml\"],"
         "\"referencePaths\":[],"
         "\"excludedPaths\":[],"
-        "\"deferredPaths\":[{\"path\":\"qml/pagehost.qml\",\"reason\":\"Not needed this attempt\"}],"
+        "\"deferredPaths\":[{\"path\":\"qml/project_context.md\",\"reason\":\"Not needed this attempt\"}],"
         "\"acceptanceCriteria\":[\"Tests pass\"],"
         "\"acceptanceContract\":{\"schemaVersion\":\"execution-acceptance.v1\","
         "\"requirements\":[{\"id\":\"verify-output\",\"description\":\"Verify output\","
@@ -2996,9 +3223,10 @@ void testConflictingPathRoleRepairPromptWarnsAboutCycleRisk()
         "Expected the real Stage 2B primary rejection shape (Run 207df296-...)");
     const auto& repairPrompt = fixture.sessionFactory.log.requests[1].userContent;
     require(repairPrompt.find("manifest.conflicting_path_role") != std::string::npos
-            && repairPrompt.find("NEW dependency cycle") != std::string::npos,
-        "Repair prompt for conflicting_path_role must now also warn that reassigning a "
-        "path's role can create a new cycle");
+            && repairPrompt.find("two tasks must never each require a path the other one produces")
+                != std::string::npos,
+        "Repair prompt for conflicting_path_role must still warn that a dependency read can create "
+        "a cycle (without asking for the task merge the monotonic guard rejects)");
 }
 
 // AG-18.5 hardening (Run ed9b84fc-f0fd-4796-b7d2-743715247be1, 2026-09-27,
@@ -3008,24 +3236,30 @@ void testConflictingPathRoleRepairPromptWarnsAboutCycleRisk()
 // array literal), to reproduce the real canary's referencePaths/excludedPaths
 // conflict shape. taskJsonWithRoles has no excludedPaths parameter.
 // Since Run de6d81fb (canonicalizeExcludedReadConflicts) a referencePaths entry
-// that also appears in the SAME task's excludedPaths is resolved by the Backend
-// and never reaches manifest.conflicting_path_role, so these fixtures now
-// put the conflicting notes in deferredPaths instead: reference_only vs
-// deferred is the active-role/inactive-note combination that is deliberately
-// still a hard conflict. The parameter keeps its historical name; its array
-// is written to deferredPaths.
+// that also appears in the SAME task's excludedPaths, and since Runs a97f60f8/
+// c05e264e (canonicalizeDeferredReadConflicts) one that also appears in its
+// deferredPaths, is resolved by the Backend and never reaches
+// manifest.conflicting_path_role. The one combination that stays a hard
+// conflict is a path the task WRITES that is also listed as deferred
+// (planned_create vs deferred without a baseline), so this fixture writes
+// every path of `referencePathsArray` and defers the same paths. The
+// parameters keep their historical names: the first array's paths are
+// appended to writePaths, the second array is written to deferredPaths.
 std::string referenceExcludedConflictTaskJson(
     const std::string& id,
     const std::string& writePath,
     const std::string& referencePathsArray,
     const std::string& excludedPathsArray)
 {
+    // "[\"a\",\"b\"]" -> ",\"a\",\"b\"" (empty array -> nothing)
+    std::string extraWritePaths = referencePathsArray.substr(1, referencePathsArray.size() - 2);
+    if (!extraWritePaths.empty()) extraWritePaths = "," + extraWritePaths;
     return "{\"id\":\"" + id
         + "\",\"objective\":\"Complete " + id
         + "\",\"role\":\"worker\",\"dependencies\":[],"
-          "\"writePaths\":[\"" + writePath + "\"],"
+          "\"writePaths\":[\"" + writePath + "\"" + extraWritePaths + "],"
           "\"baselineRequiredReadPaths\":[],\"proposedDependencyReadPaths\":[],"
-          "\"referencePaths\":" + referencePathsArray + ","
+          "\"referencePaths\":[],"
           "\"excludedPaths\":[],"
           "\"deferredPaths\":" + excludedPathsArray + ","
           "\"acceptanceCriteria\":[\"Tests pass\"],"
@@ -3104,7 +3338,7 @@ void testConflictingPathRoleRepairThatMultipliesConflictsIsRegression()
                     [&](const auto& finding) {
                         return finding.code == "manifest.conflicting_path_role"
                             && finding.message.find(expectedMessageFragment) != std::string::npos
-                            && finding.message.find("'reference_only'") != std::string::npos
+                            && finding.message.find("'planned_create'") != std::string::npos
                             && finding.message.find("'deferred'") != std::string::npos;
                     }),
             "Regression reporting dropped a deterministic Backend path/role finding");
@@ -3163,9 +3397,10 @@ void testConflictingPathRoleSuccessfulRepairRemovesConflict()
             && outcome.repairAttempts == 1,
         "Successful repair lost its primary diagnostics");
     const auto& task = outcome.manifest->tasks.front();
-    require(task.referencePaths == std::vector<std::filesystem::path> {"CMakeLists.txt"}
-            && task.excludedPaths.empty() && task.deferredPaths.empty(),
-        "Successful repair's resulting manifest lost the expected reference-only path");
+    require(task.plannedCreatePaths
+                == std::vector<std::filesystem::path> {"qml/CanaryPanel.qml", "CMakeLists.txt"}
+            && task.referencePaths.empty() && task.excludedPaths.empty() && task.deferredPaths.empty(),
+        "Successful repair's resulting manifest lost the written path or kept the conflicting note");
 }
 
 // Repair-prompt hardening: for a referencePaths/excludedPaths conflict, the
@@ -4548,9 +4783,16 @@ int main()
     testEquivalentNormalizedPathsConflict();
     testSeveralExcludedDuplicatesGiveOneNormalization();
     testWriteAndDeferredConflictsAreNotResolved();
+    testReadRemovesTheSameTasksDeferredEntry();
+    testDeferredReadCanonicalizationNeverTouchesWritesOrOtherTasks();
+    testDeferredReadCanonicalizationIsIdempotent();
+    testUnicodePathsAreCanonalizedWithoutThrowing();
     testTheSamePathInAnotherTaskIsNotCanonicalized();
     testExcludedReadCanonicalizationIsIdempotentAndOrdered();
     testWriteAndDeferredExcludedConflictsStillFailThroughPlan();
+    testDeferredReadConflictPassesWithoutRepairThroughPlan();
+    testUnicodeDeferredReadConflictPassesThroughPlan();
+    testConflictingPathRoleRepairPromptAsksForWhatTheGuardAccepts();
     testMachinesAndAlertsScenarioPassesWithoutRepair();
     testTaskLocalRepairPreservesUnrelatedTaskAndSucceeds();
     testRepairCannotTradePrimaryFindingForNewFinding();

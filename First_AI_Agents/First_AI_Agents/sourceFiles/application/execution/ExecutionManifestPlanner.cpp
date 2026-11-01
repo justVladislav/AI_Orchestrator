@@ -1961,6 +1961,11 @@ ExecutionManifestPlannerOutcome ExecutionManifestPlanner::plan(
         for (auto& removed : canonicalizeExcludedReadConflicts(parsed.value())) {
             outcome.normalizations.push_back(std::move(removed));
         }
+        // Same for a deferred note beside the task's own read (Runs a97f60f8/c05e264e): "not changed now"
+        // does not contradict "read for context". Writes and other tasks' entries are left alone.
+        for (auto& removed : canonicalizeDeferredReadConflicts(parsed.value())) {
+            outcome.normalizations.push_back(std::move(removed));
+        }
         canonicalizeRequiredReadDependencies(parsed.value());
         if (auto lowered = clampRequestedParallelismToCeiling(
                 parsed.value(), request.trustedManifestPolicy)) {
@@ -2366,25 +2371,36 @@ ExecutionManifestPlannerOutcome ExecutionManifestPlanner::plan(
                 // kind of change that can create or reveal a cycle, so this
                 // caution is now unconditional here, not only inside the
                 // dependency_cycle block below.
-                repair << " For manifest.conflicting_path_role, rebuild every task's six "
+                // Runs a97f60f8/c05e264e (2026-10-31): this text used to say "rebuild every task's six
+                // path-role lists" and "merge those two tasks", while the monotonic guard
+                // (validateMonotonicDraftChange) rejects any change to a task the findings do not name and
+                // any change of the task count as planner.repair_regressed - the prompt itself led the
+                // model into the rejection. It now asks for exactly what the guard accepts; a reported
+                // dependency_cycle is a graph-wide finding with its own guidance below.
+                repair << " For manifest.conflicting_path_role: Change ONLY the task(s) named in the "
+                          "findings, and in each of them only the exact path(s) the findings name. "
+                          "Keep every other task exactly as you submitted it and keep the number of "
+                          "tasks - do not add, remove or merge tasks - because a repair that touches "
+                          "an unnamed task or changes the task count is rejected as a regression. "
+                          "Within a task, a normalized path may appear in only one of the six "
                           "path-role lists (writePaths, baselineRequiredReadPaths, "
                           "proposedDependencyReadPaths, referencePaths, excludedPaths, "
-                          "deferredPaths) so each normalized path appears in exactly one "
-                          "list. Keep any file the task writes - existing or new - only in "
+                          "deferredPaths): remove the named path from whichever list is wrong for "
+                          "it. Keep any file the task writes - existing or new - only in "
                           "writePaths; the worker can already read its own writePaths, so remove "
-                          "that path from either read list and referencePaths. Use "
+                          "that path from either read list and referencePaths, and never list it in "
+                          "excludedPaths or deferredPaths. Use "
                           "baselineRequiredReadPaths only for the current content of a "
                           "pre-existing path you do not depend on another task to produce, "
                           "proposedDependencyReadPaths only for a path another task in this "
                           "same submission is genuinely producing, referencePaths only for "
                           "optional "
                           "read-only context, and never repeat excluded/deferred paths in an "
-                          "active role. Moving a path into a different role can change which "
-                          "task owns it, which can create a NEW dependency cycle even though "
-                          "none was reported this time - after reassigning any path's role, "
-                          "recheck whether any two tasks now each require a path the OTHER "
-                          "one produces; if so, merge those two tasks into one rather than "
-                          "resubmitting a graph that is cyclic in a new way.";
+                          "active role. A file the task only reads needs no deferredPaths or "
+                          "excludedPaths entry at all. Do not move a read into "
+                          "proposedDependencyReadPaths unless another task really produces that "
+                          "path: that creates a dependency, and two tasks must never each require a "
+                          "path the other one produces.";
                 // Real-Run incident (Run ed9b84fc-f0fd-4796-b7d2-743715247be1,
                 // 2026-09-27, real Anthropic canary): the primary conflict was a
                 // single referencePaths/excludedPaths pair on one path
