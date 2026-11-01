@@ -6,6 +6,8 @@
 #include "ai/models/ModelRequest.hpp"
 #include "ai/models/ModelResponse.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <stop_token>
 #include <string>
 
@@ -34,6 +36,49 @@ namespace ai::backend::provider_client_detail {
     result.content = response.text;
     result.usage = response.usage;
     return result;
+}
+
+// The text fallback for failures that carry no structured code (Anthropic, transport errors, an unusable body, the
+// missing key): a best-effort classification into the stable codes IProviderClient::send() promises. It is NOT used
+// for any failure whose provider already supplied a code.
+[[nodiscard]] inline std::string classifyLegacyProviderMessage(const std::string& message)
+{
+    std::string lower = message;
+    std::transform(lower.begin(), lower.end(), lower.begin(),
+        [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    if (lower.find("401") != std::string::npos || lower.find("unauthorized") != std::string::npos
+            || lower.find("invalid api key") != std::string::npos
+            || lower.find("authentication") != std::string::npos) {
+        return "provider.auth_failed";
+    }
+    if (lower.find("429") != std::string::npos || lower.find("rate limit") != std::string::npos) {
+        return "provider.rate_limited";
+    }
+    if (lower.find("timed out") != std::string::npos || lower.find("timeout") != std::string::npos) {
+        return "provider.timeout";
+    }
+    if (lower.find("curl") != std::string::npos || lower.find("could not resolve") != std::string::npos
+            || lower.find("connect") != std::string::npos || lower.find("network") != std::string::npos) {
+        return "provider.network_error";
+    }
+    if (lower.find("json") != std::string::npos || lower.find("parse") != std::string::npos
+            || lower.find("unexpected response") != std::string::npos) {
+        return "provider.invalid_response";
+    }
+    return "provider.request_failed";
+}
+
+// Typed provider result -> IProviderClient result. A success carries no code. On failure a NON-EMPTY structured code
+// wins over every word in the text; only an empty code falls back to the text classification above.
+[[nodiscard]] inline common::Result<application::ProviderChatResponse> toChatResult(
+    const models::ModelResponse& response, const std::string& structuredErrorCode)
+{
+    if (response.success) {
+        return common::Result<application::ProviderChatResponse>::ok(toChatResponse(response));
+    }
+    return common::Result<application::ProviderChatResponse>::failure(
+        {structuredErrorCode.empty() ? classifyLegacyProviderMessage(response.errorMessage) : structuredErrorCode,
+         response.errorMessage});
 }
 
 [[nodiscard]] inline models::ModelRequest toModelRequest(

@@ -961,6 +961,131 @@ void testExecutionGraphRunsWorkersInParallelRetriesFallsBackAndSynthesizes()
     manager.shutdown();
 }
 
+// Legacy single-shot path, item C4: a durable credit/quota refusal is not retried on the same provider and never opens
+// a fallback that was not configured; a configured fallback is a separate target that is still used exactly once.
+struct QuotaGraphResult {
+    Run finished;
+    std::vector<std::string> requestedModels;
+    std::vector<ModelExecution> attempts;
+};
+
+QuotaGraphResult runWorkerBWith(
+    const std::string& primaryErrorCode, bool withFallback, std::uint32_t maxAttempts)
+{
+    InMemoryProjectRepository projects;
+    InMemoryRunRepository runs;
+    InMemoryModelExecutionRepository executionRepository;
+    Catalog catalog;
+    ProjectService projectService {projects};
+    ModelExecutionService executionService {executionRepository};
+
+    const Provider primary = makeProvider(catalog, "Primary");
+    const Provider fallback = makeProvider(catalog, "Fallback", "anthropic");
+    const Model architectModel = makeModel(catalog, primary.id, "architect-model");
+    const Model workerBModel = makeModel(catalog, primary.id, "worker-b-model");
+    const Model fallbackModel = makeModel(catalog, fallback.id, "fallback-model");
+
+    GraphProviderClient client;
+    client.setScript("architect-model", {{true, "ARCHITECT_PLAN", {}, 1ms}, {true, "FINAL_SYNTHESIS", {}, 1ms}});
+    client.setScript("worker-b-model", {{false, {}, primaryErrorCode, 1ms}});
+    client.setScript("fallback-model", {{true, "WORKER_B_FALLBACK_RESULT", {}, 1ms}});
+
+    FakeProviderClientFactory factory;
+    factory.registerClient(primary.id, client);
+    factory.registerClient(fallback.id, client);
+    ExecutionProfileWorkflowRunner runner(
+        factory, catalog.providers, catalog.models, nullptr, &executionService);
+    MockWorkflowRunner mock {1ms, 1};
+    WorkflowRouter router {catalog.profiles, catalog.providers, catalog.models};
+    router.registerRunner(kMockWorkflowId, mock);
+    router.registerRunner(kExecutionProfileWorkflowId, runner);
+    RunManager manager {projects, runs, router};
+    OrchestrationService orchestration {projects, runs, manager};
+
+    StageModelAssignment architect;
+    architect.stageType = "architect";
+    architect.providerId = primary.id;
+    architect.modelId = architectModel.id;
+    architect.timeout = 5s;
+    architect.agentName = "Lead architect";
+    architect.role = "architect";
+    architect.position = 0;
+    architect.leadArchitect = true;
+
+    StageModelAssignment workerB;
+    workerB.stageType = "worker-b";
+    workerB.providerId = primary.id;
+    workerB.modelId = workerBModel.id;
+    workerB.timeout = 5s;
+    workerB.agentName = "Worker B";
+    workerB.role = "review";
+    workerB.position = 1;
+    workerB.maxAttempts = maxAttempts;
+    if (withFallback) {
+        workerB.fallbackProviderId = fallback.id;
+        workerB.fallbackModelId = fallbackModel.id;
+    }
+
+    const Project project = makeActiveProject(projectService, "quota-run");
+    StartRunRequest request;
+    request.projectId = project.id;
+    request.title = "Quota run";
+    request.task = "Review the feature";
+    request.assignmentOverrides = {architect, workerB};
+    request.maxParallelism = 1;
+    const auto started = orchestration.startRun(request);
+    assert(started.success());
+
+    QuotaGraphResult result;
+    result.finished = waitForTerminalRun(runs, started.value());
+    for (const auto& captured : client.capturedRequests()) result.requestedModels.push_back(captured.apiModelId);
+    const auto attempts = executionService.listExecutions(ModelExecutionSource::Run, result.finished.id);
+    assert(attempts.success());
+    result.attempts = attempts.value();
+    manager.shutdown();
+    return result;
+}
+
+std::size_t countRequests(const QuotaGraphResult& result, const std::string& model)
+{
+    return static_cast<std::size_t>(std::count(result.requestedModels.begin(), result.requestedModels.end(), model));
+}
+
+void testDurableQuotaRefusalIsNotRetriedAndOpensNoUnconfiguredFallback()
+{
+    const auto quota = runWorkerBWith("provider.insufficient_quota", /*withFallback=*/false, /*maxAttempts=*/3);
+    assert(quota.finished.status == RunStatus::Failed);
+    assert(countRequests(quota, "worker-b-model") == 1 && "no retry session after a durable quota refusal");
+    assert(countRequests(quota, "fallback-model") == 0 && "no fallback was configured, none may be used");
+    const auto review = std::find_if(quota.attempts.begin(), quota.attempts.end(),
+        [](const auto& attempt) { return attempt.role == "review"; });
+    assert(review != quota.attempts.end() && review->status == ModelExecutionStatus::Failed
+        && review->errorCode == "provider.insufficient_quota");
+    assert(std::count_if(quota.attempts.begin(), quota.attempts.end(),
+               [](const auto& attempt) { return attempt.role == "review"; }) == 1);
+    // The work that was already paid for stays in the Run's usage (the architect's planning response).
+    assert(quota.finished.usage.inputTokens == 11 && quota.finished.usage.outputTokens == 7);
+
+    // Control: the temporary rate limit keeps its bounded retries.
+    const auto temporary = runWorkerBWith("provider.rate_limited", /*withFallback=*/false, /*maxAttempts=*/3);
+    assert(countRequests(temporary, "worker-b-model") == 3);
+}
+
+void testConfiguredFallbackIsStillUsedExactlyOnceAfterADurableQuotaRefusal()
+{
+    const auto quota = runWorkerBWith("provider.insufficient_quota", /*withFallback=*/true, /*maxAttempts=*/3);
+    assert(countRequests(quota, "worker-b-model") == 1 && "one primary call, no retry");
+    assert(countRequests(quota, "fallback-model") == 1 && "the configured fallback is a separate target: used once");
+    assert(quota.finished.status == RunStatus::Completed);
+    std::vector<ModelExecution> review;
+    for (const auto& attempt : quota.attempts) if (attempt.role == "review") review.push_back(attempt);
+    assert(review.size() == 2);
+    std::sort(review.begin(), review.end(), [](const auto& a, const auto& b) { return a.attempt < b.attempt; });
+    assert(review[0].status == ModelExecutionStatus::Failed && review[0].errorCode == "provider.insufficient_quota"
+        && "the first billing refusal must stay recorded in its own ModelExecution");
+    assert(review[1].status == ModelExecutionStatus::Completed);
+}
+
 void testRunRosterRejectsCyclesAndInvalidParallelism()
 {
     Catalog catalog;
@@ -1587,6 +1712,8 @@ int runWorkflowRoutingAndProductionTests()
     testImmutableSnapshotSurvivesProfileChangeAndRetryReusesOriginal();
     testLegacyReadOnlyRunProducesUnifiedRerunDraft();
     testExecutionGraphRunsWorkersInParallelRetriesFallsBackAndSynthesizes();
+    testDurableQuotaRefusalIsNotRetriedAndOpensNoUnconfiguredFallback();
+    testConfiguredFallbackIsStillUsedExactlyOnceAfterADurableQuotaRefusal();
     testRunRosterRejectsCyclesAndInvalidParallelism();
     testCancellationDuringProductionRun();
     testLegacyRunnerRefusesADisabledProviderOrModelBeforeAnyProviderCall();

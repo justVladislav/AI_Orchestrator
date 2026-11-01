@@ -1,6 +1,7 @@
 #include "ai/providers/OpenAIProvider.hpp"
 
 #include "ai/http/HttpClient.hpp"
+#include "ai/providers/OpenAIHttpTransport.hpp"
 #include "ai/http/HttpTimeout.hpp"
 #include "ai/providers/OpenAIResponseParser.hpp"
 
@@ -284,12 +285,24 @@ std::string OpenAIProvider::name() const
 
 models::ModelResponse OpenAIProvider::generate(const models::ModelRequest& request)
 {
+    return generateDetailed(request).response;
+}
+
+OpenAIProvider::DetailedResult OpenAIProvider::generateDetailed(const models::ModelRequest& request)
+{
+    OpenAIHttpTransport transport;
+    return generateDetailed(request, transport);
+}
+
+OpenAIProvider::DetailedResult OpenAIProvider::generateDetailed(
+    const models::ModelRequest& request, http::IHttpClient& transport)
+{
     const std::string model = resolveModel(request.options, modelType_);
 
     if (apiKey_.empty()) {
-        return failureResponse(
+        return {failureResponse(
             model,
-            "OpenAI API key is missing. Set the OPENAI_API_KEY environment variable.");
+            "OpenAI API key is missing. Set the OPENAI_API_KEY environment variable."), {}};
     }
 
     try {
@@ -307,19 +320,24 @@ models::ModelResponse OpenAIProvider::generate(const models::ModelRequest& reque
         };
         httpRequest.body = requestBody.dump();
 
-        http::HttpClient client;
-        const http::HttpResponse httpResponse = client.send(httpRequest);
+        const http::HttpResponse httpResponse = transport.send(httpRequest);
 
         if (httpResponse.hasTransportError()) {
-            return failureResponse(model, transportFailureMessage(model, request.options, httpResponse));
+            return {failureResponse(model, transportFailureMessage(model, request.options, httpResponse)), {}};
         }
 
         if (!httpResponse.isSuccess()) {
-            return failureResponse(model, httpFailureMessage(httpResponse));
+            // Every received non-2xx response is classified by its STATUS (and, for a 429, the structured quota
+            // fields) - an empty or malformed body is not handed back to a text classifier. A durable quota refusal
+            // carries the fixed safe text instead of the provider's own message; other statuses keep their message.
+            const auto failure = openai_detail::classifyOpenAIHttpFailure(httpResponse.statusCode, httpResponse.body);
+            return {failureResponse(model,
+                        failure.durableMessage.empty() ? httpFailureMessage(httpResponse) : failure.durableMessage),
+                    failure.code};
         }
 
         if (httpResponse.body.empty()) {
-            return failureResponse(model, "OpenAI response body was empty.");
+            return {failureResponse(model, "OpenAI response body was empty."), {}};
         }
 
         // Parse after status validation so API error bodies are handled by
@@ -328,20 +346,20 @@ models::ModelResponse OpenAIProvider::generate(const models::ModelRequest& reque
         try {
             responseJson = nlohmann::json::parse(httpResponse.body);
         } catch (const nlohmann::json::exception& ex) {
-            return failureResponse(model, std::string {"OpenAI response JSON parse failed: "} + ex.what());
+            return {failureResponse(model, std::string {"OpenAI response JSON parse failed: "} + ex.what()), {}};
         }
 
         const std::string text = openai_detail::parseOpenAIResponseText(responseJson);
-        return models::ModelResponse {
+        return {models::ModelResponse {
             text,
             "openai",
             model,
             openai_detail::parseOpenAITokenUsage(responseJson),
             true,
             {}
-        };
+        }, {}};
     } catch (const std::exception& ex) {
-        return failureResponse(model, ex.what());
+        return {failureResponse(model, ex.what()), {}};
     }
 }
 

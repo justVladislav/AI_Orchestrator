@@ -1,3 +1,4 @@
+#include "LoopbackHttpServer.hpp"
 #include "ai/providers/OpenAIAgentSession.hpp"
 #include "ai/application/agents/AgentToolTurnLoopRunner.hpp"
 #include "ai/application/budget/ProviderExecutionBudget.hpp"
@@ -539,6 +540,32 @@ void testDurableQuotaRefusalOnAFollowUpTurn()
     req(!second.success() && second.error()->code == kProviderInsufficientQuotaCode,
         "followUp429: the follow-up must classify the durable refusal too");
 }
+
+#ifdef _WIN32
+// The production constructor (the one RealProviderAgentSessionFactory uses) sends over the REAL transport. Against a
+// loopback server that counts requests: a durable quota refusal is sent once, a temporary rate limit keeps its three.
+void testProductionSessionTransportSendsADurableQuotaRefusalOnce()
+{
+    const auto run = [](const std::string& body) {
+        ai::testing::LoopbackHttpServer server(429, body);
+        req(server.ready(), "loopback: the test server did not start");
+        OpenAIAgentSession session("key", server.url());
+        std::stop_source ss;
+        const auto result = session.beginSession(makeRequest(), ss.get_token());
+        req(!result.success(), "productionTransport: expected a failure");
+        return std::make_pair(result.error()->code, server.requestsServed());
+    };
+    const auto durable = run(errorBody("credit_balance_exhausted", "billing", "m"));
+    req(durable.first == kProviderInsufficientQuotaCode && durable.second == 1,
+        "productionTransport: a durable quota refusal must be sent exactly once");
+    const auto quotaType = run(errorBody("", "insufficient_quota", "m"));
+    req(quotaType.first == kProviderInsufficientQuotaCode && quotaType.second == 1,
+        "productionTransport: type=insufficient_quota must be sent exactly once");
+    const auto temporary = run(errorBody("rate_limit_exceeded", "requests", "m"));
+    req(temporary.first == "provider.rate_limited" && temporary.second == 3,
+        "productionTransport: a temporary rate limit keeps its bounded retries");
+}
+#endif
 
 // ---------------------------------------------------------------------------
 // Trusted instructions travel with EVERY request
@@ -1784,6 +1811,9 @@ int runOpenAIAgentSessionTests()
     testMalformedJson();
     testMissingCallId();
     testIncompleteMaxTokens();
+#ifdef _WIN32
+    testProductionSessionTransportSendsADurableQuotaRefusalOnce();
+#endif
     testDurableQuotaRefusalIsSeparatedFromTheTemporaryRateLimitByStructuredFields();
     testTemporaryAndUnstructured429StayRateLimited();
     testOtherStatusesKeepTheirSemanticsEvenWithAQuotaCode();

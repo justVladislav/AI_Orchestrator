@@ -16,11 +16,15 @@ HttpResponse sendWithRetry(
     const std::function<HttpResponse()>& sendOnce,
     const std::function<void(std::chrono::milliseconds)>& sleepFn,
     int maxAttempts,
-    std::chrono::milliseconds baseDelay)
+    std::chrono::milliseconds baseDelay,
+    const RetryVeto& retryVeto)
 {
     HttpResponse response = sendOnce();
 
-    for (int attempt = 1; attempt < maxAttempts && isRetryableResponse(response); ++attempt) {
+    // The veto is consulted on EVERY received response, before the next sendOnce: a durable refusal ends the loop
+    // with that very response (no wait, no further send); everything else keeps the unchanged retry rules.
+    for (int attempt = 1; attempt < maxAttempts && isRetryableResponse(response)
+             && !(retryVeto && retryVeto(response)); ++attempt) {
         if (request.cancellationRequested && request.cancellationRequested())
             break;
 

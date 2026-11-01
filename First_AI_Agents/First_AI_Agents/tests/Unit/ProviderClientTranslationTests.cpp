@@ -79,6 +79,45 @@ void testOnlyAnthropicAcceptsAnEnabledPolicy()
         "policy validation changed the disabled compatibility path");
 }
 
+// Typed provider result -> IProviderClient result: a structured code beats every word of the text; an empty code uses
+// the previous text table; a success carries no error.
+void testStructuredCodeBeatsTheTextAndAnEmptyCodeKeepsTheTextFallback()
+{
+    using ai::backend::provider_client_detail::toChatResult;
+    ai::models::ModelResponse failure;
+    failure.success = false;
+    failure.errorMessage = "authentication connect json 429 rate limit timeout";
+    const auto structured = toChatResult(failure, "provider.insufficient_quota");
+    require(!structured.success() && structured.error()->code == "provider.insufficient_quota"
+            && structured.error()->message == failure.errorMessage,
+        "a structured code must win over any word in the message, and the message must travel unchanged");
+
+    const struct { const char* text; const char* code; } fallbacks[] = {
+        {"HTTP 401 Unauthorized", "provider.auth_failed"},
+        {"Rate limit exceeded (429)", "provider.rate_limited"},
+        {"request timed out", "provider.timeout"},
+        {"curl: could not resolve host", "provider.network_error"},
+        {"JSON parse failed", "provider.invalid_response"},
+        {"something else", "provider.request_failed"},
+    };
+    for (const auto& entry : fallbacks) {
+        ai::models::ModelResponse plain;
+        plain.success = false;
+        plain.errorMessage = entry.text;
+        const auto result = toChatResult(plain, "");
+        require(!result.success() && result.error()->code == entry.code,
+            std::string("the text fallback changed for: ") + entry.text);
+    }
+
+    ai::models::ModelResponse success;
+    success.success = true;
+    success.text = "ok";
+    success.usage.inputTokens = 3;
+    const auto ok = toChatResult(success, "provider.insufficient_quota");   // a code on a success is ignored
+    require(ok.success() && ok.value().content == "ok" && ok.value().usage.inputTokens == 3,
+        "a success must translate to the content and usage, with no error");
+}
+
 } // namespace
 
 int main()
@@ -87,6 +126,7 @@ int main()
         testRequestTranslationPreservesTheTypedPolicy();
         testResponseTranslationPreservesTheCompleteCacheAudit();
         testOnlyAnthropicAcceptsAnEnabledPolicy();
+        testStructuredCodeBeatsTheTextAndAnEmptyCodeKeepsTheTextFallback();
         std::cout << "ProviderClientTranslationTests: OK\n";
         return 0;
     } catch (const std::exception& error) {

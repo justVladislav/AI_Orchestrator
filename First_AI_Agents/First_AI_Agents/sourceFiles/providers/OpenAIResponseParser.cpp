@@ -1,4 +1,5 @@
 #include "ai/providers/OpenAIResponseParser.hpp"
+#include "ai/providers/ProviderAgentSessionTypes.hpp"
 
 #include <sstream>
 #include <stdexcept>
@@ -144,6 +145,74 @@ std::string extractOpenAIErrorMessage(const std::string& responseBody)
     } catch (const nlohmann::json::exception&) {
         return {};
     }
+}
+
+namespace {
+
+// The structured fields of an OpenAI error body: {"error": {"code": "...", "type": "..."}}. Only string members of an
+// object under "error" are read; anything else (not JSON, no error object, a number where a string is expected)
+// yields empty values. The human message is never consulted.
+struct StructuredOpenAIError {
+    std::string code;
+    std::string type;
+};
+
+StructuredOpenAIError parseStructuredOpenAIError(const std::string& responseBody)
+{
+    StructuredOpenAIError parsed;
+    try {
+        const auto json = nlohmann::json::parse(responseBody);
+        if (!json.is_object()) return parsed;
+        const auto error = json.find("error");
+        if (error == json.end() || !error->is_object()) return parsed;
+        if (const auto code = error->find("code"); code != error->end() && code->is_string())
+            parsed.code = code->get<std::string>();
+        if (const auto type = error->find("type"); type != error->end() && type->is_string())
+            parsed.type = type->get<std::string>();
+    } catch (const std::exception&) {
+        return {};
+    }
+    return parsed;
+}
+
+// Fixed text keyed by the RECOGNIZED code - never the provider's own text - saying only what the code proves:
+// credit_balance_exhausted names the balance; the other codes name a limit or quota, not a zero balance.
+std::string durableQuotaRefusalMessage(const StructuredOpenAIError& error)
+{
+    if (error.code == "credit_balance_exhausted")
+        return "The provider account has no remaining credit balance (credit_balance_exhausted)";
+    for (const char* spendOrUsage : {"organization_spend_limit_exceeded", "project_spend_limit_exceeded",
+             "organization_usage_limit_exceeded"}) {
+        if (error.code == spendOrUsage)
+            return std::string("The provider reports that a spend or usage limit was reached (") + spendOrUsage + ")";
+    }
+    if (error.code == "insufficient_quota" || error.type == "insufficient_quota") {
+        return "The provider reports insufficient quota or a billing limit (insufficient_quota); "
+               "this alone does not prove a zero credit balance";
+    }
+    return {};
+}
+
+} // namespace
+
+OpenAIHttpFailure classifyOpenAIHttpFailure(int statusCode, const std::string& responseBody)
+{
+    if (statusCode == 401) return {"provider.auth_failed", {}};
+    if (statusCode == 429) {
+        // HTTP 429 alone is not enough: billing/quota exhaustion shares the status with the temporary rate limit.
+        // Only the structured code/type separates them; rate_limit_exceeded, slow_down and anything unstructured
+        // stay a temporary rate limit.
+        std::string durable = durableQuotaRefusalMessage(parseStructuredOpenAIError(responseBody));
+        if (!durable.empty()) return {kProviderInsufficientQuotaCode, std::move(durable)};
+        return {"provider.rate_limited", {}};
+    }
+    if (statusCode >= 500 && statusCode < 600) return {"provider.server_error", {}};
+    return {"provider.request_failed", {}};
+}
+
+bool isDurableOpenAIQuotaRefusal(int statusCode, const std::string& responseBody)
+{
+    return statusCode >= 400 && classifyOpenAIHttpFailure(statusCode, responseBody).code == kProviderInsufficientQuotaCode;
 }
 
 models::TokenUsage parseOpenAITokenUsage(const nlohmann::json& responseJson)

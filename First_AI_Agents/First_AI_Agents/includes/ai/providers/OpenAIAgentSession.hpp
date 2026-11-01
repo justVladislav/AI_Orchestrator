@@ -25,6 +25,10 @@ public:
         std::string endpoint,
         std::shared_ptr<http::IHttpClient> httpClient);
 
+    /// The production constructor: the session sends over OpenAIHttpTransport (real client, durable quota
+    /// refusals are never re-sent). Same state as above - only the transport it creates differs.
+    OpenAIAgentSession(std::string apiKey, std::string endpoint);
+
     common::Result<ProviderAgentTurnResponse> beginSession(
         const ProviderAgentSessionRequest& request,
         std::stop_token stopToken) override;

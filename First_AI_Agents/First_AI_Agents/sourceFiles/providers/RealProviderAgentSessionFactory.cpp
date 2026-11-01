@@ -45,15 +45,13 @@ RealProviderAgentSessionFactory::createSession(
              "No credential is configured for this provider"});
 
     const std::string& apiKey = *loaded.value();
-    auto httpClient = std::make_shared<http::HttpClient>();
-
     if (providerKind == "openai") {
-        return Result::ok(std::make_unique<OpenAIAgentSession>(
-            apiKey, OpenAIAgentSession::kDefaultEndpoint, std::move(httpClient)));
+        // The production OpenAI transport (durable quota refusals are never re-sent) is built by this constructor.
+        return Result::ok(std::make_unique<OpenAIAgentSession>(apiKey, OpenAIAgentSession::kDefaultEndpoint));
     }
 
     return Result::ok(std::make_unique<AnthropicAgentSession>(
-        apiKey, AnthropicAgentSession::kDefaultEndpoint, std::move(httpClient)));
+        apiKey, AnthropicAgentSession::kDefaultEndpoint, std::make_shared<http::HttpClient>()));
 }
 
 } // namespace ai::providers
