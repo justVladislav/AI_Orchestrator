@@ -2435,6 +2435,28 @@ void testSecretShapedProviderWordNeverReachesThePlannerMessageOrRecord()
         "The stored Planner turn must hold the safe marker, not the provider text");
 }
 
+// The Planner path: a durable credit/quota refusal ends planning at once with its own code - no recovery or repair
+// session is opened, and the usage of the turn that was already paid for is kept.
+void testDurableQuotaRefusalEndsPlanningWithoutAnotherSession()
+{
+    Fixture fixture;
+    auto refused = std::make_unique<ScriptedSession>();
+    refused->responses.push(common::Result<ProviderAgentTurnResponse>::ok(
+        toolTurn(0, "read-1", "workspace_read_file", R"({"path":"README.md"})")));
+    refused->responses.push(common::Result<ProviderAgentTurnResponse>::failure(
+        {kProviderInsufficientQuotaCode, "refused"}));
+    fixture.sessionFactory.sessions.push(std::move(refused));
+    fixture.addSession({noChangesTurn(0, noChangesJson())});   // a recovery/repair session would take this
+
+    const auto outcome = fixture.planner.plan(noChangesRequest(), {});
+    require(!outcome.success && outcome.errorCode == kProviderInsufficientQuotaCode,
+        "A durable quota refusal must end planning with its own code");
+    require(fixture.sessionFactory.createCalls == 1 && outcome.repairAttempts == 0,
+        "No further planner session may be opened after a durable quota refusal");
+    require(outcome.usage.inputTokens == 7 && outcome.usage.outputTokens == 3,
+        "The usage of the paid turn before the refusal must be kept");
+}
+
 void testMissingSubmissionRepairsIntoValidNoChangesNeeded()
 {
     Fixture fixture;
@@ -4939,6 +4961,7 @@ int main()
     testWorkTaskMissingAcceptanceContractKeyFailsToParseNotARuntimeRule();
     testMissingSubmissionRepairsIntoValidNoChangesNeeded();
     testPlannerOutputTokenCutCarriesProviderDiagnostics();
+    testDurableQuotaRefusalEndsPlanningWithoutAnotherSession();
     testRefusedTurnRecordIsNamedOnAFailedPlannerOutcome();
     testRefusedTurnRecordIsNamedOnASuccessfulPlannerOutcome();
     testSecretShapedProviderWordNeverReachesThePlannerMessageOrRecord();

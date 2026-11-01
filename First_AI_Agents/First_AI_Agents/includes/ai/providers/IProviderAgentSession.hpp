@@ -192,7 +192,8 @@ public:
     // Result::failure codes:
     //   "agent_session.invalid_state"    — called after session already started
     //   "provider.auth_failed"           — credential rejected
-    //   "provider.rate_limited"          — provider rate limit hit
+    //   "provider.rate_limited"          — temporary provider rate limit hit
+    //   "provider.insufficient_quota"    — durable: credit balance / quota / spend limit exhausted
     //   "provider.timeout"               — turn timed out
     //   "provider.network_error"         — transport failure
     //   "provider.invalid_response"      — malformed provider response

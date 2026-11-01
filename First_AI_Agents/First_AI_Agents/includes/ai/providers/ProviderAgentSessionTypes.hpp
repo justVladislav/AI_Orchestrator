@@ -117,6 +117,11 @@ struct ProviderAgentTurnResponse {
     std::string errorMessage;
 };
 
+// Stable backend code for a provider refusal that is DURABLE: the account's credit balance, quota or a billing /
+// spend limit is exhausted. Unlike a temporary rate limit (provider.rate_limited) it does not clear by waiting a
+// moment, so nothing may re-dispatch the work on its own account (no retry session, no backoff loop).
+inline constexpr const char* kProviderInsufficientQuotaCode = "provider.insufficient_quota";
+
 // The diagnostics to store and to report for a turn: the adapter's own account, where an adapter reported no
 // requested limit the limit the caller handed to the session (the only honest value left, never a guess about
 // what reached the wire).

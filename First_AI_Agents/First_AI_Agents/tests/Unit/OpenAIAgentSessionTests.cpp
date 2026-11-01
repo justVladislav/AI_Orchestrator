@@ -437,6 +437,110 @@ void testIncompleteMaxTokens()
 }
 
 // ---------------------------------------------------------------------------
+// Durable billing/quota refusal vs temporary rate limit (structured error.code / error.type only)
+// ---------------------------------------------------------------------------
+
+std::string beginWithHttpError(int status, const std::string& body)
+{
+    auto client = std::make_shared<ScriptedHttpClient>();
+    client->enqueue(makeJsonResponse(status, body));
+    OpenAIAgentSession session("key", "https://fake", client);
+    std::stop_source ss;
+    const auto result = session.beginSession(makeRequest(), ss.get_token());
+    req(!result.success(), "httpError: expected a failure");
+    return result.error()->code + "|" + result.error()->message;
+}
+
+std::string errorBody(const std::string& code, const std::string& type, const std::string& message)
+{
+    return std::string(R"({"error":{"message":")") + message + R"(","type":")" + type + R"(","param":null,"code":)"
+        + (code.empty() ? std::string("null") : "\"" + code + "\"") + "}}";
+}
+
+void testDurableQuotaRefusalIsSeparatedFromTheTemporaryRateLimitByStructuredFields()
+{
+    const std::string durable = "provider.insufficient_quota|";
+    // Every durable code, with a deliberately misleading human message (and a secret-looking string): the verdict
+    // comes from the structured fields, and none of the provider's own text is echoed.
+    for (const char* code : {"credit_balance_exhausted", "organization_spend_limit_exceeded",
+             "project_spend_limit_exceeded", "organization_usage_limit_exceeded", "insufficient_quota"}) {
+        const auto result = beginWithHttpError(429,
+            errorBody(code, "billing", "Try again in 20s. sk-secret-key-0123456789"));
+        req(result.rfind(durable, 0) == 0, (std::string("durable: ") + code + " must be insufficient_quota: " + result).c_str());
+        req(result.find("sk-secret") == std::string::npos && result.find("Try again") == std::string::npos,
+            "durable: the provider's own text must not be echoed");
+        req(result.find(code) != std::string::npos, "durable: the message names the recognized code");
+    }
+    // The legacy shape: type = insufficient_quota with a different (or null) code.
+    req(beginWithHttpError(429, errorBody("", "insufficient_quota", "You exceeded your current quota")).rfind(durable, 0) == 0,
+        "durable: type=insufficient_quota (code null) must be recognized");
+    // Only credit_balance_exhausted names the balance; the other codes must not promise a zero balance.
+    req(beginWithHttpError(429, errorBody("credit_balance_exhausted", "x", "m")).find("no remaining credit balance")
+            != std::string::npos,
+        "durable: credit_balance_exhausted names the exhausted balance");
+    const auto quota = beginWithHttpError(429, errorBody("insufficient_quota", "insufficient_quota", "m"));
+    req(quota.find("does not prove a zero credit balance") != std::string::npos
+            && quota.find("no remaining credit balance") == std::string::npos,
+        "durable: insufficient_quota must not claim a zero balance");
+    const auto limit = beginWithHttpError(429, errorBody("project_spend_limit_exceeded", "x", "m"));
+    req(limit.find("no remaining credit balance") == std::string::npos, "durable: a spend limit is not a zero balance");
+}
+
+void testTemporaryAndUnstructured429StayRateLimited()
+{
+    const std::string temporary = "provider.rate_limited|";
+    for (const char* code : {"rate_limit_exceeded", "slow_down"}) {
+        req(beginWithHttpError(429, errorBody(code, "requests", "Rate limit reached")).rfind(temporary, 0) == 0,
+            (std::string("temporary: ") + code + " must stay rate_limited").c_str());
+    }
+    // Human text that talks about quota is not evidence: no structured field, no durable verdict.
+    req(beginWithHttpError(429, R"({"error":{"message":"You exceeded your current quota, please check your plan and billing details."}})")
+                .rfind(temporary, 0) == 0,
+        "temporary: a quota-sounding message without structured fields must not be guessed from");
+    // Malformed / absent / wrongly typed fields keep the previous semantics.
+    req(beginWithHttpError(429, "not json at all").rfind(temporary, 0) == 0, "temporary: malformed body");
+    req(beginWithHttpError(429, "").rfind(temporary, 0) == 0, "temporary: empty body");
+    req(beginWithHttpError(429, R"({"error":"insufficient_quota"})").rfind(temporary, 0) == 0,
+        "temporary: error is a string, not an object");
+    req(beginWithHttpError(429, R"({"error":{"code":429,"type":["insufficient_quota"]}})").rfind(temporary, 0) == 0,
+        "temporary: code/type of the wrong JSON type");
+    req(beginWithHttpError(429, R"([{"error":{"code":"insufficient_quota"}}])").rfind(temporary, 0) == 0,
+        "temporary: the root is not an object");
+}
+
+void testOtherStatusesKeepTheirSemanticsEvenWithAQuotaCode()
+{
+    const auto body = errorBody("insufficient_quota", "insufficient_quota", "m");
+    req(beginWithHttpError(401, body).rfind("provider.auth_failed|", 0) == 0, "401 stays auth_failed");
+    req(beginWithHttpError(500, body).rfind("provider.server_error|", 0) == 0, "5xx stays server_error");
+    req(beginWithHttpError(400, body).rfind("provider.request_failed|", 0) == 0, "400 stays request_failed");
+}
+
+// A follow-up turn uses the very same classification (the Worker and the Planner share this path).
+void testDurableQuotaRefusalOnAFollowUpTurn()
+{
+    auto client = std::make_shared<ScriptedHttpClient>();
+    client->enqueue(makeJsonResponse(200, R"({
+        "id": "r1", "status": "completed",
+        "output": [{"type": "function_call", "call_id": "c1", "name": "workspace_read_file", "arguments": "{}"}],
+        "usage": {}
+    })"));
+    client->enqueue(makeJsonResponse(429, errorBody("credit_balance_exhausted", "billing", "m")));
+    OpenAIAgentSession session("key", "https://fake", client);
+    std::stop_source ss;
+    req(session.beginSession(makeRequest("hi", {makeToolDef("workspace_read_file")}), ss.get_token()).success(),
+        "followUp429: first turn failed");
+    AgentToolResult result;
+    result.callId = "c1";
+    result.toolName = "workspace_read_file";
+    result.success = true;
+    result.contentJson = "{}";
+    const auto second = session.submitToolResults({std::move(result)}, ss.get_token());
+    req(!second.success() && second.error()->code == kProviderInsufficientQuotaCode,
+        "followUp429: the follow-up must classify the durable refusal too");
+}
+
+// ---------------------------------------------------------------------------
 // Trusted instructions travel with EVERY request
 // ---------------------------------------------------------------------------
 
@@ -1680,6 +1784,10 @@ int runOpenAIAgentSessionTests()
     testMalformedJson();
     testMissingCallId();
     testIncompleteMaxTokens();
+    testDurableQuotaRefusalIsSeparatedFromTheTemporaryRateLimitByStructuredFields();
+    testTemporaryAndUnstructured429StayRateLimited();
+    testOtherStatusesKeepTheirSemanticsEvenWithAQuotaCode();
+    testDurableQuotaRefusalOnAFollowUpTurn();
     testEveryRequestOfASessionCarriesTheTrustedInstructions();
     testAnEmptySystemPromptSendsNoInstructionsOnAnyRequest();
     testIncompleteTurnKeepsRequestedReportedAndReasoning();

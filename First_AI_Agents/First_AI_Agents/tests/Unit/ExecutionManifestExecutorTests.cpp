@@ -1379,6 +1379,43 @@ void testExecutorKeepsTurnRecordWarningsOfEveryAttemptWithoutChangingTheResult()
         "The earlier attempt's warning must survive the successful retry");
 }
 
+// A durable credit/quota refusal must not be retried even when several attempts are allowed; a temporary rate
+// limit with the same shape of failure still is. The work already done in the refused attempt keeps its usage.
+void testDurableQuotaRefusalIsNeverRetriedAndKeepsTheUsageOfTheAttempt()
+{
+    const auto runWith = [](const char* code) {
+        Fixture fx;
+        auto toolExecution = fx.makeToolExecution();
+        auto changeProposals = fx.makeChangeProposals();
+        ExecutionManifestExecutor executorUnderTest(fx.sessionFactory, toolExecution, changeProposals);
+        auto refused = std::make_unique<ScriptedProviderAgentSession>();
+        auto firstTurn = toolCallResponse("workspace_read_file", R"({"path":"README.md"})");
+        firstTurn.usage.inputTokens = 10;
+        firstTurn.usage.outputTokens = 5;
+        refused->responses.push(common::Result<ProviderAgentTurnResponse>::ok(std::move(firstTurn)));
+        refused->responses.push(common::Result<ProviderAgentTurnResponse>::failure({code, "refused"}));
+        fx.sessionFactory.preparedSessions.push(std::move(refused));
+        fx.sessionFactory.preparedSessions.push(sessionEndingWith(proposalJson("a/one.md")));   // a retry would use this
+        auto request = makeExecutionRequest(fx, makeManifest({makeTask("a", {}, {"a/one.md"})}, 1), /*maxAttempts=*/3);
+        std::stop_source ss;
+        auto outcome = executorUnderTest.execute(std::move(request), ss.get_token());
+        return std::make_pair(std::move(outcome), fx.sessionFactory.createCalls);
+    };
+
+    const auto durable = runWith(kProviderInsufficientQuotaCode);
+    require(durable.first.status == ManifestExecutionStatus::Failed
+            && durable.first.taskStates.at("a").errorCode == kProviderInsufficientQuotaCode,
+        "A durable quota refusal must fail the task with its own code");
+    require(durable.second == 1 && durable.first.taskStates.at("a").attempts == 1,
+        "No retry session may be opened after a durable quota refusal, although three attempts were allowed");
+    require(durable.first.usage.inputTokens == 10 && durable.first.usage.outputTokens == 5,
+        "The usage of the work done before the refusal must be kept");
+
+    const auto temporary = runWith("provider.rate_limited");
+    require(temporary.second == 2 && temporary.first.status == ManifestExecutionStatus::Completed,
+        "A temporary rate limit keeps its previous behaviour: one bounded retry session");
+}
+
 void testExecutorRetryExhaustedMarksFailed()
 {
     Fixture fx;
@@ -7460,6 +7497,7 @@ int main()
         testExecutorClaimRegistryIsFinalRaceGuardBetweenTasks();
         testExecutorCancellationBeforeDispatchStopsImmediately();
         testExecutorRetryRecoversTransientFailureThenSucceeds();
+        testDurableQuotaRefusalIsNeverRetriedAndKeepsTheUsageOfTheAttempt();
         testTwoFailingBuildTasksBothGetOneRepairSessionWhenTheWaveFits();
         testTwoFailingBuildTasksGetNoRepairSessionWhenTheWaveDoesNotFitAndTheRefusalIsTyped();
         testIneligibleRepairScopeNamesItsReason();

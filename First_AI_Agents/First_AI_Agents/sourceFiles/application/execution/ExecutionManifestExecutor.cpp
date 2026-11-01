@@ -1554,12 +1554,16 @@ ExecutionManifestExecutionOutcome ExecutionManifestExecutor::execute(
         // cost while creating another accounting row.
         const bool providerBudgetStop =
             outcome.errorCode.rfind("provider_budget.", 0) == 0;
+        // An exhausted credit balance / quota / billing limit does not clear by dispatching the task again: a retry
+        // session would only be refused the same way (or be billed once the limit is raised), so it is never opened.
+        const bool durableProviderRefusal = outcome.errorCode == providers::kProviderInsufficientQuotaCode;
         if (outcome.status == ManifestTaskStatus::Failed
                 && !outcome.errorCode.empty() && outcome.errorCode != "manifest.task_cancelled"
                 && !repairAlreadyConsumed
                 && !nonEmptyRejectionPersisted
                 && !attemptResult.nonRetryable
                 && !providerBudgetStop
+                && !durableProviderRefusal
                 && attemptsSoFar < maxAttempts) {
             // Bounded retry: put it back to Pending so the next free slot
             // picks it up again - never more than maxAttemptsPerTask total

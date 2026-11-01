@@ -30,6 +30,51 @@ std::optional<std::uint64_t> nonNegativeCounter(const nlohmann::json& object, co
     return value < 0 ? std::nullopt : std::optional<std::uint64_t>(static_cast<std::uint64_t>(value));
 }
 
+// The structured fields of an OpenAI error body: {"error": {"code": "...", "type": "..."}}. Only string members of an
+// object under "error" are read; anything else (not JSON, no error object, a number where a string is expected)
+// yields empty values - the caller then keeps the status-based classification. The human message is never consulted.
+struct StructuredOpenAIError {
+    std::string code;
+    std::string type;
+};
+
+StructuredOpenAIError parseStructuredOpenAIError(const std::string& responseBody)
+{
+    StructuredOpenAIError parsed;
+    try {
+        const auto json = nlohmann::json::parse(responseBody);
+        if (!json.is_object()) return parsed;
+        const auto error = json.find("error");
+        if (error == json.end() || !error->is_object()) return parsed;
+        if (const auto code = error->find("code"); code != error->end() && code->is_string())
+            parsed.code = code->get<std::string>();
+        if (const auto type = error->find("type"); type != error->end() && type->is_string())
+            parsed.type = type->get<std::string>();
+    } catch (const std::exception&) {
+        return {};
+    }
+    return parsed;
+}
+
+// A 429 whose STRUCTURED code/type names an exhausted credit balance, spend/usage limit or quota. The message is
+// fixed text keyed by the recognized code - never the provider's own text - and says only what the code proves:
+// credit_balance_exhausted names the balance; the other codes name a limit or quota, not a zero balance.
+std::optional<std::string> durableQuotaRefusalMessage(const StructuredOpenAIError& error)
+{
+    if (error.code == "credit_balance_exhausted")
+        return std::string("The provider account has no remaining credit balance (credit_balance_exhausted)");
+    for (const char* spendOrUsage : {"organization_spend_limit_exceeded", "project_spend_limit_exceeded",
+             "organization_usage_limit_exceeded"}) {
+        if (error.code == spendOrUsage)
+            return std::string("The provider reports that a spend or usage limit was reached (") + spendOrUsage + ")";
+    }
+    if (error.code == "insufficient_quota" || error.type == "insufficient_quota") {
+        return std::string("The provider reports insufficient quota or a billing limit (insufficient_quota); "
+                           "this alone does not prove a zero credit balance");
+    }
+    return std::nullopt;
+}
+
 template <typename T>
 common::Result<T> httpStatusError(int statusCode, const std::string& responseBody)
 {
@@ -45,9 +90,15 @@ common::Result<T> httpStatusError(int statusCode, const std::string& responseBod
     if (statusCode == 401)
         return common::Result<T>::failure(
             {"provider.auth_failed", withDetail("Authentication failed")});
-    if (statusCode == 429)
+    if (statusCode == 429) {
+        // HTTP 429 alone is not enough: billing/quota exhaustion shares the status with the temporary rate limit.
+        // Only the structured code/type separates them; rate_limit_exceeded, slow_down and anything unstructured
+        // stay a temporary rate limit.
+        if (const auto durable = durableQuotaRefusalMessage(parseStructuredOpenAIError(responseBody)))
+            return common::Result<T>::failure({kProviderInsufficientQuotaCode, *durable});
         return common::Result<T>::failure(
             {"provider.rate_limited", withDetail("Rate limit exceeded")});
+    }
     if (statusCode >= 500 && statusCode < 600)
         return common::Result<T>::failure(
             {"provider.server_error",
