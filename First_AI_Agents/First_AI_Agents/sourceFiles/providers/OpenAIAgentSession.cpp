@@ -289,6 +289,11 @@ common::Result<ProviderAgentTurnResponse> OpenAIAgentSession::submitToolResults(
 
     nlohmann::json body;
     body["model"] = model_;
+    // previous_response_id does not carry the earlier top-level instructions: the Responses API requires the stable
+    // trusted instructions to be sent again with every request. Same text and same rule as beginSession (an empty
+    // source prompt sends none); tool-result content is data and never touches this member.
+    if (!systemPrompt_.empty())
+        body["instructions"] = systemPrompt_;
     body["previous_response_id"] = previousResponseId_;
     body["input"] = std::move(inputArr);
     if (nextTurnPolicy.has_value()) {
