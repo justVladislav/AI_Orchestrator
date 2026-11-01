@@ -3243,6 +3243,77 @@ void testManifestWorkflowFailsClosedWhenVerificationCannotBePersisted()
         "Execution stage must not be marked complete without verification persistence");
 }
 
+// Item 3: a failed combined build with NO repair session (here by the Run's own policy) must leave the reason in the
+// PERSISTED verification report, read back from the store - not only in an in-memory outcome.
+void testAFailedBuildWithoutARepairWaveNamesTheReasonInThePersistedReport()
+{
+    Harness harness;
+    giveWorkspaceAnExistingCmakePreset(harness);
+    const auto provider = harness.makeProvider("Manifest Provider");
+    const auto model = harness.makeModel(provider.id, "manifest-model");
+    StageModelAssignment architect {"architect", provider.id, model.id, 5000ms};
+    const auto profile = harness.profileService.createProfile(
+        {"Manifest Profile", kExecutionManifestWorkflowId, true, {architect}});
+    require(profile.success(), "Could not create manifest-workflow profile");
+    const auto project = harness.makeProject();
+
+    auto plannerSession = std::make_unique<ScriptedProviderAgentSession>();
+    plannerSession->responses.push(common::Result<ProviderAgentTurnResponse>::ok(
+        toolCallResponse("submit-1", kSubmitExecutionManifestDraftToolName,
+            cmakeBuildManifestSubmission("local-qt-debug"))));
+    harness.sessionFactory.preparedSessions.push(std::move(plannerSession));
+    auto workerSession = std::make_unique<ScriptedProviderAgentSession>();
+    workerSession->responses.push(common::Result<ProviderAgentTurnResponse>::ok(
+        stopResponse(proposalSubmission("qml/components/navigation/AppSidebar.qml"))));
+    harness.sessionFactory.preparedSessions.push(std::move(workerSession));
+
+    ManifestVerificationCommandOutcome presetListOutcome;
+    presetListOutcome.started = true;
+    presetListOutcome.exitCode = 0;
+    presetListOutcome.boundedOutput =
+        "Available configure presets:\n\n  \"local-qt-debug\"   - Desktop Qt 6.11.1 Debug\n";
+    harness.verificationCommandRunner.outcomes.push_back(presetListOutcome);
+    presetListOutcome.boundedOutput =
+        "Available build presets:\n\n  \"local-qt-debug\"   - Desktop Qt 6.11.1 Debug\n";
+    harness.verificationCommandRunner.outcomes.push_back(presetListOutcome);
+    ManifestVerificationCommandOutcome configureOutcome;
+    configureOutcome.started = true;
+    configureOutcome.exitCode = 0;
+    ManifestVerificationCommandOutcome failingBuild;
+    failingBuild.started = true;
+    failingBuild.exitCode = 1;
+    failingBuild.boundedOutput = "FAILED: [code=1] compile step\nfatal error C1083: missing header\n";
+    harness.verificationCommandRunner.outcomes.push_back(configureOutcome);
+    harness.verificationCommandRunner.outcomes.push_back(failingBuild);
+
+    StartRunRequest request;
+    request.projectId = project.id;
+    request.title = "Manifest run with a failed build and repair disabled";
+    request.task = "Add a notes file";
+    request.executionProfileId = profile.value();
+    request.verificationRepairPolicy = VerificationRepairPolicy::Disabled;
+    const auto started = harness.orchestration.startRun(request);
+    require(started.success(), "Could not start manifest-workflow run");
+
+    const auto finished = waitForTerminalRun(harness.runs, started.value());
+    require(finished.status == RunStatus::Failed, "A failed required build must fail the Run");
+
+    const auto artifacts = harness.artifactService.listArtifacts(started.value());
+    require(artifacts.success(), "Could not list the artifacts");
+    const auto report = std::find_if(artifacts.value().begin(), artifacts.value().end(),
+        [](const Artifact& artifact) { return artifact.name == "manifest-verification.md"; });
+    require(report != artifacts.value().end(), "The verification report must be persisted");
+    const auto content = harness.artifactService.getArtifactContent(report->id);
+    require(content.success(), "The persisted verification report could not be read back");
+    require(content.value().find("## Bounded verification repair") != std::string::npos
+            && content.value().find("No repair session was opened for this failure.") != std::string::npos
+            && content.value().find("Reason code: verification.required_acceptance_failed") != std::string::npos
+            && content.value().find("automatic verification repair is disabled for this Run") != std::string::npos,
+        ("The persisted report must say why no repair session was opened: " + content.value()).c_str());
+    require(content.value().find("Status: failed") != std::string::npos,
+        "The failure itself must still be reported unchanged");
+}
+
 // The verification identity is serialised STRICTLY: a string that is not UTF-8 is an error, never silently repaired. When a
 // diagnostic still carries such bytes (here a tool error code from the command runner, which no text sanitiser touches), the
 // serialisation failure must end the Run as an ordinary failed one - with the exact reason recorded, the readable verification
@@ -6579,6 +6650,7 @@ int main()
         testAnUnserialisableVerificationIdentityFailsTheRunAndLeavesNoIdentityArtifact();
         testLostDiagnosticArtifactLeavesAWarningAndTheRunStillCompletes();
         testRefusedTurnRecordsOfASuccessfulWorkerReachThePersistedRunReport();
+        testAFailedBuildWithoutARepairWaveNamesTheReasonInThePersistedReport();
         testManifestRunWithNonAnsiFileNamesCompletes();
         testRefusedVerificationFolderStopsAManifestRunBeforeThePlannerIsPaid();
         testManifestRunCompletesWithTheRootTheBackendValidated();

@@ -450,6 +450,15 @@ std::string renderVerificationReport(
         return out.str();
     }
 
+    // A failed primary verification that got no repair wave must say so and why - the report used to show only
+    // the failure, leaving no trace of the decision not to open a repair session (a disabled policy, an ineligible
+    // scope, a wave that did not fit the remaining turns).
+    if (outcome.primaryProposalSetVerification.has_value() && !outcome.verificationRepairAttempted) {
+        out << "## Bounded verification repair\n\nNo repair session was opened for this failure.\n";
+        if (!outcome.verificationErrorCode.empty()) out << "Reason code: " << outcome.verificationErrorCode << "\n";
+        if (!outcome.verificationErrorMessage.empty()) out << "Reason: " << outcome.verificationErrorMessage << "\n";
+        out << "\n";
+    }
     out << renderVerificationSection(*outcome.proposalSetVerification);
     return out.str();
 }
