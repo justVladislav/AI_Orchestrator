@@ -40,7 +40,10 @@ std::unordered_map<std::string, std::string> buildBaselineHashIndex(
     std::unordered_map<std::string, std::string> index;
     index.reserve(baseline.files.size());
     for (const auto& file : baseline.files) {
-        index.emplace(normalizeForLookup(std::filesystem::path(file.relativePath)), file.sha256);
+        // A baseline entry's relativePath is UTF-8 (the scan stores detail::genericUtf8); std::filesystem::path(std::string)
+        // would read it as the Windows ANSI code page and the key would never match the Manifest's path for a Cyrillic or
+        // Chinese file name.
+        index.emplace(normalizeForLookup(detail::pathFromUtf8(file.relativePath)), file.sha256);
     }
     return index;
 }
