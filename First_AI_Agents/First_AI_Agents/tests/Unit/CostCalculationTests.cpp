@@ -859,6 +859,75 @@ void testTheGpt6SolCatalogEntryPricesRealOpenAIResponsesExactlyAndAsKnown()
     assert(execution.inputTokens == 420'000 && execution.outputTokens == 3'000);
 }
 
+// C1: the gpt-5.6-sol catalog set (official Standard rates checked 2026-11-04, USD per 1M tokens): 4 input / 20 output /
+// 0.40 cache read / 5 30-minute cache write, and above 272,000 input tokens of ONE response 8 / 30 / 0.80 / 10 (400,000
+// context window). Real-shaped OpenAI usage, parsed by the real parser, must be priced exactly and as KNOWN.
+Model gpt56SolCatalogEntry()
+{
+    Model entry;
+    entry.id = "gpt-5.6-sol";
+    entry.apiModelId = "gpt-5.6-sol";
+    entry.contextWindowTokens = 400'000;
+    entry.maxOutputTokens = 128'000;
+    entry.inputPriceMicrosPerMillionTokens = 4'000'000;
+    entry.outputPriceMicrosPerMillionTokens = 20'000'000;
+    entry.cacheWritePriceMicrosPerMillionTokens = 5'000'000;
+    entry.cacheReadPriceMicrosPerMillionTokens = 400'000;
+    entry.longContextPricing = LongContextPricing {272'000, 8'000'000, 30'000'000, 10'000'000, 800'000};
+    return entry;
+}
+
+void testTheGpt56SolCatalogSetPricesShortLongAndMultiTurnUsageExactly()
+{
+    const Model entry = gpt56SolCatalogEntry();
+    assert(checkLongContextPricing(entry.contextWindowTokens, entry.longContextPricing)
+        == LongContextPricingProblem::None);
+
+    const auto parse = [](const char* json) {
+        return ai::providers::openai_detail::parseOpenAITokenUsage(nlohmann::json::parse(json));
+    };
+    const auto priceOf = [&](const char* json) { return computeSingleResponseCostMicros(entry, parse(json)); };
+
+    // 100k plain + 50k read + 20k write + 10k output, short: 100,000*4 + 50,000*0.4 + 20,000*5 + 10,000*20
+    // = 400,000 + 20,000 + 100,000 + 200,000 micro-USD.
+    const auto shortResponse = priceOf(R"json({"usage": {"input_tokens": 170000, "output_tokens": 10000,
+        "input_tokens_details": {"cached_tokens": 50000, "cache_write_tokens": 20000}}})json");
+    assert(shortResponse.priceKnown && shortResponse.costMicros == 720'000);
+
+    // Long, all four categories at the long tariff: plain 50,000*8 + read 200,000*0.8 + write 50,000*10
+    // + out 1,000*30 = 400,000 + 160,000 + 500,000 + 30,000 (the flat rates would give 550,000).
+    const auto longResponse = priceOf(R"json({"usage": {"input_tokens": 300000, "output_tokens": 1000,
+        "input_tokens_details": {"cached_tokens": 200000, "cache_write_tokens": 50000}}})json");
+    assert(longResponse.priceKnown && longResponse.costMicros == 1'090'000);
+
+    // The strict threshold: 272,000 is still short (x4), 272,001 flips the WHOLE response (x8).
+    const auto atThreshold = priceOf(R"json({"usage": {"input_tokens": 272000, "output_tokens": 0}})json");
+    const auto aboveThreshold = priceOf(R"json({"usage": {"input_tokens": 272001, "output_tokens": 0}})json");
+    assert(atThreshold.priceKnown && atThreshold.costMicros == 1'088'000);
+    assert(aboveThreshold.priceKnown && aboveThreshold.costMicros == 2'176'008);
+
+    // Several short turns whose SUM exceeds the threshold stay short: 2 x (150,000*4) = 1,200,000, never the
+    // 2,400,000 a single long 300,000-token response would cost.
+    ai::models::TokenUsage execution;
+    for (int turn = 0; turn < 2; ++turn) {
+        accumulateResponseUsage(execution,
+            parse(R"json({"usage": {"input_tokens": 150000, "output_tokens": 0}})json"),
+            entry.longContextPricing.thresholdInputTokens);
+    }
+    assert(execution.inputTokens == 300'000 && execution.longContext.empty());
+    const auto turns = computeAggregatedExecutionCostMicros(entry, execution);
+    assert(turns.priceKnown && turns.costMicros == 1'200'000);
+
+    // A user-owned model that lacks a rate the usage needs is UNKNOWN, never silently priced as free: the same long
+    // response without the long cache-read rate keeps what could be priced and is flagged.
+    Model missingLongRead = entry;
+    missingLongRead.longContextPricing.cacheReadPriceMicrosPerMillionTokens = 0;
+    const auto incomplete = computeSingleResponseCostMicros(missingLongRead, parse(
+        R"json({"usage": {"input_tokens": 300000, "output_tokens": 1000,
+        "input_tokens_details": {"cached_tokens": 200000, "cache_write_tokens": 50000}}})json"));
+    assert(!incomplete.priceKnown && incomplete.costMicros == 1'090'000 - 160'000);
+}
+
 void testDurationAwareCacheWritesUseTheCorrectFlatAndLongContextPrices()
 {
     Model model = priced(1'000'000, 1'000'000, 2'000'000, 500'000);
@@ -964,6 +1033,7 @@ int runCostCalculationTests()
     testAPartitionOnADisabledTierIsALowerBoundNeverFlat();
     testTheAccumulatorNeverTrustsAPartitionOrAMalformedResponse();
     testTheGpt6SolCatalogEntryPricesRealOpenAIResponsesExactlyAndAsKnown();
+    testTheGpt56SolCatalogSetPricesShortLongAndMultiTurnUsageExactly();
     testDurationAwareCacheWritesUseTheCorrectFlatAndLongContextPrices();
     testAggregatedUsageMergePreservesOnlyProvableDurationAccounting();
     return 0;

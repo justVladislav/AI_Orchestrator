@@ -5741,6 +5741,23 @@ void testCatalogControllerCreatesCatalogModelsWithCachePricesAndTheTier()
     assert(solModel.cacheReadPriceMicrosPerMillionTokens == 200'000);
     assert(solModel.longContextPricing == kCompleteTier);
 
+    // gpt-5.6-sol (C1): the official Standard rates checked 2026-11-04 - 4 / 20 with cache read 0.40 and 30-minute cache
+    // write 5, and a complete tier above 272,000 input tokens (8 / 30, read 0.80, write 10). The one-hour field is
+    // Anthropic's and stays 0. The window and the max output are NOT part of this price change.
+    const QString sol56 = controller.createCatalogModel(openAi, QStringLiteral("gpt-5.6-sol"));
+    assert(!sol56.isEmpty() && controller.lastError().isEmpty());
+    const auto sol56Model = storedModel(sol56);
+    assert(sol56Model.inputPriceMicrosPerMillionTokens == 4'000'000);
+    assert(sol56Model.outputPriceMicrosPerMillionTokens == 20'000'000);
+    assert(sol56Model.cacheWritePriceMicrosPerMillionTokens == 5'000'000);
+    assert(sol56Model.cacheReadPriceMicrosPerMillionTokens == 400'000);
+    assert(sol56Model.cacheWriteOneHourPriceMicrosPerMillionTokens == 0);
+    assert((sol56Model.longContextPricing
+        == ai::application::LongContextPricing {272'000, 8'000'000, 30'000'000, 10'000'000, 800'000}));
+    assert(sol56Model.contextWindowTokens == 400'000 && sol56Model.maxOutputTokens == 32'768);
+    assert(ai::application::checkLongContextPricing(sol56Model.contextWindowTokens, sol56Model.longContextPricing)
+        == ai::application::LongContextPricingProblem::None);
+
     // Every entry of both catalogs is creatable and matches what the entry itself advertises.
     QString sonnetId;
     for (const QString& provider : {openAi, anthropic}) {
@@ -5748,8 +5765,9 @@ void testCatalogControllerCreatesCatalogModelsWithCachePricesAndTheTier()
         for (const QVariant& entryValue : controller.catalogModelsForProvider(kind)) {
             const QVariantMap entry = entryValue.toMap();
             const QString apiId = entry.value(QStringLiteral("apiModelId")).toString();
-            const QString created = provider == openAi && apiId == QStringLiteral("gpt-6-sol")
-                ? sol : controller.createCatalogModel(provider, apiId);
+            const QString created = provider == openAi && apiId == QStringLiteral("gpt-6-sol") ? sol
+                : provider == openAi && apiId == QStringLiteral("gpt-5.6-sol") ? sol56
+                : controller.createCatalogModel(provider, apiId);
             assert(!created.isEmpty());
             if (apiId == QStringLiteral("claude-sonnet-5"))
                 sonnetId = created;

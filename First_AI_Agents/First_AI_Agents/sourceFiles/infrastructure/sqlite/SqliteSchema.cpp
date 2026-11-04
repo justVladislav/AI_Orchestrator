@@ -3969,6 +3969,57 @@ COMMIT;
         }
     }
 
+    if (schemaVersion < 73) {
+        // gpt-5.6-sol catalog prices. Steps 15/45/59 left an OpenAI "gpt-5.6-sol" row at the first reference seed
+        // (input 1.5, output 7.5 USD per 1M tokens) with NO cache prices and NO long-context tier: the official Standard
+        // rates are 4 / 20 (cache read 0.40, 30-minute cache write 5) and, for a request whose input exceeds 272,000 tokens,
+        // 8 / 30 (cache read 0.80, 30-minute cache write 10). Without the tier a long request would be priced at the flat
+        // rates and still reported as an exact cost. A NEW step; no applied step is edited.
+        //
+        // Only a row that is still EXACTLY the old seed is changed: input = 1'500'000, output = 7'500'000, every cache price
+        // (including the one-hour fields, which OpenAI does not use) and the whole long-context tier equal to 0. A
+        // customised, partially filled, already current or never-priced (0/0) row is left alone, as is every row of another
+        // provider or model. A hand-entered value that happens to equal the old seed cannot be told from it (there is no
+        // origin column); that is a stated limit of this step. The context window, max output, enabled/default flags, name
+        // and timestamps are not touched, and no stored execution cost or flag is rewritten (model_executions is not read).
+        //
+        // The tier threshold must be STRICTLY below the context window (checkLongContextPricing, enforced on every Model
+        // read): a row whose window is not above 272'000 gets the flat rates only, which cannot be exceeded by its requests.
+        constexpr const char* migration = R"sql(
+BEGIN IMMEDIATE;
+UPDATE models SET
+    input_price_micros_per_million_tokens = 4000000,
+    output_price_micros_per_million_tokens = 20000000,
+    cache_write_price_micros_per_million_tokens = 5000000,
+    cache_read_price_micros_per_million_tokens = 400000,
+    long_context_threshold_input_tokens = CASE WHEN context_window_tokens > 272000 THEN 272000 ELSE 0 END,
+    long_context_input_price_micros_per_million_tokens = CASE WHEN context_window_tokens > 272000 THEN 8000000 ELSE 0 END,
+    long_context_output_price_micros_per_million_tokens = CASE WHEN context_window_tokens > 272000 THEN 30000000 ELSE 0 END,
+    long_context_cache_write_price_micros_per_million_tokens = CASE WHEN context_window_tokens > 272000 THEN 10000000 ELSE 0 END,
+    long_context_cache_read_price_micros_per_million_tokens = CASE WHEN context_window_tokens > 272000 THEN 800000 ELSE 0 END
+WHERE api_model_id = 'gpt-5.6-sol'
+  AND provider_id IN (SELECT id FROM providers WHERE kind = 'openai')
+  AND input_price_micros_per_million_tokens = 1500000
+  AND output_price_micros_per_million_tokens = 7500000
+  AND cache_write_price_micros_per_million_tokens = 0
+  AND cache_read_price_micros_per_million_tokens = 0
+  AND cache_write_one_hour_price_micros_per_million_tokens = 0
+  AND long_context_threshold_input_tokens = 0
+  AND long_context_input_price_micros_per_million_tokens = 0
+  AND long_context_output_price_micros_per_million_tokens = 0
+  AND long_context_cache_write_price_micros_per_million_tokens = 0
+  AND long_context_cache_read_price_micros_per_million_tokens = 0
+  AND long_context_cache_write_one_hour_price_micros_per_million_tokens = 0;
+PRAGMA user_version = 73;
+COMMIT;
+)sql";
+        const auto migrated = execute(handle, migration, "migration.v73_failed");
+        if (!migrated.success()) {
+            static_cast<void>(execute(handle, "ROLLBACK;", "migration.rollback_failed"));
+            return common::Result<void>::failure(*migrated.error());
+        }
+    }
+
     return common::Result<void>::ok();
 }
 

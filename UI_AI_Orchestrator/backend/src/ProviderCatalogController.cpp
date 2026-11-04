@@ -25,10 +25,16 @@ std::vector<CatalogEntry> builtInCatalog(const QString& providerKind)
     if (providerKind == QStringLiteral("openai")) {
         // Keep these ids aligned with OpenAIProvider::resolveModel() (a concrete id outside that
         // switch is still sent as given). gpt-6-sol: the official Standard rates and long-context tier.
+        // gpt-5.6-sol: the official Standard rates checked on 2026-11-04 (USD per 1M tokens; the launch promotion is
+        // announced "until at least 2026-11-21", so these are dated rates, not a permanent tariff): input 4, output 20,
+        // cache read 0.40, 30-minute cache write 5 (the field named "cache write" - the one-hour field is Anthropic's and
+        // stays 0); a request whose input exceeds 272,000 tokens is billed 8 / 30 with cache read 0.80 and write 10.
+        // Schema step 73 applies the same set to an existing row that is still exactly the old 1.5 / 7.5 seed.
         return {
             {"gpt-6-sol", "GPT-6 Sol", 1'050'000, 128'000, 2'000'000, 10'000'000, 2'500'000, 200'000,
                 {272'000, 4'000'000, 15'000'000, 5'000'000, 400'000}},
-            {"gpt-5.6-sol", "GPT-5.6 Sol", 400000, 32768, 1'500'000, 7'500'000},
+            {"gpt-5.6-sol", "GPT-5.6 Sol", 400000, 32768, 4'000'000, 20'000'000, 5'000'000, 400'000,
+                {272'000, 8'000'000, 30'000'000, 10'000'000, 800'000}},
             {"gpt-5.6-terra", "GPT-5.6 Terra", 400000, 32768, 2'500'000, 15'000'000},
             {"gpt-5.6-luna", "GPT-5.6 Luna", 400000, 32768, 1'000'000, 5'000'000},
             {"gpt-5.4", "GPT-5.4", 400000, 32768, 2'000'000, 8'000'000},

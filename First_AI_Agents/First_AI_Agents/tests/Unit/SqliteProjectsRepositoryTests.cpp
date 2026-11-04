@@ -892,7 +892,7 @@ void testSchemaStep71IsRepeatableAndNeverDestroysData()
                 == "id,project_id,workspace_root,workspace_key,relative_path,path_key,inspection_complete,nested_sources_acknowledged,"
                    "approved_by,approved_at_ms,",
             "The table has the documented columns");
-        require(numberOf(workspace, "PRAGMA user_version;") == 72, "A new database is at version 72");
+        require(numberOf(workspace, "PRAGMA user_version;") == 73, "A new database is at version 73");
         require(numberOf(workspace, "SELECT count(*) FROM sqlite_master WHERE name IN ('project_output_approvals_pair_idx','project_output_approvals_limit');") == 2,
             "...with its index and its trigger");
     }
@@ -909,7 +909,7 @@ void testSchemaStep71IsRepeatableAndNeverDestroysData()
         require(repository.listForWorkspace("p1", outputApprovalWorkspaceKey("C:/ws")).value().size() == 2, "...and keeps every row");
         require(numberOf(store.workspace, "SELECT count(*) FROM sqlite_master WHERE name = 'project_output_approvals_limit';") == 1,
             "...and its trigger is back");
-        require(numberOf(store.workspace, "PRAGMA user_version;") == 72, "...at version 72");
+        require(numberOf(store.workspace, "PRAGMA user_version;") == 73, "...at version 73");
     }
     // Something of that name that is not the table (or has another shape) refuses the step and survives it.
     {
@@ -988,9 +988,9 @@ void testSchemaStep71IsRepeatableAndNeverDestroysData()
     {
         Workspace workspace;
         { auto database = workspace.open(); }
-        workspace.sql("PRAGMA user_version = 73;");
+        workspace.sql("PRAGMA user_version = 74;");
         const auto newer = SqliteDatabase::open(workspace.databasePath);
-        require(!newer.success() && newer.error()->code == "migration.unsupported_version", "Version 73 is refused");
+        require(!newer.success() && newer.error()->code == "migration.unsupported_version", "Version 74 is refused");
     }
 }
 

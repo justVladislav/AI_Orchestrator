@@ -227,13 +227,13 @@ void testAnUpgradeTakesAVerifiedRawCopyFirst()
         require(opened.success(), "The upgrade must succeed");
         const auto& info = opened.value()->preMigrationBackup();
         require(info.has_value(), "The upgrade must report its copy");
-        require(info->fromVersion == 69 && info->toVersion == 72, "The copy must name both versions");
+        require(info->fromVersion == 69 && info->toVersion == 73, "The copy must name both versions");
         require(info->path.parent_path() == backups, "The copy lives in the configured folder");
         require(info->sizeBytes > 0 && fs::exists(info->path), "The copy must exist");
         backupPath = info->path;
     }
     requireVerifiedV69Copy(backupPath, 3);
-    require(rawNumber(temp.database, "PRAGMA user_version;") == 72, "The working database is upgraded");
+    require(rawNumber(temp.database, "PRAGMA user_version;") == 73, "The working database is upgraded");
     require(rawNumber(temp.database, "SELECT count(*) FROM projects;") == 3, "...and keeps its data");
     require(namesIn(backups).size() == 1, "Exactly one copy: no .part and no second file");
     require(namesIn(backups).front().find(".part") == std::string::npos, "...and it is the published name");
@@ -289,7 +289,7 @@ void testANewOrEmptyDatabaseGetsNoCopy()
         require(opened.success(), "A new database is created");
         require(!opened.value()->preMigrationBackup().has_value(), "...without a copy");
         require(!fs::exists(backups), "...and without creating the backup folder");
-        require(rawNumber(temp.database, "PRAGMA user_version;") == 72, "...at the current version");
+        require(rawNumber(temp.database, "PRAGMA user_version;") == 73, "...at the current version");
     }
     {
         TempDir temp;
@@ -360,7 +360,7 @@ void testWithoutTheOptionNothingChanges()
         makeV69Database(temp.database, 2);
         const auto opened = SqliteDatabase::open(temp.database);
         require(opened.success() && !opened.value()->preMigrationBackup().has_value(), "No option, no copy");
-        require(rawNumber(temp.database, "PRAGMA user_version;") == 72, "...and the upgrade runs as it always did");
+        require(rawNumber(temp.database, "PRAGMA user_version;") == 73, "...and the upgrade runs as it always did");
         require(!fs::exists(temp.root / "backups"), "...with no folder");
     }
     {
@@ -417,7 +417,7 @@ void testCopyVerifyAndPublishFailuresBlockTheUpgradeAndLeaveNothingBehind()
 void testAnOccupiedFinalOrPartNameIsNeverOverwritten()
 {
     const std::string stamp = "20250101T000000Z";
-    const std::string finalName = "orchestrator.sqlite3.pre-migration-v69-to-v72." + stamp + ".sqlite";
+    const std::string finalName = "orchestrator.sqlite3.pre-migration-v69-to-v73." + stamp + ".sqlite";
     {   // the final name is taken
         TempDir temp;
         makeV69Database(temp.database, 2);
@@ -479,7 +479,7 @@ void testAnOccupiedFinalOrPartNameIsNeverOverwritten()
 void testForeignSidecarsSurviveAFailedAttempt()
 {
     const std::string stamp = "20250101T000000Z";
-    const std::string finalName = "orchestrator.sqlite3.pre-migration-v69-to-v72." + stamp + ".sqlite";
+    const std::string finalName = "orchestrator.sqlite3.pre-migration-v69-to-v73." + stamp + ".sqlite";
     const char* suffixes[] = {".part-journal", ".part-wal", ".part-shm"};
     const detail::BackupFaultForTesting faults[] = {detail::BackupFaultForTesting::Copy, detail::BackupFaultForTesting::Verify,
         detail::BackupFaultForTesting::Publish};
@@ -572,7 +572,7 @@ void testTheCopyRestoresToASeparatePlace()
         const auto opened = SqliteDatabase::open(restored);
         require(opened.success(), "The restored copy opens normally");
     }
-    require(rawNumber(restored, "PRAGMA user_version;") == 72, "...and an ordinary open upgrades the restored copy");
+    require(rawNumber(restored, "PRAGMA user_version;") == 73, "...and an ordinary open upgrades the restored copy");
     require(rawNumber(restored, "SELECT count(*) FROM projects;") == 3, "...with all its data");
     require(rawText(restored, "SELECT name FROM projects WHERE id = 'p2';") == "Fixture 2", "...unchanged");
     require(fileBytes(backupPath) == copyBefore, "The backup itself is not changed by restoring from it");
@@ -614,11 +614,11 @@ void testAVersion70DatabaseIsCopiedBeforeStep71()
         const auto opened = SqliteDatabase::open(temp.database, optionsFor(backups));
         require(opened.success(), "The v70 database must upgrade");
         const auto& info = opened.value()->preMigrationBackup();
-        require(info.has_value() && info->fromVersion == 70 && info->toVersion == 72, "The copy names versions 70 and 72");
+        require(info.has_value() && info->fromVersion == 70 && info->toVersion == 73, "The copy names versions 70 and 73");
         backupPath = info->path;
     }
     requireVerifiedV70Copy(backupPath, 3);
-    require(rawNumber(temp.database, "PRAGMA user_version;") == 72, "The working database is at 72");
+    require(rawNumber(temp.database, "PRAGMA user_version;") == 73, "The working database is at 73");
     require(rawNumber(temp.database, "SELECT count(*) FROM sqlite_master WHERE name = 'project_output_approvals' AND type = 'table';") == 1,
         "...with the new table");
     require(rawNumber(temp.database, "SELECT count(*) FROM projects;") == 3, "...and its data");
@@ -689,6 +689,71 @@ void testCopyTimeOnAnOrdinaryFixtureIsReported()
               << " KiB temporary database: " << elapsed.count() << " ms\n";
 }
 
+// C1 (step 73): a version-72 database that still holds the old gpt-5.6-sol seed. The copy taken before the upgrade keeps the old
+// prices; the working database receives the official ones; a failing step 73 leaves version 72 and the old prices untouched
+// while the copy is kept.
+void makeV72DatabaseWithTheOldSolSeed(const fs::path& databasePath)
+{
+    {
+        const auto opened = SqliteDatabase::open(databasePath);
+        require(opened.success(), "Could not create the fixture database");
+    }
+    require(rawExec(databasePath,
+                "INSERT INTO providers(id,name,kind,base_url,enabled,credential_reference,created_at_ms,updated_at_ms) "
+                "VALUES('prov-sol','OpenAI','openai','https://api.openai.invalid',1,NULL,1,1);"
+                "INSERT INTO models(id,provider_id,api_model_id,display_name,context_window_tokens,max_output_tokens,"
+                "input_price_micros_per_million_tokens,output_price_micros_per_million_tokens,enabled,is_default,"
+                "created_at_ms,updated_at_ms) VALUES('m-sol','prov-sol','gpt-5.6-sol','GPT-5.6 Sol',400000,128000,"
+                "1500000,7500000,1,1,1,1);"
+                "PRAGMA user_version = 72;")
+                .empty(),
+        "Could not rewind the fixture to v72 with the old Sol seed");
+}
+
+void testAVersion72SolSeedIsCopiedBeforeStep73AndTheCopyKeepsTheOldPrices()
+{
+    TempDir temp;
+    makeV72DatabaseWithTheOldSolSeed(temp.database);
+    const fs::path backups = temp.root / "backups";
+    fs::path backupPath;
+    {
+        const auto opened = SqliteDatabase::open(temp.database, optionsFor(backups));
+        require(opened.success(), "The v72 database must upgrade");
+        const auto& info = opened.value()->preMigrationBackup();
+        require(info.has_value() && info->fromVersion == 72 && info->toVersion == 73, "The copy names versions 72 and 73");
+        backupPath = info->path;
+    }
+    require(rawNumber(backupPath, "PRAGMA user_version;", true) == 72, "The copy is at version 72");
+    require(rawNumber(backupPath, "SELECT input_price_micros_per_million_tokens FROM models WHERE id='m-sol';", true) == 1'500'000,
+        "...and keeps the old price");
+    require(rawNumber(temp.database, "PRAGMA user_version;") == 73, "The working database is at 73");
+    require(rawNumber(temp.database, "SELECT input_price_micros_per_million_tokens FROM models WHERE id='m-sol';") == 4'000'000
+            && rawNumber(temp.database, "SELECT long_context_input_price_micros_per_million_tokens FROM models WHERE id='m-sol';")
+                == 8'000'000,
+        "...and carries the official Sol prices and tier");
+}
+
+void testAFailedStep73KeepsTheCopyAndTheOldPrices()
+{
+    TempDir temp;
+    makeV72DatabaseWithTheOldSolSeed(temp.database);
+    require(rawExec(temp.database,
+                "CREATE TRIGGER block_model_updates BEFORE UPDATE ON models BEGIN SELECT RAISE(ABORT, 'blocked'); END;")
+                .empty(),
+        "plant the failure");
+    const fs::path backups = temp.root / "backups";
+    const auto opened = SqliteDatabase::open(temp.database, optionsFor(backups));
+    require(!opened.success() && opened.error()->code == "migration.v73_failed", "Step 73 refuses with its own code");
+    require(opened.error()->message.find("kept at:") != std::string::npos, "...and says where the copy is");
+    const auto names = namesIn(backups);
+    require(names.size() == 1, "The verified copy is kept");
+    require(rawNumber(backups / names.front(), "PRAGMA user_version;", true) == 72, "...at version 72");
+    require(rawNumber(temp.database, "PRAGMA user_version;") == 72, "The working database stays at version 72");
+    require(rawNumber(temp.database, "SELECT input_price_micros_per_million_tokens FROM models WHERE id='m-sol';") == 1'500'000
+            && rawNumber(temp.database, "SELECT long_context_threshold_input_tokens FROM models WHERE id='m-sol';") == 0,
+        "...with the old prices, nothing half-applied");
+}
+
 } // namespace
 
 int runSqlitePreMigrationBackupTests()
@@ -709,6 +774,8 @@ int runSqlitePreMigrationBackupTests()
     testAFailedUpgradeAfterTheCopyKeepsTheCopyAndTheOriginalError();
     testAVersion70DatabaseIsCopiedBeforeStep71();
     testAFailedStep71KeepsTheCopyAndTheVersion70Database();
+    testAVersion72SolSeedIsCopiedBeforeStep73AndTheCopyKeepsTheOldPrices();
+    testAFailedStep73KeepsTheCopyAndTheOldPrices();
     testAnIncompatibleStep71TableKeepsTheCopyAndItsRows();
     testCopyTimeOnAnOrdinaryFixtureIsReported();
     return 0;
