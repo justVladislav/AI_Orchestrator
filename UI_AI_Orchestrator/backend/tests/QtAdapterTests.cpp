@@ -33,6 +33,10 @@
 #include <ai/ui/AgentProposalListModel.hpp>
 #include <ai/ui/ArtifactListModel.hpp>
 #include <ai/ui/BackendBridge.hpp>
+#include <ai/ui/ChatController.hpp>
+#include <ai/ui/ProjectContextController.hpp>
+#include <ai/ui/ChatCostProjection.hpp>
+#include <ai/ui/ComparisonCostProjection.hpp>
 #include <ai/ui/ComparisonResultListModel.hpp>
 #include <ai/ui/ComparisonSessionListModel.hpp>
 #include <ai/ui/ExecutionAnalyticsController.hpp>
@@ -56,6 +60,7 @@
 #include <QVariantList>
 #include <QVariantMap>
 
+#include <algorithm>
 #include <cassert>
 #include <chrono>
 #include <cstdio>
@@ -813,8 +818,8 @@ ai::application::ModelExecution usageLedgerRow(const char* id, std::uint32_t att
 }
 
 // AG-17.7B: CostBreakdown records the PRICED part of an incompletely priced execution, so a
-// positive amount with every execution unpriced is a lower bound ("partial"), not "unknown".
-void testManifestControllerShowsIncompletePricingAsALowerBound()
+// positive amount with every execution unpriced is an incomplete estimate ("partial"), not "unknown".
+void testManifestControllerShowsIncompletePricingAsAnIncompleteEstimate()
 {
     ManifestControllerHarness harness;
     seedSingleAssignmentUsageRun(harness, "run-lower-bound", {usageLedgerRow("only", 1, 10, 125, false)});
@@ -822,12 +827,12 @@ void testManifestControllerShowsIncompletePricingAsALowerBound()
     const auto usage = harness.controller.routingMembers().front().toMap().value("usage").toMap();
     assert(usage.value("priceState").toString() == QStringLiteral("partial"));
     assert(usage.value("costText").toString() == QStringLiteral("$0.000125")
-        && "The priced part is shown, worded by the UI as a lower bound");
+        && "The priced part is shown, worded by the UI as an incomplete estimate");
     assert(usage.value("unknownPriceExecutions").toULongLong() == 1
         && usage.value("executions").toULongLong() == 1);
 }
 
-class FailingUsageLedger final : public ai::application::IModelExecutionRepository {
+class FailingUsageLedger : public ai::application::IModelExecutionRepository {
 public:
     ai::common::Result<ai::application::ModelExecution> insertExecution(
         ai::application::ModelExecution) override { return fail<ai::application::ModelExecution>(); }
@@ -1751,10 +1756,10 @@ void testManifestPanelQmlWordsPriceStatesAndNeverComputesCost()
     assert(qml.find("objectName: \"rosterUsageText\"") != std::string::npos
         && qml.find("objectName: \"usageIncompleteText\"") != std::string::npos
         && qml.find("objectName: \"usageDiagnosticsSection\"") != std::string::npos);
-    // A partial amount is worded as a lower bound ("at least ...").
+    // A partial amount is worded as an incomplete estimate (never "at least": it is not promised to be a lower bound).
     const auto partialBranch = summary.find("usage.priceState === \"partial\"");
     assert(partialBranch != std::string::npos
-        && summary.find("qsTranslate(\"ManifestPanel\", \"at least %1", partialBranch) != std::string::npos);
+        && summary.find("qsTranslate(\"ManifestPanel\", \"incomplete estimate: %1 recorded, total unknown", partialBranch) != std::string::npos);
 
     // The warning colour appears in the incomplete-attribution line, never in the per-member
     // usage line.
@@ -2676,6 +2681,16 @@ void testSingleSessionLifecycle()
     assert(conversations.constFirst().toMap().value(QStringLiteral("projectId")).toString()
         == projectId);
     assert(chats.messages(conversationId).isEmpty());
+    // C2-A: the production bridge wires the Chat cost to the Backend ledger. An unwired controller would answer
+    // "unavailable"; a conversation without attempts has no cost records - not a free zero - and the old resettable
+    // counter is exposed only as a labelled legacy value.
+    const QVariantMap recordedEmpty = chats.recordedCost(conversationId);
+    assert(recordedEmpty.value(QStringLiteral("state")).toString() == QStringLiteral("none")
+        && recordedEmpty.value(QStringLiteral("costText")).toString().isEmpty()
+        && recordedEmpty.value(QStringLiteral("errorCode")).toString().isEmpty());
+    assert(chats.modelMetrics(conversationId).isEmpty());
+    assert(!conversations.constFirst().toMap().contains(QStringLiteral("estimatedCost"))
+        && conversations.constFirst().toMap().value(QStringLiteral("legacyEstimateMicros")).toULongLong() == 0);
 
     // Comparison is projected from durable sessions plus the shared model-
     // execution ledger. The Qt adapter supplies choices and forwards intent;
@@ -2726,6 +2741,12 @@ void testSingleSessionLifecycle()
     assert(comparisons.currentSessionStatus() == QStringLiteral("failed"));
     assert(comparisons.summaryData().value(QStringLiteral("totalTokensText")).toString()
         == QStringLiteral("0"));
+    {   // C2-A: the summary total reports its completeness over exactly the results it covers (both failed attempts).
+        const QVariantMap summaryCost = comparisons.summaryData();
+        assert(summaryCost.value(QStringLiteral("costResultCount")).toULongLong() == 2);
+        assert((summaryCost.value(QStringLiteral("unknownPriceResultCount")).toULongLong() == 0)
+            == (summaryCost.value(QStringLiteral("costState")).toString() == QStringLiteral("known")));
+    }
     for (int row = 0; row < comparisons.resultsModel()->rowCount(); ++row) {
         const QModelIndex index = comparisons.resultsModel()->index(row, 0);
         assert(comparisons.resultsModel()->data(
@@ -6072,7 +6093,8 @@ void testOverviewQmlWordsPriceStatesAndNeverReadsRawCost()
     assert(wording.contains(QStringLiteral("priceState === \"known\""))
         && wording.contains(QStringLiteral("priceState === \"partial\""))
         && wording.contains(QStringLiteral("priceState === \"unknown\"")));
-    assert(wording.contains(QStringLiteral("qsTr(\"At least %1\")")));
+    assert(wording.contains(QStringLiteral("qsTr(\"Incomplete estimate: %1 recorded, total unknown\")")));
+    assert(!wording.contains(QStringLiteral("At least")) && "A partial amount is not promised to be a lower bound");
     assert(wording.contains(QStringLiteral("qsTr(\"Cost unavailable\")")));
     // The unknown branch never touches the amount text.
     const auto unknownBranch = wording.indexOf(QStringLiteral("priceState === \"unknown\""));
@@ -6368,6 +6390,322 @@ void testPromptWorkshopQmlOnlyRendersAndRelaysTheBackendsPreview()
         && runsPage.contains(QStringLiteral("page.backend.runDrafts.updateDraft(")));
 }
 
+// C2-A: Chat shows the RECORDED cost of its conversation (the model-execution ledger projected by the Backend). The Qt
+// projection only formats the Backend state: none (no records) / known / partial (incomplete estimate) / unknown (no
+// amount) / unavailable (the ledger could not be read). An unknown or unavailable cost never carries an amount text, a KNOWN
+// zero stays a priced zero, a retry's two attempts count twice, and one conversation never sees another one's rows.
+void testChatRecordedCostProjectionFormatsEveryStateAndNeverInventsAnAmount()
+{
+    AnalyticsStateFixture fixture;
+    const QString provider = fixture.addProvider("Chat provider");
+    const QString modelA = fixture.addModel(provider, "chat-model-a");
+    const QString modelB = fixture.addModel(provider, "chat-model-b");
+    const auto addChatRow = [&](const char* conversation, const QString& model, std::uint64_t tokens,
+                                std::uint64_t costMicros, bool priceKnown) {
+        ai::application::ModelExecution execution;
+        execution.id = "chat-exec-" + std::to_string(fixture.nextPosition);
+        execution.source = ai::application::ModelExecutionSource::Chat;
+        execution.sourceId = conversation;
+        execution.providerId = provider.toStdString();
+        execution.modelId = model.toStdString();
+        execution.role = "assistant";
+        execution.position = fixture.nextPosition++;
+        execution.status = ai::application::ModelExecutionStatus::Completed;
+        execution.inputTokens = tokens;
+        execution.outputTokens = tokens / 10;
+        execution.costMicros = costMicros;
+        execution.costPriceKnown = priceKnown;
+        execution.latencyMs = 100;
+        execution.createdAt = std::chrono::system_clock::now();
+        assert(fixture.executions.insertExecution(execution).success());
+    };
+    const auto recordedCostOf = [&](const char* conversation) {
+        return chatRecordedCostMap(QString::fromLatin1(conversation),
+            fixture.analytics.sourceSnapshot(ai::application::ModelExecutionSource::Chat, conversation));
+    };
+    const auto stateOf = [](const QVariantMap& map) { return map.value(QStringLiteral("state")).toString(); };
+    const auto textOf = [](const QVariantMap& map) { return map.value(QStringLiteral("costText")).toString(); };
+
+    // No record at all: state none with no amount - not a free "$0".
+    const QVariantMap none = recordedCostOf("conv-none");
+    assert(stateOf(none) == QStringLiteral("none") && textOf(none).isEmpty());
+    assert(none.value(QStringLiteral("executionCount")).toULongLong() == 0 && none.value(QStringLiteral("errorCode")).toString().isEmpty());
+
+    // Known: every recorded attempt is priced.
+    addChatRow("conv-known", modelA, 1'000, 700, true);
+    const QVariantMap known = recordedCostOf("conv-known");
+    assert(stateOf(known) == QStringLiteral("known") && textOf(known) == QStringLiteral("$0.0007"));
+    assert(known.value(QStringLiteral("costMicros")).toULongLong() == 700);
+
+    // A KNOWN zero is a priced, free attempt (no usage was spent); an UNKNOWN zero is no amount at all.
+    addChatRow("conv-known-zero", modelA, 0, 0, true);
+    const QVariantMap knownZero = recordedCostOf("conv-known-zero");
+    assert(stateOf(knownZero) == QStringLiteral("known") && textOf(knownZero) == QStringLiteral("$0.0000"));
+    addChatRow("conv-unknown-zero", modelA, 1'000, 0, false);
+    const QVariantMap unknownZero = recordedCostOf("conv-unknown-zero");
+    assert(stateOf(unknownZero) == QStringLiteral("unknown") && textOf(unknownZero).isEmpty()
+        && "An unknown price has NO amount text: it can never be rendered as $0");
+
+    // Partial: a known attempt next to an unpriced one with a recorded amount - sticky incompleteness, recorded amount kept.
+    addChatRow("conv-partial", modelA, 1'000, 700, true);
+    addChatRow("conv-partial", modelB, 2'000, 250'000, false);
+    const QVariantMap partial = recordedCostOf("conv-partial");
+    assert(stateOf(partial) == QStringLiteral("partial") && textOf(partial) == QStringLiteral("$0.2507"));
+    assert(partial.value(QStringLiteral("executionCount")).toULongLong() == 2
+        && partial.value(QStringLiteral("unknownPriceExecutionCount")).toULongLong() == 1);
+    // Rows are isolated per conversation: the known conversation did not leak into this one.
+    assert(known.value(QStringLiteral("executionCount")).toULongLong() == 1);
+
+    // A retry leaves two attempts in the ledger for one visible message: both count, each once.
+    addChatRow("conv-retry", modelA, 1'000, 120'000, true);
+    addChatRow("conv-retry", modelA, 1'000, 120'000, true);
+    const QVariantMap retried = recordedCostOf("conv-retry");
+    assert(stateOf(retried) == QStringLiteral("known") && textOf(retried) == QStringLiteral("$0.2400")
+        && retried.value(QStringLiteral("executionCount")).toULongLong() == 2);
+
+    // Per-model rows come from the same sample: recorded attempts (not messages), a state per model, names from the catalog.
+    const auto snapshot = fixture.analytics.sourceSnapshot(ai::application::ModelExecutionSource::Chat, "conv-partial");
+    assert(snapshot.success());
+    const QVariantList rows = chatModelMetricRows(snapshot.value(), fixture.catalog);
+    assert(rows.size() == 2);
+    qulonglong attempts = 0;
+    bool sawKnown = false;
+    bool sawPartial = false;
+    for (const QVariant& value : rows) {
+        const QVariantMap row = value.toMap();
+        attempts += row.value(QStringLiteral("executionCount")).toULongLong();
+        sawKnown = sawKnown || row.value(QStringLiteral("costState")).toString() == QStringLiteral("known");
+        sawPartial = sawPartial || (row.value(QStringLiteral("costState")).toString() == QStringLiteral("unknown")
+            || row.value(QStringLiteral("costState")).toString() == QStringLiteral("partial"));
+        assert(!row.value(QStringLiteral("providerName")).toString().isEmpty()
+            && !row.value(QStringLiteral("modelName")).toString().isEmpty());
+        assert(row.contains(QStringLiteral("totalTokens")) && !row.contains(QStringLiteral("responseCount"))
+            && !row.contains(QStringLiteral("estimatedCost")));
+    }
+    assert(attempts == 2 && sawKnown && sawPartial);
+
+    // An unreadable ledger is "unavailable": no amount, the reason is carried, and nothing is guessed from old counters.
+    const QVariantMap unavailable = chatRecordedCostMap(QStringLiteral("conv-x"),
+        ai::common::Result<ai::application::ExecutionAnalyticsSnapshot>::failure({"persistence.unreadable", "boom"}));
+    assert(stateOf(unavailable) == QStringLiteral("unavailable") && textOf(unavailable).isEmpty());
+    assert(unavailable.value(QStringLiteral("errorCode")).toString() == QStringLiteral("persistence.unreadable"));
+    assert(unavailable.value(QStringLiteral("executionCount")).toULongLong() == 0);
+    const QVariantMap noLedger = chatRecordedCostUnavailable(QStringLiteral("conv-y"), {"chat.cost_ledger_unavailable", "none"});
+    assert(stateOf(noLedger) == QStringLiteral("unavailable") && textOf(noLedger).isEmpty());
+}
+
+// C2-A R2: a Chat ledger whose reads are scripted one by one (a failure, or the rows that read sees) and counted, so the
+// number of reads one UI refresh performs and what each read answered are exact. Everything else stays unreadable.
+class ScriptedChatLedger final : public FailingUsageLedger {
+public:
+    struct Answer {
+        bool fails {false};
+        std::vector<ai::application::ModelExecution> rows;
+    };
+
+    std::vector<Answer> answers;
+    mutable std::size_t reads {0};
+
+    ai::common::Result<std::vector<ai::application::ModelExecution>> listExecutions(
+        ai::application::ModelExecutionSource source, const std::string& sourceId) const override
+    {
+        assert(source == ai::application::ModelExecutionSource::Chat && sourceId == "conv-r2");
+        const Answer& answer = answers.at(reads < answers.size() ? reads : answers.size() - 1);
+        ++reads;
+        if (answer.fails) {
+            return ai::common::Result<std::vector<ai::application::ModelExecution>>::failure(
+                {"persistence.read_failed", "chat ledger unreadable"});
+        }
+        return ai::common::Result<std::vector<ai::application::ModelExecution>>::ok(answer.rows);
+    }
+};
+
+ai::application::ModelExecution chatLedgerRow(const char* id, std::uint64_t costMicros, bool priceKnown)
+{
+    ai::application::ModelExecution value;
+    value.id = id;
+    value.source = ai::application::ModelExecutionSource::Chat;
+    value.sourceId = "conv-r2";
+    value.providerId = "provider-r2";
+    value.modelId = "model-r2";
+    value.role = "assistant";
+    value.position = 1;
+    value.status = ai::application::ModelExecutionStatus::Completed;
+    value.inputTokens = 1'000;
+    value.outputTokens = 100;
+    value.costMicros = costMicros;
+    value.costPriceKnown = priceKnown;
+    value.latencyMs = 50;
+    value.createdAt = std::chrono::system_clock::now();
+    return value;
+}
+
+qulonglong attemptsInRows(const QVariantList& rows)
+{
+    qulonglong sum = 0;
+    for (const QVariant& row : rows) sum += row.toMap().value(QStringLiteral("executionCount")).toULongLong();
+    return sum;
+}
+
+// C2-A R2: ONE UI refresh of a conversation's cost reads the ledger ONCE, through the real ChatController, and the header and
+// the per-model rows both come from that read; a failed read is observable (errorOccurred) and shows no rows and no amount.
+void testChatCostHeaderAndModelRowsShareOneObservableLedgerRead()
+{
+    TempWorkspace workspace;
+    ai::backend::BackendRuntime runtime({workspace.databasePath});
+    assert(runtime.storageAvailable());
+    ProjectContextController context(runtime.projectContextSnapshotService());
+    ai::application::InMemoryModelRepository models;
+    ScriptedChatLedger ledger;
+    ai::application::ExecutionAnalyticsService analytics(ledger, models);
+    ChatController chats(runtime.chatService(), runtime.providerCatalogService(), context, &analytics);
+    QStringList errors;
+    QObject::connect(&chats, &ChatController::errorOccurred, &chats,
+        [&](const QString& code, const QString&) { errors << code; });
+    const QString id = QStringLiteral("conv-r2");
+    const auto refresh = [&] { return chats.recordedUsage(id); };
+    const auto stateOf = [](const QVariantMap& refreshed) {
+        return refreshed.value(QStringLiteral("cost")).toMap().value(QStringLiteral("state")).toString();
+    };
+
+    // (a) EXACTLY one read fails and the next one would have succeeded: that refresh shows unavailable, no amount, no rows,
+    // and the failure reaches errorOccurred - it is not left for some later call to rediscover.
+    ledger.answers = {{true, {}}, {false, {chatLedgerRow("a-1", 120'000, true)}}};
+    const QVariantMap failed = refresh();
+    const QVariantMap failedCost = failed.value(QStringLiteral("cost")).toMap();
+    assert(stateOf(failed) == QStringLiteral("unavailable") && failedCost.value(QStringLiteral("costText")).toString().isEmpty()
+        && failedCost.value(QStringLiteral("errorCode")).toString() == QStringLiteral("persistence.read_failed"));
+    assert(failed.value(QStringLiteral("models")).toList().isEmpty());
+    assert(errors == QStringList {QStringLiteral("persistence.read_failed")});
+    assert(ledger.reads == 1 && "a refresh must read the ledger exactly once");
+    const QVariantMap recovered = refresh();
+    assert(stateOf(recovered) == QStringLiteral("known")
+        && recovered.value(QStringLiteral("cost")).toMap().value(QStringLiteral("costText")).toString() == QStringLiteral("$0.1200"));
+    assert(attemptsInRows(recovered.value(QStringLiteral("models")).toList()) == 1 && errors.size() == 1 && ledger.reads == 2);
+
+    // (b) The ledger changes BETWEEN two reads. One refresh sees one state: header and rows agree on count and completeness.
+    ledger.answers = {{false, {chatLedgerRow("b-1", 120'000, true)}},
+        {false, {chatLedgerRow("b-1", 120'000, true), chatLedgerRow("b-2", 50'000, false), chatLedgerRow("b-3", 70'000, true)}}};
+    ledger.reads = 0;
+    errors.clear();
+    const QVariantMap before = refresh();
+    assert(ledger.reads == 1 && "one refresh, one snapshot");
+    assert(stateOf(before) == QStringLiteral("known")
+        && before.value(QStringLiteral("cost")).toMap().value(QStringLiteral("executionCount")).toULongLong() == 1
+        && attemptsInRows(before.value(QStringLiteral("models")).toList()) == 1
+        && before.value(QStringLiteral("models")).toList().front().toMap().value(QStringLiteral("costState")).toString()
+            == QStringLiteral("known"));
+    const QVariantMap after = refresh();
+    assert(ledger.reads == 2);
+    assert(stateOf(after) == QStringLiteral("partial")
+        && after.value(QStringLiteral("cost")).toMap().value(QStringLiteral("executionCount")).toULongLong() == 3
+        && attemptsInRows(after.value(QStringLiteral("models")).toList()) == 3
+        && after.value(QStringLiteral("models")).toList().front().toMap().value(QStringLiteral("costState")).toString()
+            == QStringLiteral("partial"));
+    assert(errors.isEmpty());
+
+    // (c) The single-purpose views do not depend on a sibling call to surface a failure: each reads and reports on its own.
+    ledger.answers = {{true, {}}};
+    ledger.reads = 0;
+    errors.clear();
+    assert(chats.modelMetrics(id).isEmpty());
+    assert(errors == QStringList {QStringLiteral("persistence.read_failed")} && ledger.reads == 1);
+    const QVariantMap viewFailed = chats.recordedCost(id);
+    assert(viewFailed.value(QStringLiteral("state")).toString() == QStringLiteral("unavailable")
+        && viewFailed.value(QStringLiteral("costText")).toString().isEmpty());
+    assert(errors.size() == 2 && ledger.reads == 2);
+
+    // (d) No conversation: nothing is read, nothing is reported, and the state is "none" rather than a free zero.
+    ledger.reads = 0;
+    errors.clear();
+    const QVariantMap none = chats.recordedUsage(QString());
+    assert(none.value(QStringLiteral("cost")).toMap().value(QStringLiteral("state")).toString() == QStringLiteral("none")
+        && none.value(QStringLiteral("models")).toList().isEmpty() && ledger.reads == 0 && errors.isEmpty());
+
+    // (e) A Chat composed without a ledger reports it, shows no amount and no rows (never the old counters as exact).
+    ChatController unwired(runtime.chatService(), runtime.providerCatalogService(), context, nullptr);
+    QStringList unwiredErrors;
+    QObject::connect(&unwired, &ChatController::errorOccurred, &unwired,
+        [&](const QString& code, const QString&) { unwiredErrors << code; });
+    const QVariantMap noLedger = unwired.recordedUsage(id);
+    assert(noLedger.value(QStringLiteral("cost")).toMap().value(QStringLiteral("state")).toString() == QStringLiteral("unavailable")
+        && noLedger.value(QStringLiteral("cost")).toMap().value(QStringLiteral("costText")).toString().isEmpty()
+        && noLedger.value(QStringLiteral("models")).toList().isEmpty()
+        && unwiredErrors == QStringList {QStringLiteral("chat.cost_ledger_unavailable")});
+}
+
+// C2-A: the Comparison summary words the Backend's completeness of the total, over exactly the results it was summed from.
+void testComparisonSummaryCostFieldsProjectTheBackendState()
+{
+    ai::application::ComparisonSummaryReadModel summary;
+    QVariantMap fields = comparisonSummaryCostFields(summary);
+    assert(fields.value(QStringLiteral("costState")).toString() == QStringLiteral("none")
+        && fields.value(QStringLiteral("totalCostText")).toString().isEmpty()
+        && "No results is no cost - not a free $0");
+
+    summary.executionCount = 2;
+    summary.costMicros = 3;
+    fields = comparisonSummaryCostFields(summary);
+    assert(fields.value(QStringLiteral("costState")).toString() == QStringLiteral("known")
+        && fields.value(QStringLiteral("totalCostText")).toString() == QStringLiteral("$0.000003")
+        && fields.value(QStringLiteral("costResultCount")).toULongLong() == 2);
+
+    summary.costMicros = 0;   // priced and free
+    fields = comparisonSummaryCostFields(summary);
+    assert(fields.value(QStringLiteral("costState")).toString() == QStringLiteral("known")
+        && fields.value(QStringLiteral("totalCostText")).toString() == QStringLiteral("$0.000000"));
+
+    summary.unknownPriceExecutionCount = 2;   // nothing could be priced: no amount at all
+    fields = comparisonSummaryCostFields(summary);
+    assert(fields.value(QStringLiteral("costState")).toString() == QStringLiteral("unknown")
+        && fields.value(QStringLiteral("totalCostText")).toString().isEmpty()
+        && fields.value(QStringLiteral("unknownPriceResultCount")).toULongLong() == 2);
+
+    summary.costMicros = 12;                  // one unpriced result keeps the total incomplete
+    summary.unknownPriceExecutionCount = 1;
+    fields = comparisonSummaryCostFields(summary);
+    assert(fields.value(QStringLiteral("costState")).toString() == QStringLiteral("partial")
+        && fields.value(QStringLiteral("totalCostText")).toString() == QStringLiteral("$0.000012"));
+}
+
+// C2-A: static proof that the Chat and Comparison QML only WORD the Backend cost state: no free "$0.00" fallback, no lower-bound
+// promise, no raw money read, and the explanation that clearing counters keeps the recorded attempts.
+void testChatAndComparisonQmlWordTheRecordedCostWithoutComputingIt()
+{
+    const QString panel = readQmlSource("pages/Chats/Chat_Objects/ChatSessionPanel.qml");
+    assert(panel.contains(QStringLiteral("function costWording(cost)"))
+        && panel.contains(QStringLiteral("qsTr(\"Recorded cost\")"))
+        && panel.contains(QStringLiteral("qsTr(\"No execution cost records\")"))
+        && panel.contains(QStringLiteral("qsTr(\"Incomplete estimate: %1 recorded, total unknown\")"))
+        && panel.contains(QStringLiteral("qsTr(\"Cost unavailable\")"))
+        && panel.contains(QStringLiteral("Includes recorded attempts; clearing usage counters does not remove these records.")));
+    assert(!panel.contains(QStringLiteral("estimatedCost")) && !panel.contains(QStringLiteral("\"$0.00\""))
+        && !panel.contains(QStringLiteral("At least")) && !panel.contains(QStringLiteral("costMicros"))
+        && !panel.contains(QStringLiteral("responseCount")));
+    // The legacy counter is labelled, never exact, and sits next to - not inside - the recorded cost.
+    assert(panel.contains(QStringLiteral("qsTr(\"Legacy estimate\")")) && panel.contains(QStringLiteral("old counter, not exact")));
+
+    const QString page = readQmlSource("pages/Chats/ChatsPage.qml");
+    // One refresh = one backend call: the header and the model rows cannot come from two independent reads.
+    assert(page.contains(QStringLiteral("const usage = backend.chats.recordedUsage(conversationId)"))
+        && page.contains(QStringLiteral("currentRecordedCost = usage.cost"))
+        && page.contains(QStringLiteral("currentModelMetrics = usage.models"))
+        && !page.contains(QStringLiteral("backend.chats.recordedCost("))
+        && !page.contains(QStringLiteral("backend.chats.modelMetrics("))
+        && !page.contains(QStringLiteral("\"$0.00\"")) && !page.contains(QStringLiteral("estimatedCost: stats"))
+        && !page.contains(QStringLiteral("estimatedCost: row")));
+
+    const QString summary = readQmlSource("pages/Comparison/Comparison_Objects/ComparisonSummaryPanel.qml");
+    assert(summary.contains(QStringLiteral("function costWording()"))
+        && summary.contains(QStringLiteral("qsTr(\"Incomplete estimate: %1 recorded, total unknown\")"))
+        && summary.contains(QStringLiteral("qsTr(\"Cost unavailable\")"))
+        && !summary.contains(QStringLiteral("At least")) && !summary.contains(QStringLiteral("costMicros")));
+
+    const QString pricing = readQmlSource("pages/Providers/Providers_Objects/ModelPricingDialog.qml");
+    assert(!pricing.contains(QStringLiteral("lower bound")) && !pricing.contains(QStringLiteral("\"at least\""))
+        && pricing.contains(QStringLiteral("incomplete estimate")));
+}
+
 int main(int argc, char* argv[])
 {
     ai::ui::test_support::configureHeadlessFailureMode();
@@ -6423,7 +6761,7 @@ int main(int argc, char* argv[])
     testManifestControllerProjectsRosterRoutingAndUnusedWorkers();
     testManifestControllerProjectsMemberUsageAndTheUnattributedDebt();
     testManifestControllerNeverRendersAnUnknownPriceAsZero();
-    testManifestControllerShowsIncompletePricingAsALowerBound();
+    testManifestControllerShowsIncompletePricingAsAnIncompleteEstimate();
     testManifestControllerExposesDiagnosticsThatAreNotAttributionDebt();
     testManifestRosterRunSelectsTheManifestWorkflowAndReopensAsAManifestRoster();
     testLegacyConversionControllerShowsThePreviewAndConfirmsOnlyByFingerprint();
@@ -6445,6 +6783,10 @@ int main(int argc, char* argv[])
     testAnalyticsControllerProjectsTheFourPriceStatesAtEveryLevel();
     testAnalyticsChartSharesExistOnlyBetweenExactAmounts();
     testOverviewQmlWordsPriceStatesAndNeverReadsRawCost();
+    testChatRecordedCostProjectionFormatsEveryStateAndNeverInventsAnAmount();
+    testChatCostHeaderAndModelRowsShareOneObservableLedgerRead();
+    testComparisonSummaryCostFieldsProjectTheBackendState();
+    testChatAndComparisonQmlWordTheRecordedCostWithoutComputingIt();
     testPricingDialogQmlHasExplicitTierFieldsNoAutofillAndNoModelSpecificLogic();
     testManifestPanelQmlNeverLabelsRetryAsCreateSetupRun();
     testManifestPanelContinuationActionUsesBackendEligibilityOnly();

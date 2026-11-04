@@ -61,7 +61,8 @@ ColumnLayout {
                 visible: panel.controller !== null && panel.controller.usageAvailable
                 text: panel.usageSummary(rosterMemberRow.modelData.usage)
                 color: panel.colors.textMuted
-                elide: Text.ElideRight
+                // The summary ends with the cost wording (an incomplete estimate says "total unknown"): wrapped, never cut.
+                wrapMode: Text.WordWrap
                 font.pixelSize: panel.hostWindow.dp(8)
             }
         }
@@ -73,7 +74,7 @@ ColumnLayout {
         text: qsTranslate("ManifestPanel", "Run total: %1").arg(
                   panel.controller ? panel.usageSummary(panel.controller.usageRunTotal) : "")
         color: panel.colors.textMuted
-        elide: Text.ElideRight
+        wrapMode: Text.WordWrap
         font.pixelSize: panel.hostWindow.dp(8)
         font.weight: Font.DemiBold
     }
@@ -96,7 +97,7 @@ ColumnLayout {
         let cost
         if (usage.priceState === "known") cost = usage.costText
         else if (usage.priceState === "partial")
-            cost = qsTranslate("ManifestPanel", "at least %1 (some price unset for %n execution(s))", "",
+            cost = qsTranslate("ManifestPanel", "incomplete estimate: %1 recorded, total unknown (some price unset for %n execution(s))", "",
                         Number(usage.unknownPriceExecutions)).arg(usage.costText)
         else cost = qsTranslate("ManifestPanel", "price unknown")
         let text = qsTranslate("ManifestPanel", "%n execution(s)", "", Number(usage.executions))

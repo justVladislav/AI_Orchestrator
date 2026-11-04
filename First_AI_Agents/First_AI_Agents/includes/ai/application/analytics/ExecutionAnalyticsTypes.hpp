@@ -13,7 +13,10 @@ namespace ai::application {
 enum class ExecutionPriceState {
     None,     // no execution at all
     Known,    // every execution was fully priced: costMicros is a precise total
-    Partial,  // some price was unset or unknowable: costMicros is a lower bound
+    Partial,  // some price was unset or unknowable: costMicros is only what was recorded - an INCOMPLETE
+              // estimate, never an exact total. It is not promised to be a lower bound either: an
+              // unknown flag can also come from usage that was malformed or untrusted, which proves
+              // nothing about how the recorded amount relates to the true cost.
     Unknown,  // nothing could be priced (costMicros == 0): there is no amount, and it is NOT zero
 };
 
@@ -46,15 +49,15 @@ struct ExecutionAggregate {
     // Executions whose cost is not a precise amount: the stored price was incomplete
     // (costPriceKnown == false), or the row has real usage but no durable pricing result and
     // none can be derived (a tier model, or a model that is gone). costMicros holds only what
-    // WAS priced, so with any of these it is a lower bound. Appended last so no positional
-    // initialisation shifts.
+    // was recorded as priced, so with any of these it is an incomplete estimate (not an exact
+    // total, and not a proven lower bound). Appended last so no positional initialisation shifts.
     std::uint64_t unknownPriceExecutionCount {0};
 
     [[nodiscard]] constexpr ExecutionPriceState priceState() const noexcept
     {
         if (executionCount == 0) return ExecutionPriceState::None;
         if (unknownPriceExecutionCount == 0) return ExecutionPriceState::Known;
-        // A positive amount is an honest lower bound even when every execution was incomplete.
+        // A positive recorded amount is shown as an incomplete estimate even when every execution was incomplete.
         if (costMicros > 0) return ExecutionPriceState::Partial;
         if (unknownPriceExecutionCount < executionCount) return ExecutionPriceState::Partial;
         // Nothing was priced at all: there is no amount, and it is not zero.

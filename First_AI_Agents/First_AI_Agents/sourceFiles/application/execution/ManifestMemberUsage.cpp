@@ -51,7 +51,7 @@ ManifestUsagePriceState ManifestUsageTotals::priceState() const noexcept
     if (unknownPriceExecutions == 0) return ManifestUsagePriceState::Known;
     // A model price was unset for a usage category of at least one execution. The recorded
     // costMicros then holds the part that WAS priced (CostBreakdown: a best-effort
-    // underestimate), so a positive amount is an honest lower bound even when every
+    // underestimate), so a positive amount is shown as an incomplete estimate even when every
     // execution is unpriced - e.g. unset cache prices next to a set input/output price.
     if (costMicros > 0) return ManifestUsagePriceState::Partial;
     if (unknownPriceExecutions < executions) return ManifestUsagePriceState::Partial;

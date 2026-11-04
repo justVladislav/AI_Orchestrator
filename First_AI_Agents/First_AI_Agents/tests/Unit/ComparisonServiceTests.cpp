@@ -276,6 +276,98 @@ void testReadModelOwnsTotalsAndDeterministicRecommendation()
     assert(projection.value().summary.recommendationSource == "preferred");
 }
 
+// C2-A: the summary total carries the completeness of EXACTLY the executions it was summed from: every result of the
+// session whatever its status, sticky (one unpriced result keeps the total incomplete), and read from what was STORED -
+// a later catalog price edit never re-prices it.
+struct SummaryOutcome {
+    ModelExecutionStatus status {ModelExecutionStatus::Completed};
+    std::uint64_t costMicros {0};
+    bool priceKnown {true};
+};
+
+ComparisonSummaryReadModel summaryOf(
+    ComparisonFixture& fixture, const SummaryOutcome& first, const SummaryOutcome& second,
+    ComparisonSessionId* sessionId = nullptr)
+{
+    const auto created = fixture.service.createSession(validRequest(fixture));
+    assert(created.success());
+    const auto candidates = fixture.service.listResults(created.value().id);
+    assert(candidates.success() && candidates.value().size() == 2);
+    assert(fixture.service.startSession(created.value().id).success());
+    const SummaryOutcome* outcomes[] = {&first, &second};
+    for (std::size_t index = 0; index < 2; ++index) {
+        const auto& candidate = candidates.value()[index];
+        assert(fixture.executionService.startExecution(candidate.id).success());
+        FinishModelExecutionRequest outcome;
+        outcome.status = outcomes[index]->status;
+        if (outcome.status == ModelExecutionStatus::Completed) outcome.outputPreview = "Comparable result";
+        else {
+            outcome.errorCode = "provider.failed";
+            outcome.errorMessage = "The attempt failed after it was charged";
+        }
+        outcome.inputTokens = 100;
+        outcome.outputTokens = 50;
+        outcome.costMicros = outcomes[index]->costMicros;
+        outcome.costPriceKnown = outcomes[index]->priceKnown;
+        outcome.latencyMs = 1000;
+        assert(fixture.executionService.finishExecution(candidate.id, outcome).success());
+    }
+    if (sessionId != nullptr) *sessionId = created.value().id;
+    const auto projection = fixture.readModel.session(created.value().id);
+    assert(projection.success());
+    return projection.value().summary;
+}
+
+void testSummaryCostCompletenessCoversEveryResultAndNeverReprices()
+{
+    // No results at all is "none" - not a known zero.
+    assert(ComparisonSummaryReadModel {}.priceState() == ExecutionPriceState::None);
+
+    {   // Every result priced: a precise total.
+        ComparisonFixture fixture;
+        const auto summary = summaryOf(fixture, {ModelExecutionStatus::Completed, 1, true},
+            {ModelExecutionStatus::Completed, 2, true});
+        assert(summary.priceState() == ExecutionPriceState::Known
+            && summary.costMicros == 3 && summary.executionCount == 2 && summary.unknownPriceExecutionCount == 0);
+    }
+    {   // A KNOWN zero is a priced free result; an UNKNOWN zero is no amount at all; a mix of the two is incomplete.
+        ComparisonFixture knownZero;
+        assert(summaryOf(knownZero, {ModelExecutionStatus::Completed, 0, true}, {ModelExecutionStatus::Completed, 0, true})
+                .priceState() == ExecutionPriceState::Known);
+        ComparisonFixture unknownZero;
+        assert(summaryOf(unknownZero, {ModelExecutionStatus::Completed, 0, false}, {ModelExecutionStatus::Completed, 0, false})
+                .priceState() == ExecutionPriceState::Unknown);
+        ComparisonFixture mixedZero;
+        assert(summaryOf(mixedZero, {ModelExecutionStatus::Completed, 0, true}, {ModelExecutionStatus::Completed, 0, false})
+                .priceState() == ExecutionPriceState::Partial);
+    }
+    {   // Sticky: one unpriced result keeps the total incomplete next to a known one, and a FAILED result that was
+        // charged still counts (its cost and its flag are part of the same sample); the totals are unchanged sums.
+        ComparisonFixture fixture;
+        ComparisonSessionId sessionId;
+        const auto summary = summaryOf(fixture, {ModelExecutionStatus::Completed, 5, true},
+            {ModelExecutionStatus::Failed, 7, false}, &sessionId);
+        assert(summary.priceState() == ExecutionPriceState::Partial
+            && summary.costMicros == 12 && summary.executionCount == 2 && summary.unknownPriceExecutionCount == 1
+            && summary.inputTokens == 200 && summary.outputTokens == 100 && summary.averageLatencyMs == 1000);
+
+        // A later catalog price edit never re-prices what was stored.
+        assert(fixture.catalog.updateModel({fixture.modelA, "model-a", "Model A", 100000, 4096,
+                                            9'000'000, 9'000'000, 9'000'000, 9'000'000}).success());
+        const auto again = fixture.readModel.session(sessionId);
+        assert(again.success() && again.value().summary.costMicros == 12
+            && again.value().summary.priceState() == ExecutionPriceState::Partial
+            && again.value().summary.unknownPriceExecutionCount == 1);
+    }
+    {   // Both results unpriced but with a recorded amount: still incomplete (an amount exists), never "known".
+        ComparisonFixture fixture;
+        const auto summary = summaryOf(fixture, {ModelExecutionStatus::Completed, 4, false},
+            {ModelExecutionStatus::Cancelled, 6, false});
+        assert(summary.priceState() == ExecutionPriceState::Partial && summary.costMicros == 10
+            && summary.unknownPriceExecutionCount == 2);
+    }
+}
+
 ComparisonSession waitForTerminal(
     ComparisonService& service,
     const ComparisonSessionId& id)
@@ -474,6 +566,7 @@ int runComparisonServiceTests()
     testSelectionRequiresReviewableSessionResults();
     testInvalidComparisonRosterIsRejected();
     testReadModelOwnsTotalsAndDeterministicRecommendation();
+    testSummaryCostCompletenessCoversEveryResultAndNeverReprices();
     testExecutionManagerRunsCandidatesInParallelAndPersistsQuality();
     testExecutionManagerCancelsActiveCandidates();
     testCandidateCostIsClassifiedPerResponseByTheModelsLongContextTier();

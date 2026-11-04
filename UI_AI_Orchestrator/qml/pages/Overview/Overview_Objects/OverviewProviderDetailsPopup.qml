@@ -59,8 +59,25 @@ Basic.Popup {
                     spacing: hostWindow.dp(4)
                     RowLayout {
                         Layout.fillWidth: true
-                        Text { Layout.fillWidth: true; text: modelRow.modelData.name; color: colors.textPrimary; font.pixelSize: hostWindow.dp(11); font.weight: Font.Medium; elide: Text.ElideRight }
-                        Text { objectName: "modelCostLabel"; text: modelRow.modelData.costLabel; color: colors.textPrimary; font.pixelSize: hostWindow.dp(10); font.weight: Font.DemiBold; font.italic: modelRow.modelData.priceIncomplete }
+                        Text { objectName: "modelNameLabel"; Layout.fillWidth: true; text: modelRow.modelData.name; color: colors.textPrimary; font.pixelSize: hostWindow.dp(11); font.weight: Font.Medium; elide: Text.ElideRight }
+                        Text {
+                            id: modelCostLabel
+                            objectName: "modelCostLabel"
+                            // A long incomplete-estimate sentence wraps (up to two lines) inside 60% of the row instead of
+                            // squeezing the model name to nothing or leaving the row.
+                            Layout.maximumWidth: modelRow.width * 0.6
+                            Layout.preferredWidth: Math.min(modelCostMetrics.width, Layout.maximumWidth)
+                            text: modelRow.modelData.costLabel
+                            color: modelRow.modelData.priceIncomplete ? colors.warning : colors.textPrimary
+                            horizontalAlignment: Text.AlignRight
+                            wrapMode: Text.WordWrap
+                            maximumLineCount: 2
+                            elide: Text.ElideRight
+                            font.pixelSize: hostWindow.dp(10)
+                            font.weight: Font.DemiBold
+                            font.italic: modelRow.modelData.priceIncomplete
+                            TextMetrics { id: modelCostMetrics; font: modelCostLabel.font; text: modelCostLabel.text }
+                        }
                     }
                     Text {
                         Layout.fillWidth: true

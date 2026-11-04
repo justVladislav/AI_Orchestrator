@@ -38,6 +38,20 @@ Rectangle {
         return value(name, fallback) === true
     }
 
+    // Wording of the Backend's cost state for the whole comparison (the amount is formatted by the Qt layer; nothing is
+    // summed or classified here). An unknown total is never shown as a free "$0".
+    function costWording() {
+        const state = stringValue("costState", "none")
+        const amount = stringValue("totalCostText", "")
+        if (state === "known")
+            return amount
+        if (state === "partial")
+            return qsTr("Incomplete estimate: %1 recorded, total unknown").arg(amount)
+        if (state === "unknown")
+            return qsTr("Cost unavailable")
+        return "—"
+    }
+
     function listValue(name) {
         const result = value(name, [])
         return result && result.length !== undefined ? result : []
@@ -221,10 +235,11 @@ Rectangle {
                         Text {
                             Layout.fillWidth: true
                             horizontalAlignment: Text.AlignRight
-                            text: panel.stringValue("totalCostText", "—")
+                            objectName: "comparisonTotalCost"
+                            text: panel.costWording()
+                            wrapMode: Text.WordWrap
                             color: panel.colors.textPrimary
                             font.pixelSize: panel.hostWindow.dp(11)
-                            elide: Text.ElideLeft
                         }
 
                         Text {

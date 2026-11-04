@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ai/application/analytics/ExecutionAnalyticsTypes.hpp"
 #include "ai/application/comparison/ComparisonService.hpp"
 #include "ai/application/catalog/ProviderCatalogService.hpp"
 
@@ -27,6 +28,24 @@ struct ComparisonSummaryReadModel {
     std::string recommendationSource;
     bool qualityComplete {false};
     bool synthesisEnabled {false};
+    // The completeness of costMicros, over EXACTLY the executions it was summed from (every result of the
+    // session, whatever its status: a failed or cancelled attempt that was charged is still a cost). Appended
+    // last so no positional initialisation shifts. `unknownPriceExecutionCount` counts the results whose stored
+    // costPriceKnown is false; it is sticky - one unpriced result keeps the total incomplete however many known
+    // ones sit next to it. The stored amounts are summed as recorded, never re-priced from today's catalog.
+    std::uint64_t executionCount {0};
+    std::uint64_t unknownPriceExecutionCount {0};
+
+    // The shared price vocabulary (none | known | partial | unknown) of the same rule every other cost
+    // aggregate uses, so a comparison total cannot disagree with Analytics about what "unknown" means.
+    [[nodiscard]] ExecutionPriceState priceState() const noexcept
+    {
+        ExecutionAggregate aggregate;
+        aggregate.executionCount = executionCount;
+        aggregate.costMicros = costMicros;
+        aggregate.unknownPriceExecutionCount = unknownPriceExecutionCount;
+        return aggregate.priceState();
+    }
 };
 
 struct ComparisonSessionReadModel {

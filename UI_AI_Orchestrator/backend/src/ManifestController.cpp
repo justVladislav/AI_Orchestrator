@@ -7,7 +7,7 @@ namespace {
 
 // AG-17.7B: the amount QML shows next to a usage line. Empty when there is nothing to show
 // or the price is entirely unknown - an unknown price is never rendered as "$0.000000".
-// For a partial state the amount is a lower bound (the caller words it as such).
+// For a partial state the amount is only what was recorded (an incomplete estimate; the caller words it as such).
 QString usageCostText(const ai::application::ManifestUsageTotals& usage)
 {
     const auto state = usage.priceState();

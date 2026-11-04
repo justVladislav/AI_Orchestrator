@@ -13,7 +13,10 @@ Rectangle {
     required property var providerModel
     signal providerRequested(var providerData)
 
-    implicitHeight: hostWindow.dp(326)
+    // 326dp is the MINIMUM (the empty state and a few short rows). Every incomplete row also carries its own amount line,
+    // so the panel follows the height of ALL rows; the dashboard block that follows is laid out after the content
+    // instead of on top of the last providers.
+    implicitHeight: Math.max(hostWindow.dp(326), body.implicitHeight + 2 * hostWindow.dp(16))
     radius: colors.cornerRadiusMedium
     color: colors.surfaceAlternative
     border.width: 1
@@ -26,6 +29,7 @@ Rectangle {
     }
 
     ColumnLayout {
+        id: body
         anchors.fill: parent
         anchors.margins: chart.hostWindow.dp(16)
         spacing: chart.hostWindow.dp(12)
@@ -140,6 +144,7 @@ Rectangle {
                         spacing: chart.hostWindow.dp(8)
 
                         Text {
+                            objectName: "providerNameLabel"
                             Layout.fillWidth: true
                             text: providerRow.modelData.name
                             color: chart.colors.textSecondary
@@ -147,33 +152,53 @@ Rectangle {
                             elide: Text.ElideRight
                         }
                         Text {
+                            objectName: "providerCallsLabel"
+                            Layout.minimumWidth: implicitWidth
                             text: qsTr("%1 calls").arg(providerRow.modelData.executionCount)
                             color: chart.colors.textMuted
                             font.pixelSize: chart.hostWindow.dp(9)
                         }
                         Text {
+                            objectName: "providerTokensLabel"
+                            Layout.minimumWidth: implicitWidth
                             text: qsTr("%1 tokens").arg(providerRow.modelData.tokensLabel)
                             color: chart.colors.textMuted
                             font.pixelSize: chart.hostWindow.dp(9)
                         }
+                        // An EXACT amount is short and sits in the row. An incomplete one is a sentence: it gets a
+                        // full-width line of its own below (see providerIncompleteCostLabel), never a 112dp cell it
+                        // would be cut in or spill out of.
                         Text {
                             objectName: "providerCostLabel"
+                            visible: !providerRow.modelData.priceIncomplete
                             Layout.preferredWidth: chart.hostWindow.dp(112)
                             text: providerRow.modelData.costLabel
-                            // An incomplete amount (a lower bound or unavailable) is drawn apart from
-                            // an exact one: warning colour and italic.
-                            color: providerRow.modelData.priceIncomplete
-                                   ? chart.colors.warning : chart.colors.textPrimary
+                            color: chart.colors.textPrimary
                             horizontalAlignment: Text.AlignRight
                             font.pixelSize: chart.hostWindow.dp(11)
                             font.weight: Font.Medium
-                            font.italic: providerRow.modelData.priceIncomplete
                         }
+                    }
+
+                    // The incomplete amount (an incomplete estimate or unavailable) is drawn apart from an exact one:
+                    // warning colour and italic, wrapped over the whole row so the recorded amount AND the "total
+                    // unknown" mark both stay visible.
+                    Text {
+                        objectName: "providerIncompleteCostLabel"
+                        visible: providerRow.modelData.priceIncomplete
+                        Layout.fillWidth: true
+                        text: providerRow.modelData.costLabel
+                        color: chart.colors.warning
+                        horizontalAlignment: Text.AlignRight
+                        wrapMode: Text.WordWrap
+                        font.pixelSize: chart.hostWindow.dp(11)
+                        font.weight: Font.Medium
+                        font.italic: true
                     }
 
                     // The share bar compares providers by EXACT amounts only. With any partial or
                     // unknown provider the Backend reports shareBasis "incomplete": no bar is drawn
-                    // (lower bounds are never normalised against each other) and a neutral note
+                    // (incomplete estimates are never normalised against each other) and a neutral note
                     // takes its place.
                     Rectangle {
                         visible: providerRow.modelData.shareBasis !== "incomplete"

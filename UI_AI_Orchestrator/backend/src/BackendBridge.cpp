@@ -79,7 +79,8 @@ BackendBridge::BackendBridge(const QString& databasePathOverride,
           runtime_.proposalReviewService(), runtime_.manifestApplyVerificationGate(), this))
     , projectContextController_(std::make_unique<ProjectContextController>(
           runtime_.projectContextSnapshotService(), this))
-    , chatController_(runtime_.chatService(), runtime_.providerCatalogService(), *projectContextController_, this)
+    , chatController_(runtime_.chatService(), runtime_.providerCatalogService(), *projectContextController_,
+          &runtime_.executionAnalyticsService(), this)
     , projectMemoryController_(runtime_.projectMemoryService(),
           runtime_.projectMemoryCompactionService(), runtime_.providerCatalogService(), this)
     , projectController_(runtime_.projectService(), this)

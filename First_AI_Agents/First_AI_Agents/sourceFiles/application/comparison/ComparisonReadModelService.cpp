@@ -88,6 +88,8 @@ common::Result<ComparisonSessionReadModel> ComparisonReadModelService::session(
         result.summary.inputTokens += execution.inputTokens;
         result.summary.outputTokens += execution.outputTokens;
         result.summary.costMicros += execution.costMicros;
+        ++result.summary.executionCount;
+        if (!execution.costPriceKnown) ++result.summary.unknownPriceExecutionCount;
         if (execution.latencyMs > 0) {
             latencyTotal += execution.latencyMs;
             ++latencyCount;

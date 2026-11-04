@@ -244,7 +244,7 @@ Dialog {
 
                 Text {
                     Layout.fillWidth: true
-                    text: qsTr("A price left at 0 counts as not entered: any cost that uses it is shown as a lower bound (\"at least\").")
+                    text: qsTr("A price left at 0 counts as not entered: any cost that uses it is shown as an incomplete estimate (the recorded amount, total unknown), never as an exact total or as free.")
                     color: dialog.colors.textSecondary
                     font.pixelSize: dialog.hostWindow.dp(10)
                     wrapMode: Text.WordWrap

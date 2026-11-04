@@ -338,14 +338,15 @@ Item {
     // formatted there): this function only chooses the localized phrase. It never reads or formats a
     // raw amount, and an unknown price is never shown as "$0".
     //   known   - the plain amount
-    //   partial - a lower bound: "At least <amount>"
+    //   partial - an incomplete estimate: the recorded amount, with the total unknown (it is not promised to be a
+    //             lower bound: an unknown flag can also come from untrusted usage)
     //   unknown - no amount at all: "Cost unavailable"
     //   none    - no data (no executions)
     function costWording(priceState, costText) {
         if (priceState === "known")
             return costText
         if (priceState === "partial")
-            return qsTr("At least %1").arg(costText)
+            return qsTr("Incomplete estimate: %1 recorded, total unknown").arg(costText)
         if (priceState === "unknown")
             return qsTr("Cost unavailable")
         return "—"

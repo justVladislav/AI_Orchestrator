@@ -21,9 +21,11 @@ qt_add_library(AIOrchestrator_Backend STATIC
     src/RunDraftListModel.cpp
     src/CredentialController.cpp
     src/ChatController.cpp
+    src/ChatCostProjection.cpp
     src/ExecutionAnalyticsController.cpp
     src/ProviderExecutionAnalyticsModel.cpp
     src/ComparisonController.cpp
+    src/ComparisonCostProjection.cpp
     src/ComparisonSessionListModel.cpp
     src/ComparisonResultListModel.cpp
     src/AgentSessionController.cpp
@@ -60,9 +62,11 @@ qt_add_library(AIOrchestrator_Backend STATIC
     include/ai/ui/RunDraftListModel.hpp
     include/ai/ui/CredentialController.hpp
     include/ai/ui/ChatController.hpp
+    include/ai/ui/ChatCostProjection.hpp
     include/ai/ui/ExecutionAnalyticsController.hpp
     include/ai/ui/ProviderExecutionAnalyticsModel.hpp
     include/ai/ui/ComparisonController.hpp
+    include/ai/ui/ComparisonCostProjection.hpp
     include/ai/ui/ComparisonSessionListModel.hpp
     include/ai/ui/ComparisonResultListModel.hpp
     include/ai/ui/AgentSessionController.hpp
