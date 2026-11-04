@@ -1,4 +1,5 @@
 #include "ai/application/execution/ManifestWorkflowRunner.hpp"
+#include "ai/application/text/DiagnosticText.hpp"
 
 #include "ai/application/artifacts/ArtifactService.hpp"
 #include "ai/application/budget/CostCalculation.hpp"
@@ -262,6 +263,20 @@ std::string renderDeterministicSummary(
         }
         out << "\n";
     }
+    // Report-only notes about the run itself (for example a provider-turn record the store refused). They
+    // never change a status above or the verification below.
+    bool warningsHeaderWritten = false;
+    for (const auto& task : manifest.tasks) {
+        const auto warnings = outcome.taskDiagnosticWarnings.find(task.id);
+        if (warnings == outcome.taskDiagnosticWarnings.end()) continue;
+        if (!warningsHeaderWritten) {
+            out << "\n## Diagnostic warnings\n\n"
+                   "These notes concern the recording of the run, not its result: no task status, usage "
+                   "figure or verification verdict was changed because of them.\n\n";
+            warningsHeaderWritten = true;
+        }
+        for (const auto& warning : warnings->second) out << "- " << task.id << ": " << warning << "\n";
+    }
     return out.str();
 }
 
@@ -272,7 +287,7 @@ std::string boundedTerminalMessage(std::string value)
         const std::size_t keep =
             kMaximumTerminalFailureBytes > markerSize
                 ? kMaximumTerminalFailureBytes - markerSize : 0;
-        value.resize(keep);
+        value.resize(utf8SafePrefixLength(value, keep));
         value += std::string(kTerminalMessageTruncationMarker);
     }
     return value;
@@ -435,6 +450,15 @@ std::string renderVerificationReport(
         return out.str();
     }
 
+    // A failed primary verification that got no repair wave must say so and why - the report used to show only
+    // the failure, leaving no trace of the decision not to open a repair session (a disabled policy, an ineligible
+    // scope, a wave that did not fit the remaining turns).
+    if (outcome.primaryProposalSetVerification.has_value() && !outcome.verificationRepairAttempted) {
+        out << "## Bounded verification repair\n\nNo repair session was opened for this failure.\n";
+        if (!outcome.verificationErrorCode.empty()) out << "Reason code: " << outcome.verificationErrorCode << "\n";
+        if (!outcome.verificationErrorMessage.empty()) out << "Reason: " << outcome.verificationErrorMessage << "\n";
+        out << "\n";
+    }
     out << renderVerificationSection(*outcome.proposalSetVerification);
     return out.str();
 }
@@ -1888,14 +1912,25 @@ WorkflowResult ManifestWorkflowRunner::run(
         if (artifactService_ == nullptr) {
             verificationIdentityPersistenceError = "verification.identity_persistence_unavailable";
         } else {
-            const auto recordedIdentity = artifactService_->createArtifact(
-                context.run.id, executionStage.id, ArtifactKind::Report,
-                "manifest-verification-identity.v1.json", "application/json",
-                renderManifestProposalSetVerificationJson(*executed.proposalSetVerification));
-            if (recordedIdentity.success()) {
-                verificationIdentityPersisted = true;
+            // The identity is serialised strictly (a malformed string is an error, never silently repaired).
+            // If serialising throws, that is a recorded persistence failure of THIS artifact - the Run still
+            // ends as an ordinary failed one with its verification report - not an exception that escapes.
+            std::optional<std::string> identityJson;
+            try {
+                identityJson = renderManifestProposalSetVerificationJson(*executed.proposalSetVerification);
+            } catch (...) {
+            }
+            if (!identityJson.has_value()) {
+                verificationIdentityPersistenceError = "verification.identity_serialization_failed";
             } else {
-                verificationIdentityPersistenceError = recordedIdentity.error()->code;
+                const auto recordedIdentity = artifactService_->createArtifact(
+                    context.run.id, executionStage.id, ArtifactKind::Report,
+                    "manifest-verification-identity.v1.json", "application/json", *identityJson);
+                if (recordedIdentity.success()) {
+                    verificationIdentityPersisted = true;
+                } else {
+                    verificationIdentityPersistenceError = recordedIdentity.error()->code;
+                }
             }
         }
     }
@@ -1909,11 +1944,15 @@ WorkflowResult ManifestWorkflowRunner::run(
     if (executed.verificationRepairAttempted
         && executed.primaryProposalSetVerification.has_value()
         && artifactService_ != nullptr) {
-        static_cast<void>(artifactService_->createDiagnosticArtifact(
-            context.run.id, executionStage.id, ArtifactKind::Report,
-            "manifest-verification-primary.v1.json", "application/json",
-            renderManifestProposalSetVerificationJson(
-                *executed.primaryProposalSetVerification)));
+        try {
+            static_cast<void>(artifactService_->createDiagnosticArtifact(
+                context.run.id, executionStage.id, ArtifactKind::Report,
+                "manifest-verification-primary.v1.json", "application/json",
+                renderManifestProposalSetVerificationJson(
+                    *executed.primaryProposalSetVerification)));
+        } catch (...) {
+            // Best effort by contract: the diagnostic copy never decides the Run's outcome.
+        }
     }
     const bool verificationPassed = executed.proposalSetVerification.has_value()
         && requiredAcceptancePassed(*executed.proposalSetVerification);

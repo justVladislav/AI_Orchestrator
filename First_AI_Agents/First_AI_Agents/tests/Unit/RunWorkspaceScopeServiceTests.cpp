@@ -4,6 +4,7 @@
 #include "ai/application/execution/RunWorkspaceScopeService.hpp"
 
 #include "ai/application/inmemory/InMemoryRunWorkspaceScopeRepository.hpp"
+#include "ai/application/workspace/FilesystemPathUtils.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -100,6 +101,60 @@ void testFreezeAttachesRealBaselineHashesAndDerivesDependencyEdges()
 
     const auto found = service.findForRun("run-1");
     req(found.success() && found.value().has_value(), "Frozen scope was not persisted");
+}
+
+// A baseline entry's relativePath is UTF-8 (the scan stores detail::genericUtf8), and the Manifest's paths come from the
+// UTF-8 draft through detail::pathFromUtf8. A file whose name no single Windows ANSI code page holds (Cyrillic + Chinese)
+// must be found by validation, frozen with its exact path and carry its real baseline hash. Building the lookup key with
+// std::filesystem::path(std::string) read the UTF-8 bytes as the ANSI page, so such a file never matched.
+void testUtf8BaselinePathsAreFoundValidatedAndFrozenWithTheirExactHashes()
+{
+    const std::string unicodeDoc = "docs/\xD0\x96\xE8\xA1\xA8.md"; // docs/Ж表.md
+    const std::string unicodeSource = "src/\xD0\x96\xE8\xA1\xA8.cpp"; // src/Ж表.cpp
+    const auto baseline = makeBaseline({{unicodeDoc, "hash-unicode-doc"}, {unicodeSource, "hash-unicode-source"}});
+
+    ExecutionManifest manifest;
+    manifest.runId = "run-1";
+    auto edit = makeTask("edit");
+    edit.ownedPaths = {detail::pathFromUtf8(unicodeSource)};
+    edit.requiredReadPaths = {detail::pathFromUtf8(unicodeDoc)};
+    edit.plannedCreatePaths = {detail::pathFromUtf8("docs/\xD0\x96\xE8\xA1\xA8-new.md")};
+    manifest.tasks = {std::move(edit)};
+
+    const auto findings = RunWorkspaceScopeService::validateManifestAgainstBaseline(manifest, baseline);
+    req(findings.empty(), "A Unicode baseline file must be found by the baseline-aware validation");
+
+    InMemoryRunWorkspaceScopeRepository repository;
+    RunWorkspaceScopeService service(repository);
+    const auto frozen = service.freezeForManifest("run-1", manifest, baseline);
+    req(frozen.success(), "freezeForManifest failed on a Manifest over Unicode baseline files");
+    const auto& scope = frozen.value();
+    const auto findEntry = [&](const std::string& path) -> const RunWorkspaceScopeEntry* {
+        for (const auto& entry : scope.entries) {
+            if (entry.relativePath == path) return &entry;
+        }
+        return nullptr;
+    };
+    const auto* doc = findEntry(unicodeDoc);
+    req(doc != nullptr && doc->baselineHash.has_value() && *doc->baselineHash == "hash-unicode-doc",
+        "The Unicode required_read path must be frozen with its exact UTF-8 path and baseline hash");
+    const auto* source = findEntry(unicodeSource);
+    req(source != nullptr && source->baselineHash.has_value() && *source->baselineHash == "hash-unicode-source",
+        "The Unicode owned_write path must be frozen with its exact UTF-8 path and baseline hash");
+    const auto* created = findEntry("docs/\xD0\x96\xE8\xA1\xA8-new.md");
+    req(created != nullptr && !created->baselineHash.has_value(),
+        "A Unicode planned_create path must be frozen without a baseline hash");
+
+    // Control: a Unicode name that is NOT in the baseline is still reported, so the lookup is not vacuous.
+    ExecutionManifest missing;
+    missing.runId = "run-2";
+    auto reader = makeTask("reader");
+    reader.requiredReadPaths = {detail::pathFromUtf8("docs/\xD0\x96\xE8\xA1\xA8-absent.md")};
+    missing.tasks = {std::move(reader)};
+    const auto missingFindings = RunWorkspaceScopeService::validateManifestAgainstBaseline(missing, baseline);
+    req(missingFindings.size() == 1
+            && missingFindings.front().code == "workspace_scope.read_path_missing_from_baseline",
+        "A Unicode read path absent from the baseline must still be reported");
 }
 
 void testFreezeRejectsPlannedCreateThatAlreadyExistsInBaseline()
@@ -749,6 +804,7 @@ void testSecurityDeniedPathCannotReceiveDiagnosticReadEvenWhenAlsoExcluded()
 int runRunWorkspaceScopeServiceTests()
 {
     testFreezeAttachesRealBaselineHashesAndDerivesDependencyEdges();
+    testUtf8BaselinePathsAreFoundValidatedAndFrozenWithTheirExactHashes();
     testFreezeRejectsPlannedCreateThatAlreadyExistsInBaseline();
     testFreezeRejectsOwnedWriteMissingFromBaseline();
     testFreezeIsIdempotentOnRetry();

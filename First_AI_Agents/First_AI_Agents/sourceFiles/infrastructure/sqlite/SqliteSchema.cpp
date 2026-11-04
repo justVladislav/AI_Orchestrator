@@ -5,6 +5,7 @@
 
 #include <sqlite3.h>
 
+#include <algorithm>
 #include <cctype>
 #include <cstddef>
 #include <cstdint>
@@ -12,6 +13,7 @@
 #include <string_view>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 namespace ai::infrastructure {
 
@@ -3909,6 +3911,58 @@ PRAGMA user_version = 71;
 COMMIT;
 )sql";
         const auto migrated = execute(handle, migration.c_str(), "migration.v71_failed");
+        if (!migrated.success()) {
+            static_cast<void>(execute(handle, "ROLLBACK;", "migration.rollback_failed"));
+            return common::Result<void>::failure(*migrated.error());
+        }
+    }
+
+    if (schemaVersion < 72) {
+        // Provider-turn diagnostics: five bounded columns on agent_provider_turns so a response cut at its output-token limit can be
+        // diagnosed after the process ends (what limit was asked for, what the provider reported back, how much was reasoning, the
+        // provider's status word and incomplete reason). A NEW step; step 21 is not edited. Existing rows keep NULL / '' - "not
+        // recorded", which is different from a recorded 0 - and no price, usage or cost column is touched. Idempotent per column
+        // (PRAGMA table_info, the pattern of steps 19/22/35): a database rewound below 72 may already carry some or all of them.
+        struct ColumnSpec {
+            const char* name;
+            const char* definition;
+        };
+        constexpr ColumnSpec columns[] = {
+            {"requested_max_output_tokens",
+             "requested_max_output_tokens INTEGER CHECK(requested_max_output_tokens IS NULL OR requested_max_output_tokens >= 0)"},
+            {"echoed_max_output_tokens",
+             "echoed_max_output_tokens INTEGER CHECK(echoed_max_output_tokens IS NULL OR echoed_max_output_tokens >= 0)"},
+            {"reasoning_tokens",
+             "reasoning_tokens INTEGER CHECK(reasoning_tokens IS NULL OR reasoning_tokens >= 0)"},
+            {"provider_status",
+             "provider_status TEXT NOT NULL DEFAULT '' CHECK(length(CAST(provider_status AS BLOB)) <= 64)"},
+            {"incomplete_reason",
+             "incomplete_reason TEXT NOT NULL DEFAULT '' CHECK(length(CAST(incomplete_reason AS BLOB)) <= 64)"},
+        };
+        std::vector<std::string> existingColumns;
+        {
+            Statement info;
+            const auto prepared = prepare(handle, "PRAGMA table_info(agent_provider_turns);", info);
+            if (!prepared.success()) {
+                return common::Result<void>::failure(*prepared.error());
+            }
+            for (;;) {
+                const int step = sqlite3_step(info.get());
+                if (step == SQLITE_DONE) break;
+                if (step != SQLITE_ROW) {
+                    return common::Result<void>::failure(databaseError(
+                        handle, "migration.v72_failed", "Could not inspect agent_provider_turns table schema"));
+                }
+                existingColumns.push_back(columnText(info.get(), 1));
+            }
+        }
+        std::string migration = "BEGIN IMMEDIATE;\n";
+        for (const auto& column : columns) {
+            if (std::find(existingColumns.begin(), existingColumns.end(), column.name) != existingColumns.end()) continue;
+            migration += std::string("ALTER TABLE agent_provider_turns ADD COLUMN ") + column.definition + ";\n";
+        }
+        migration += "PRAGMA user_version = 72;\nCOMMIT;";
+        const auto migrated = execute(handle, migration.c_str(), "migration.v72_failed");
         if (!migrated.success()) {
             static_cast<void>(execute(handle, "ROLLBACK;", "migration.rollback_failed"));
             return common::Result<void>::failure(*migrated.error());

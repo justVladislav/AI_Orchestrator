@@ -103,12 +103,40 @@ struct ProviderAgentTurnResponse {
     // Token usage for this turn. Zero is valid when the provider omits usage.
     models::TokenUsage usage;
 
+    // Bounded diagnostic facts about this response (requested vs reported output limit, reasoning
+    // tokens, provider status / incomplete reason). Deliberately NOT errorCode/errorMessage: those
+    // stay reserved for an Error response (validateTurnResponse), while a response cut at its
+    // output-token limit is a normal MaxOutputTokens turn that still has to explain itself.
+    // Purely informational: it never carries or changes a billing figure.
+    application::ProviderTurnDiagnostics diagnostics;
+
     // Stable provider-neutral error code and message.
     // Must be non-empty when finishReason == Error.
     // MUST NOT contain API keys, secrets, user prompts, or argument/result JSON.
     std::string errorCode;
     std::string errorMessage;
 };
+
+// Stable backend code for a provider refusal that is DURABLE: the account's credit balance, quota or a billing /
+// spend limit is exhausted. Unlike a temporary rate limit (provider.rate_limited) it does not clear by waiting a
+// moment, so nothing may re-dispatch the work on its own account (no retry session, no backoff loop).
+inline constexpr const char* kProviderInsufficientQuotaCode = "provider.insufficient_quota";
+
+// The diagnostics to store and to report for a turn: the adapter's own account, where an adapter reported no
+// requested limit the limit the caller handed to the session (the only honest value left, never a guess about
+// what reached the wire).
+[[nodiscard]] inline application::ProviderTurnDiagnostics turnDiagnosticsOf(
+    const ProviderAgentTurnResponse& turn, std::uint64_t callerRequestedLimit)
+{
+    auto diagnostics = turn.diagnostics;
+    if (!diagnostics.requestedMaxOutputTokens.has_value())
+        diagnostics.requestedMaxOutputTokens = callerRequestedLimit;
+    // Defense in depth beneath the adapters and validateTurnResponse: whatever reaches a stored record or a Run
+    // message has passed the allow-list, even from a session that skipped validation.
+    diagnostics.providerStatus = application::toBoundedDiagnosticToken(diagnostics.providerStatus);
+    diagnostics.incompleteReason = application::toBoundedDiagnosticToken(diagnostics.incompleteReason);
+    return diagnostics;
+}
 
 // ---------------------------------------------------------------------------
 // Tool policy — an optional, provider-neutral restriction applied to a single

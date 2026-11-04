@@ -115,6 +115,7 @@ namespace ai::providers {
 //   - non-ToolUse response has no tool calls
 //   - Error response has a non-empty errorCode
 //   - non-Error response has no errorCode or errorMessage
+//   - diagnostics text fields are short bounded tokens (diagnostics are metadata, never an error)
 //   - tool call count does not exceed maxToolCallsPerTurn
 //   - no tool call has an empty callId
 //   - callIds within the same turn are unique
@@ -149,6 +150,11 @@ namespace ai::providers {
         return common::Result<void>::failure(
             {"agent_session.response.error_fields_without_error",
              "errorCode and errorMessage are only valid for an Error response"});
+    if (!application::isBoundedDiagnosticToken(resp.diagnostics.providerStatus)
+            || !application::isBoundedDiagnosticToken(resp.diagnostics.incompleteReason))
+        return common::Result<void>::failure(
+            {"agent_session.response.invalid_diagnostics",
+             "diagnostic text must be a short token of [A-Za-z0-9_.:-]"});
     if (resp.toolCalls.size() > maxToolCallsPerTurn)
         return common::Result<void>::failure(
             {"agent_session.response.per_turn_limit_exceeded",
@@ -186,7 +192,8 @@ public:
     // Result::failure codes:
     //   "agent_session.invalid_state"    — called after session already started
     //   "provider.auth_failed"           — credential rejected
-    //   "provider.rate_limited"          — provider rate limit hit
+    //   "provider.rate_limited"          — temporary provider rate limit hit
+    //   "provider.insufficient_quota"    — durable: credit balance / quota / spend limit exhausted
     //   "provider.timeout"               — turn timed out
     //   "provider.network_error"         — transport failure
     //   "provider.invalid_response"      — malformed provider response

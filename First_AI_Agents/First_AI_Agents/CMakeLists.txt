@@ -116,6 +116,7 @@ set(APPLICATION_SOURCES
     sourceFiles/application/projects/TaskService.cpp
     sourceFiles/application/execution/MockWorkflowRunner.cpp
     sourceFiles/application/execution/RunStageSettlement.cpp
+    sourceFiles/application/text/DiagnosticText.cpp
     sourceFiles/application/execution/RunManager.cpp
     sourceFiles/application/execution/OrchestrationService.cpp
     sourceFiles/application/projects/WorkspaceContextService.cpp

@@ -1272,6 +1272,14 @@ AgentToolTurnLoopOutcome AgentToolTurnLoopRunner::run(
     IRunEventSink* eventSink,
     const StageId* stageId) const
 {
+    // A provider turn whose record the store refused. The record is audit/diagnostic data only, so the loss
+    // never changes the Run's result, usage or error code and never triggers another provider request - but it
+    // is not silent. It is applied ONCE, after the whole loop has produced its final outcome (the loop's many
+    // return paths set success/errorMessage at different moments, so no earlier point is reliable): returned in
+    // diagnosticWarnings on every outcome, named on a failed outcome's message, and published as a stage
+    // progress event when a sink exists.
+    std::string lostTurnRecords;
+    auto result = [&]() -> AgentToolTurnLoopOutcome {
     AgentToolTurnLoopOutcome outcome;
     if (request.providerBudgetGuard) {
         request.sessionRequest.turnTimeout =
@@ -1659,6 +1667,9 @@ AgentToolTurnLoopOutcome AgentToolTurnLoopRunner::run(
             record.outputTokens = static_cast<int>(turn.usage.outputTokens);
             record.callCount = turn.toolCalls.size();
             record.createdAt = std::chrono::system_clock::now();
+            // The adapter's own account of the response; where an adapter reported no requested limit, the
+            // limit this loop handed to the session is the only honest value left.
+            record.diagnostics = providers::turnDiagnosticsOf(turn, request.sessionRequest.maxOutputTokens);
             switch (turn.finishReason) {
             case providers::ProviderAgentFinishReason::Stop: record.finishReason = "stop"; break;
             case providers::ProviderAgentFinishReason::ToolUse: record.finishReason = "tool_use"; break;
@@ -1669,7 +1680,16 @@ AgentToolTurnLoopOutcome AgentToolTurnLoopRunner::run(
             }
             // Best-effort audit trail: a persistence hiccup here must not mask a
             // real analysis result the caller is otherwise entitled to see.
-            static_cast<void>(toolExecution_.recordTurn(record));
+            if (const auto stored = toolExecution_.recordTurn(record); !stored.success()) {
+                const std::string note = "provider turn " + std::to_string(record.turnIndex)
+                    + " record not stored (" + stored.error()->code + ")";
+                if (lostTurnRecords.size() < 256) {
+                    if (!lostTurnRecords.empty()) lostTurnRecords += "; ";
+                    lostTurnRecords += note;
+                }
+                if (eventSink != nullptr && stageId != nullptr)
+                    eventSink->publish(progressEvent(request.runId, *stageId, 0.0, "Diagnostics lost: " + note));
+            }
 
             if (turn.finishReason == providers::ProviderAgentFinishReason::ToolUse) {
                 // A turn the Backend restricted to terminal tools must never
@@ -1914,9 +1934,10 @@ AgentToolTurnLoopOutcome AgentToolTurnLoopRunner::run(
                 // at the limit this session asked for (Run 80f904ed: 4 054 produced, the limit it
                 // asked for is not stored anywhere).
                 loopFailureOutcome.errorMessage =
-                    "Analysis response reached its output-token limit (requested limit "
-                    + std::to_string(request.sessionRequest.maxOutputTokens) + ", produced "
-                    + std::to_string(turn.usage.outputTokens) + " in that turn)";
+                    "Analysis response reached its output-token limit ("
+                    + describeOutputTokenCut(turn.usage.outputTokens,
+                        providers::turnDiagnosticsOf(turn, request.sessionRequest.maxOutputTokens))
+                    + ")";
                 return std::nullopt;
             }
             if (turn.finishReason == providers::ProviderAgentFinishReason::Error) {
@@ -2811,6 +2832,16 @@ AgentToolTurnLoopOutcome AgentToolTurnLoopRunner::run(
         return outcome;
     }
     }
+    }();
+
+    if (!lostTurnRecords.empty()) {
+        result.diagnosticWarnings.assign(1, lostTurnRecords);
+        if (!result.success) {
+            if (!result.errorMessage.empty()) result.errorMessage += " ";
+            result.errorMessage += "[" + lostTurnRecords + "]";
+        }
+    }
+    return result;
 }
 
 } // namespace ai::application

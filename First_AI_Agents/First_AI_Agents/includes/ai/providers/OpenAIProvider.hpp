@@ -5,6 +5,10 @@
 
 #include <string>
 
+namespace ai::http {
+class IHttpClient;
+}
+
 namespace ai::providers {
 
 /**
@@ -58,6 +62,26 @@ public:
      * errors without catching vendor-specific exceptions.
      */
     models::ModelResponse generate(const models::ModelRequest& request) override;
+
+    /**
+     * @brief The response of one request together with the Backend's STRUCTURED failure code.
+     *
+     * `errorCode` is empty on success and for every failure that has no received HTTP error response (missing key,
+     * transport error, an unusable success body, an exception): those stay on the caller's explicit text fallback.
+     * For ANY received non-2xx response it is the stable code the shared classifier chose from the HTTP status (and,
+     * for a 429, the structured quota fields) - never derived from the human message.
+     */
+    struct DetailedResult {
+        models::ModelResponse response;
+        std::string errorCode;
+    };
+
+    /// Performs the single request over the real transport. generate() is a thin wrapper over this.
+    [[nodiscard]] DetailedResult generateDetailed(const models::ModelRequest& request);
+
+    /// The same, over an explicit transport (the seam for deterministic tests; production passes the real client).
+    [[nodiscard]] DetailedResult generateDetailed(
+        const models::ModelRequest& request, http::IHttpClient& transport);
 
 private:
     // Stored once so every request can add Authorization without re-reading

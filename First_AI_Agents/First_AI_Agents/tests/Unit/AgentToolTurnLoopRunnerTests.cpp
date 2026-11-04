@@ -17,6 +17,7 @@
 #include "ai/application/execution/RunWorkspaceScopeService.hpp"
 #include "ai/application/Sha256.hpp"
 #include "ai/infrastructure/FileChangeProposalStore.hpp"
+#include "FailableTurnSessionRepository.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -293,7 +294,7 @@ public:
 
 struct Fixture {
     TempDir tempDir;
-    InMemoryAgentToolSessionRepository toolSessions;
+    ai::application::testing::FailableTurnSessionRepository toolSessions;
     InMemoryAgentToolAuditRepository toolAudits;
     AlwaysSucceedExecutor executor;
     ScriptedProviderAgentSessionFactory sessionFactory;
@@ -2707,8 +2708,181 @@ void testMaxOutputTokensFailureNamesTheRequestedLimitAndTheProducedTokens()
     const auto outcome = runner.run(std::move(request), {}, nullptr, nullptr);
     assert(!outcome.success && outcome.errorCode == "provider.max_output_tokens");
     assert(outcome.errorMessage
-        == "Analysis response reached its output-token limit (requested limit 16384, produced "
-           "4054 in that turn)");
+        == "Analysis response reached its output-token limit (requested limit 16384, provider reported limit "
+           "none, produced 4054 in that turn)");
+}
+
+// Item 2 (cut diagnostics): the cut turn's explanation must reach BOTH places a person can look - the Run's
+// failure text and the stored turn record - and must not change the money: the outcome's usage is exactly the
+// turn's own usage (reasoning tokens are a subset of the output, never added).
+void testMaxOutputTokensFailureAndTurnRecordCarryTheProviderDiagnostics()
+{
+    Fixture fx;
+    TempDir workspace;
+    auto toolExecution = fx.makeToolExecution();
+    auto changeProposals = fx.makeChangeProposals();
+    AgentToolTurnLoopRunner runner(fx.sessionFactory, toolExecution, changeProposals);
+    auto session = std::make_unique<ScriptedProviderAgentSession>();
+    ProviderAgentTurnResponse cut;
+    cut.turnIndex = 0;
+    cut.finishReason = ProviderAgentFinishReason::MaxOutputTokens;
+    cut.usage.inputTokens = 100;
+    cut.usage.outputTokens = 9400;
+    cut.diagnostics.requestedMaxOutputTokens = 64000;
+    cut.diagnostics.echoedMaxOutputTokens = 32000;
+    cut.diagnostics.reasoningTokens = 7000;
+    cut.diagnostics.providerStatus = "incomplete";
+    cut.diagnostics.incompleteReason = "max_output_tokens";
+    session->responses.push(common::Result<ProviderAgentTurnResponse>::ok(std::move(cut)));
+    fx.sessionFactory.preparedSessions.push(std::move(session));
+
+    auto request = makeRequest(workspace.path);
+    request.sessionRequest.maxOutputTokens = 64000;
+    const auto outcome = runner.run(std::move(request), {}, nullptr, nullptr);
+    assert(!outcome.success && outcome.errorCode == "provider.max_output_tokens");
+    assert(outcome.errorMessage
+        == "Analysis response reached its output-token limit (requested limit 64000, provider reported limit "
+           "32000, produced 9400 (reasoning 7000) in that turn, incomplete reason max_output_tokens, provider "
+           "status incomplete)");
+    assert(outcome.usage.inputTokens == 100 && outcome.usage.outputTokens == 9400);
+
+    const auto sessions = fx.toolSessions.listForRun("run-1");
+    assert(sessions.success() && sessions.value().size() == 1);
+    const auto turns = fx.toolSessions.listTurns(sessions.value().front().sessionId);
+    assert(turns.success() && turns.value().size() == 1);
+    const auto& stored = turns.value().front();
+    assert(stored.finishReason == "max_output_tokens");
+    assert(stored.outputTokens == 9400);
+    assert(stored.diagnostics.requestedMaxOutputTokens == std::optional<std::uint64_t>(64000));
+    assert(stored.diagnostics.echoedMaxOutputTokens == std::optional<std::uint64_t>(32000));
+    assert(stored.diagnostics.reasoningTokens == std::optional<std::uint64_t>(7000));
+    assert(stored.diagnostics.providerStatus == "incomplete");
+    assert(stored.diagnostics.incompleteReason == "max_output_tokens");
+}
+
+struct RecordingEventSink final : IRunEventSink {
+    std::vector<RunEvent> events;
+    void publish(const RunEvent& event) override { events.push_back(event); }
+};
+
+ProviderAgentTurnResponse cutResponse()
+{
+    ProviderAgentTurnResponse cut;
+    cut.turnIndex = 0;
+    cut.finishReason = ProviderAgentFinishReason::MaxOutputTokens;
+    cut.usage.inputTokens = 100;
+    cut.usage.outputTokens = 9400;
+    cut.diagnostics.requestedMaxOutputTokens = 64000;
+    cut.diagnostics.reasoningTokens = 7000;
+    cut.diagnostics.providerStatus = "incomplete";
+    cut.diagnostics.incompleteReason = "max_output_tokens";
+    return cut;
+}
+
+// R1: a store that refuses the turn record must not make the loss silent, and must not change anything else:
+// the cut stays the failure cause, the usage stays, the provider is asked exactly once.
+void testRefusedTurnRecordIsNamedAndKeepsTheCutCauseAndUsage()
+{
+    Fixture fx;
+    TempDir workspace;
+    fx.toolSessions.failTurnInserts = true;
+    auto toolExecution = fx.makeToolExecution();
+    auto changeProposals = fx.makeChangeProposals();
+    AgentToolTurnLoopRunner runner(fx.sessionFactory, toolExecution, changeProposals);
+    auto session = std::make_unique<ScriptedProviderAgentSession>();
+    session->responses.push(common::Result<ProviderAgentTurnResponse>::ok(cutResponse()));
+    fx.sessionFactory.preparedSessions.push(std::move(session));
+
+    RecordingEventSink sink;
+    const StageId stage = "stage-1";
+    auto request = makeRequest(workspace.path);
+    request.sessionRequest.maxOutputTokens = 64000;
+    const auto outcome = runner.run(std::move(request), {}, &sink, &stage);
+
+    assert(!outcome.success && outcome.errorCode == "provider.max_output_tokens");
+    assert(outcome.errorMessage.find("requested limit 64000") != std::string::npos);
+    assert(outcome.errorMessage.find("provider turn 0 record not stored (persistence.insert_failed)")
+        != std::string::npos);
+    assert(outcome.usage.inputTokens == 100 && outcome.usage.outputTokens == 9400);
+    assert(fx.sessionFactory.preparedSessions.empty());   // the one prepared session was the only one used
+    assert(fx.toolSessions.refusedTurnInserts == 1);       // one attempt to store, no retry loop
+    const auto sessions = fx.toolSessions.listForRun("run-1");
+    assert(sessions.success() && sessions.value().size() == 1);
+    const auto turns = fx.toolSessions.listTurns(sessions.value().front().sessionId);
+    assert(turns.success() && turns.value().empty());
+    bool announced = false;
+    for (const auto& event : sink.events)
+        if (event.message.find("Diagnostics lost: provider turn 0 record not stored") != std::string::npos)
+            announced = true;
+    assert(announced);
+}
+
+// Follow-up of R1: a SUCCESSFUL Worker whose turn records the store refuses, with no event sink at all (the
+// Manifest executor passes none), still returns the loss in a result field - and nothing else changes.
+void testSuccessfulWorkerWithRefusedTurnRecordsReturnsTheWarningWithoutASink()
+{
+    const auto runOnce = [](bool refuse) {
+        Fixture fx;
+        TempDir workspace;
+        fx.toolSessions.failTurnInserts = refuse;
+        auto toolExecution = fx.makeToolExecution();
+        auto changeProposals = fx.makeChangeProposals();
+        AgentToolTurnLoopRunner runner(fx.sessionFactory, toolExecution, changeProposals);
+        auto session = std::make_unique<ScriptedProviderAgentSession>();
+        session->responses.push(common::Result<ProviderAgentTurnResponse>::ok(toolUseResponse(0, "call-1")));
+        session->responses.push(common::Result<ProviderAgentTurnResponse>::ok(stopResponse(1, kSimpleProposal)));
+        fx.sessionFactory.preparedSessions.push(std::move(session));
+        std::stop_source ss;
+        auto outcome = runner.run(makeRequest(workspace.path), ss.get_token(), nullptr, nullptr);
+        return std::make_pair(std::move(outcome), fx.toolSessions.refusedTurnInserts);
+    };
+
+    const auto control = runOnce(false);
+    assert(control.first.success && control.first.diagnosticWarnings.empty());
+
+    const auto refused = runOnce(true);
+    const auto& outcome = refused.first;
+    assert(outcome.success);                                   // the result is untouched
+    assert(outcome.errorCode == control.first.errorCode && outcome.errorMessage == control.first.errorMessage);
+    assert(outcome.proposal.has_value() && outcome.proposal->state == ChangeSetState::ReadyForReview);
+    assert(outcome.usage.inputTokens == control.first.usage.inputTokens
+        && outcome.usage.outputTokens == control.first.usage.outputTokens);
+    assert(outcome.totalTurns == control.first.totalTurns);
+    assert(refused.second == 2);                                // each of the two turns tried the store once
+    assert(outcome.diagnosticWarnings.size() == 1);
+    assert(outcome.diagnosticWarnings.front().find("provider turn 0 record not stored (persistence.insert_failed)")
+        != std::string::npos);
+    assert(outcome.diagnosticWarnings.front().find("provider turn 1 record not stored") != std::string::npos);
+}
+
+// R2: provider words are an allow-list - a secret-shaped reason never reaches the Run message or the record,
+// even from a session that skipped the adapters' own validation.
+void testSecretShapedProviderWordNeverReachesTheMessageOrTheStoredRecord()
+{
+    Fixture fx;
+    TempDir workspace;
+    auto toolExecution = fx.makeToolExecution();
+    auto changeProposals = fx.makeChangeProposals();
+    AgentToolTurnLoopRunner runner(fx.sessionFactory, toolExecution, changeProposals);
+    auto session = std::make_unique<ScriptedProviderAgentSession>();
+    auto cut = cutResponse();
+    cut.diagnostics.incompleteReason = "content_filter_sk-secret-key_0123456789";
+    cut.diagnostics.providerStatus = "sk-secret-key";
+    session->responses.push(common::Result<ProviderAgentTurnResponse>::ok(std::move(cut)));
+    fx.sessionFactory.preparedSessions.push(std::move(session));
+
+    const auto outcome = runner.run(makeRequest(workspace.path), {}, nullptr, nullptr);
+    assert(!outcome.success && outcome.errorCode == "provider.max_output_tokens");
+    assert(outcome.errorMessage.find("secret") == std::string::npos);
+    assert(outcome.errorMessage.find("incomplete reason unrecognized") != std::string::npos);
+    const auto sessions = fx.toolSessions.listForRun("run-1");
+    assert(sessions.success() && sessions.value().size() == 1);
+    const auto turns = fx.toolSessions.listTurns(sessions.value().front().sessionId);
+    assert(turns.success() && turns.value().size() == 1);
+    const auto& stored = turns.value().front().diagnostics;
+    assert(stored.incompleteReason == kUnrecognizedDiagnosticWord);
+    assert(stored.providerStatus == kUnrecognizedDiagnosticWord);
+    assert(stored.reasoningTokens == std::optional<std::uint64_t>(7000));
 }
 
 } // namespace
@@ -2719,6 +2893,10 @@ int runAgentToolTurnLoopRunnerTests()
     testEmptyChangeSetOnTheForcedLastTurnReportsTheExhaustedAllocation();
     testEmptyChangeSetOnTheSessionLimitTurnNamesTheSessionLimit();
     testMaxOutputTokensFailureNamesTheRequestedLimitAndTheProducedTokens();
+    testMaxOutputTokensFailureAndTurnRecordCarryTheProviderDiagnostics();
+    testRefusedTurnRecordIsNamedAndKeepsTheCutCauseAndUsage();
+    testSuccessfulWorkerWithRefusedTurnRecordsReturnsTheWarningWithoutASink();
+    testSecretShapedProviderWordNeverReachesTheMessageOrTheStoredRecord();
     testAllocationAndSessionLimitReachedTogetherAreBothNamed();
     testExhaustionInARepairSessionNamesTheRepairSession();
     testExhaustionMessageNamesTheRetryPhase();

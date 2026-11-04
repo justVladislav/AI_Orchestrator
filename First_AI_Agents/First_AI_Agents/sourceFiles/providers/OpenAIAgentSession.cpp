@@ -1,6 +1,7 @@
 #include "ai/providers/OpenAIAgentSession.hpp"
 #include "ai/http/HttpRequest.hpp"
 #include "ai/http/HttpResponse.hpp"
+#include "ai/providers/OpenAIHttpTransport.hpp"
 #include "ai/providers/OpenAIResponseParser.hpp"
 #include "ai/providers/StrictSchemaValidation.hpp"
 
@@ -8,6 +9,8 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -15,6 +18,18 @@
 namespace ai::providers {
 
 namespace {
+
+// A non-negative integer member, or nullopt when the member is absent, null, negative or not an integer:
+// "the provider did not say" must never read as zero.
+std::optional<std::uint64_t> nonNegativeCounter(const nlohmann::json& object, const char* field)
+{
+    if (!object.is_object()) return std::nullopt;
+    const auto it = object.find(field);
+    if (it == object.end() || !it->is_number_integer()) return std::nullopt;
+    if (it->is_number_unsigned()) return it->get<std::uint64_t>();
+    const auto value = it->get<std::int64_t>();
+    return value < 0 ? std::nullopt : std::optional<std::uint64_t>(static_cast<std::uint64_t>(value));
+}
 
 template <typename T>
 common::Result<T> httpStatusError(int statusCode, const std::string& responseBody)
@@ -28,19 +43,16 @@ common::Result<T> httpStatusError(int statusCode, const std::string& responseBod
         if (!apiMessage.empty()) message += ": " + apiMessage;
         return message;
     };
-    if (statusCode == 401)
-        return common::Result<T>::failure(
-            {"provider.auth_failed", withDetail("Authentication failed")});
-    if (statusCode == 429)
-        return common::Result<T>::failure(
-            {"provider.rate_limited", withDetail("Rate limit exceeded")});
-    if (statusCode >= 500 && statusCode < 600)
-        return common::Result<T>::failure(
-            {"provider.server_error",
-             withDetail("Provider returned HTTP " + std::to_string(statusCode))});
+    // The code comes from the one shared classifier (status first, structured quota fields only for a 429).
+    const auto failure = openai_detail::classifyOpenAIHttpFailure(statusCode, responseBody);
+    if (!failure.durableMessage.empty())
+        return common::Result<T>::failure({failure.code, failure.durableMessage});
+    if (failure.code == "provider.auth_failed")
+        return common::Result<T>::failure({failure.code, withDetail("Authentication failed")});
+    if (failure.code == "provider.rate_limited")
+        return common::Result<T>::failure({failure.code, withDetail("Rate limit exceeded")});
     return common::Result<T>::failure(
-        {"provider.request_failed",
-         withDetail("Provider returned HTTP " + std::to_string(statusCode))});
+        {failure.code, withDetail("Provider returned HTTP " + std::to_string(statusCode))});
 }
 
 common::Result<void> validateToolResultCorrelation(
@@ -89,6 +101,11 @@ OpenAIAgentSession::OpenAIAgentSession(
     : apiKey_(std::move(apiKey))
     , endpoint_(std::move(endpoint))
     , httpClient_(std::move(httpClient))
+{
+}
+
+OpenAIAgentSession::OpenAIAgentSession(std::string apiKey, std::string endpoint)
+    : OpenAIAgentSession(std::move(apiKey), std::move(endpoint), std::make_shared<OpenAIHttpTransport>())
 {
 }
 
@@ -275,6 +292,11 @@ common::Result<ProviderAgentTurnResponse> OpenAIAgentSession::submitToolResults(
 
     nlohmann::json body;
     body["model"] = model_;
+    // previous_response_id does not carry the earlier top-level instructions: the Responses API requires the stable
+    // trusted instructions to be sent again with every request. Same text and same rule as beginSession (an empty
+    // source prompt sends none); tool-result content is data and never touches this member.
+    if (!systemPrompt_.empty())
+        body["instructions"] = systemPrompt_;
     body["previous_response_id"] = previousResponseId_;
     body["input"] = std::move(inputArr);
     if (nextTurnPolicy.has_value()) {
@@ -426,6 +448,7 @@ common::Result<ProviderAgentTurnResponse> OpenAIAgentSession::doTurn(
             (json.contains("incomplete_details") && json["incomplete_details"].is_object())
             ? json["incomplete_details"].value("reason", std::string{})
             : std::string{};
+        resp.diagnostics.incompleteReason = application::toBoundedDiagnosticToken(reason);
         if (reason == "max_output_tokens") {
             resp.finishReason = ProviderAgentFinishReason::MaxOutputTokens;
         } else {
@@ -445,6 +468,18 @@ common::Result<ProviderAgentTurnResponse> OpenAIAgentSession::doTurn(
     // The shared parser also reports the cached/cache-write subsets of
     // input_tokens, exactly as the single-shot OpenAIProvider sees them.
     resp.usage = openai_detail::parseOpenAITokenUsage(json);
+
+    // Bounded diagnostics, kept apart from the error fields: the limit this session put on the wire, the
+    // limit the response reported back (absent or null stays absent - never a guessed 0), the reasoning share
+    // of the output (a SUBSET of usage.output_tokens, not an addition to it) and the provider's status word.
+    resp.diagnostics.requestedMaxOutputTokens = maxOutputTokens_;
+    resp.diagnostics.echoedMaxOutputTokens = nonNegativeCounter(json, "max_output_tokens");
+    if (json.contains("usage") && json["usage"].is_object() && json["usage"].contains("output_tokens_details")
+            && json["usage"]["output_tokens_details"].is_object()) {
+        resp.diagnostics.reasoningTokens =
+            nonNegativeCounter(json["usage"]["output_tokens_details"], "reasoning_tokens");
+    }
+    resp.diagnostics.providerStatus = application::toBoundedDiagnosticToken(status);
 
     if (auto v = validateTurnResponse(resp, turnIndex_, maxToolCallsPerTurn_); !v.success())
         return common::Result<ProviderAgentTurnResponse>::failure(*v.error());

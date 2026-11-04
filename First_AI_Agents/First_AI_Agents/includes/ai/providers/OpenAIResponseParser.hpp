@@ -28,6 +28,27 @@ namespace ai::providers::openai_detail {
 [[nodiscard]] std::string extractOpenAIErrorMessage(const std::string& responseBody);
 
 /**
+ * @brief The Backend's verdict on one received non-2xx OpenAI HTTP response.
+ *
+ * `code` is ALWAYS one of the stable Backend codes, chosen by the HTTP status (even for an empty or malformed
+ * body): 401 provider.auth_failed, 429 provider.rate_limited, 5xx provider.server_error, any other status
+ * provider.request_failed. The one refinement is a 429 whose STRUCTURED error.code / error.type names an exhausted
+ * credit balance, spend/usage limit or quota: that is provider.insufficient_quota and `durableMessage` is the fixed,
+ * bounded text for it. The provider's own message and the raw error.code are never part of the result.
+ */
+struct OpenAIHttpFailure {
+    std::string code;
+    std::string durableMessage;   // non-empty only for provider.insufficient_quota
+};
+
+/// Shared by the single-shot OpenAIProvider and the agent session. Call it only for a non-2xx response.
+[[nodiscard]] OpenAIHttpFailure classifyOpenAIHttpFailure(int statusCode, const std::string& responseBody);
+
+/// True exactly when the shared classifier calls the response a durable credit/quota refusal. The transport uses it
+/// to refuse a retry of such a response (it will not clear by waiting); any other status keeps the retry policy.
+[[nodiscard]] bool isDurableOpenAIQuotaRefusal(int statusCode, const std::string& responseBody);
+
+/**
  * @brief Converts OpenAI token counters into the project-wide TokenUsage shape.
  *
  * The one OpenAI usage parser: the single-shot provider and the agent session

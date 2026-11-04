@@ -770,11 +770,20 @@ WorkflowResult ExecutionProfileWorkflowRunner::run(
         const auto result = workspaceTurnLoop_->run(
             std::move(loopRequest), stopToken, &eventSink, &stage.id);
 
+        // The stage's saved report carries the run-level notes next to the worker's text (the dependency
+        // context `outcome.output` below stays the worker's own text): a refused provider-turn record is
+        // named here even though the stage succeeded.
+        std::string reportText = result.finalText;
+        if (!result.diagnosticWarnings.empty()) {
+            reportText += "\n\n## Diagnostic warnings\n\nThese notes concern the recording of the run, not its "
+                          "result.\n\n";
+            for (const auto& warning : result.diagnosticWarnings) reportText += "- " + warning + "\n";
+        }
         std::optional<ArtifactId> artifactId;
-        if (artifactService_ != nullptr && !result.finalText.empty()) {
+        if (artifactService_ != nullptr && !reportText.empty()) {
             const auto artifact = artifactService_->createArtifact(
                 context.run.id, stage.id, ArtifactKind::Report,
-                assignment.stageType + "-output.md", "text/markdown", result.finalText);
+                assignment.stageType + "-output.md", "text/markdown", reportText);
             if (artifact.success()) artifactId = artifact.value().id;
         }
 

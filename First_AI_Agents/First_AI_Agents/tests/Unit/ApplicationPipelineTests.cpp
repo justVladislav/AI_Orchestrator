@@ -3,6 +3,7 @@
 #include "ai/application/execution/OrchestrationService.hpp"
 #include "ai/application/projects/ProjectService.hpp"
 #include "ai/application/execution/RunStageSettlement.hpp"
+#include "ai/application/planning/IOutcomeBriefTrigger.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -15,6 +16,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -876,6 +878,131 @@ void testACrashBetweenTheStagesAndTheRunIsFinishedByRecovery()
     }
 }
 
+// An exception that escapes a workflow runner used to leave the RunManager worker thread: nothing
+// caught it, so std::terminate ended the whole process (a Debug CRT dialog, a Run left Interrupted by the next
+// startup, and the usage of the work already paid for lost). The boundary must turn ANY C++ exception into an
+// ordinary Failed Run, settle the stages, keep the usage already persisted and leave the worker alive.
+void testAnEscapedRunnerExceptionFailsTheRunAndKeepsTheWorkerAlive()
+{
+    using namespace ai::application;
+    using Fixture = ScriptedFixture<>;
+
+    const auto expectFailedWithUsage = [](Fixture& f, const std::string& title, const std::string& expectedFragment) {
+        const auto started = f.service.startRun({f.project.id, title, "The runner throws"});
+        assert(started.success());
+        const Run run = waitForTerminalRun(f.runs, started.value());
+        assert(run.status == RunStatus::Failed && "an escaped exception ends the Run as Failed, never Running/Interrupted");
+        assert(run.errorMessage.find(expectedFragment) != std::string::npos);
+        assert(run.finishedAt.has_value());
+        assert(run.usage.outputTokens == 7 && run.usage.inputTokens == 100
+            && "the usage persisted before the exception is kept");
+        const auto stages = f.stagesOf(run.id);
+        assert(stages.at("planning").status == StageStatus::Completed);
+        assert(stages.at("execution").status == StageStatus::Failed
+            && stages.at("execution").finishedAt == run.finishedAt
+            && "a stage the runner left Running is settled with the Run's own instant");
+    };
+    const auto throwingAfterUsage = [](auto thrower) {
+        return [thrower](const WorkflowRunContext& context, std::stop_token, IRunEventSink& sink) {
+            sink.publish(stageEvent(RunEventType::StageStarted, context, "planning"));
+            sink.publish(stageEvent(RunEventType::StageCompleted, context, "planning"));
+            sink.publish(stageEvent(RunEventType::StageStarted, context, "execution"));
+            ProviderExecutionBudgetUsage usage;
+            usage.turnsStarted = 1;
+            usage.inputTokens = 100;
+            usage.outputTokens = 7;
+            assert(sink.persistProviderBudgetUsage(context.run.id, usage).success());
+            thrower();
+            return WorkflowResult {true, RunStatus::Completed, "unreachable", {}};
+        };
+    };
+
+    // (1) A standard exception: its message is part of the Run's error (and is valid UTF-8 even when what() is not).
+    {
+        Fixture f;
+        f.runner.behaviour = throwingAfterUsage([] { throw std::runtime_error("boom from the runner"); });
+        expectFailedWithUsage(f, "std exception", "boom from the runner");
+
+        // The worker survived: the next Run on the same manager completes normally.
+        f.runner.behaviour = [](const WorkflowRunContext&, std::stop_token, IRunEventSink&) {
+            return WorkflowResult {true, RunStatus::Completed, "done", {}};
+        };
+        const auto next = f.service.startRun({f.project.id, "After the exception", "Must still run"});
+        assert(next.success());
+        assert(waitForTerminalRun(f.runs, next.value()).status == RunStatus::Completed);
+    }
+
+    // (2) A non-standard exception object is caught too and reported without any what().
+    {
+        Fixture f;
+        f.runner.behaviour = throwingAfterUsage([] { throw 42; });
+        expectFailedWithUsage(f, "unknown exception", "of an unknown type");
+    }
+
+    // (3) what() with bytes that are not UTF-8 (an OEM-encoded compiler line) never reaches the Run unchanged.
+    {
+        Fixture f;
+        f.runner.behaviour = throwingAfterUsage([] { throw std::runtime_error("bad \xAE\xE8\xA8\xA1\xAA\xA0 text"); });
+        const auto started = f.service.startRun({f.project.id, "invalid bytes", "The runner throws"});
+        const Run run = waitForTerminalRun(f.runs, started.value());
+        assert(run.status == RunStatus::Failed);
+        for (std::size_t i = 0; i < run.errorMessage.size(); ++i) {
+            const auto byte = static_cast<unsigned char>(run.errorMessage[i]);
+            if (byte < 0x80) continue;
+            // Every non-ASCII byte must belong to a well-formed UTF-8 sequence.
+            const std::size_t length = byte >= 0xF0 ? 4 : byte >= 0xE0 ? 3 : byte >= 0xC2 ? 2 : 0;
+            assert(length != 0 && i + length <= run.errorMessage.size());
+            for (std::size_t k = 1; k < length; ++k) {
+                assert((static_cast<unsigned char>(run.errorMessage[i + k]) & 0xC0) == 0x80);
+            }
+            i += length - 1;
+        }
+    }
+}
+
+// The event handler is observer code. When it throws on the terminal event, the Run's committed outcome
+// must not change and the finalisation steps that follow the notification (here: the Outcome Brief nudge,
+// which runs after the Work Ledger and before the claim release) must still run.
+class RecordingOutcomeBriefTrigger final : public ai::application::IOutcomeBriefTrigger {
+public:
+    std::atomic<int> runCalls {0};
+    void runMayHaveChanged(const std::string&) noexcept override { ++runCalls; }
+    void proposalResolved(const std::string&) noexcept override {}
+};
+
+void testAThrowingEventHandlerDoesNotSkipTheFinalisationAfterTheNotification()
+{
+    using namespace ai::application;
+    using Fixture = ScriptedFixture<>;
+
+    Fixture f;
+    RecordingOutcomeBriefTrigger trigger;
+    f.manager.setOutcomeBriefTrigger(&trigger);
+    std::atomic<int> handlerCalls {0};
+    // Throws on the TERMINAL event only, so the failure lands exactly where finishRun() notifies and nothing earlier
+    // (queueing, starting, stages) can fail first and hide the finalisation path under test.
+    f.manager.setEventHandler([&](const RunEvent& event) {
+        if (event.type != RunEventType::RunFailed) return;
+        ++handlerCalls;
+        throw std::runtime_error("the UI adapter failed");
+    });
+    f.runner.behaviour = [](const WorkflowRunContext& context, std::stop_token, IRunEventSink& sink) {
+        sink.publish(stageEvent(RunEventType::StageStarted, context, "planning"));
+        sink.publish(stageEvent(RunEventType::StageCompleted, context, "planning"));
+        return WorkflowResult {false, RunStatus::Failed, "the verification failed", {}};
+    };
+    const auto started = f.service.startRun({f.project.id, "Throwing handler", "Observer fails on every event"});
+    assert(started.success());
+    const Run run = waitForTerminalRun(f.runs, started.value());
+    // The outcome is exactly what the runner returned, not the handler's exception.
+    assert(run.status == RunStatus::Failed && run.errorMessage == "the verification failed");
+    // finishRun commits the Run BEFORE notifying, so the Run turning terminal does not yet prove the later
+    // steps ran: wait for the one this test observes.
+    waitUntil([&] { return trigger.runCalls.load() == 1; });
+    assert(handlerCalls.load() >= 1 && "the handler really was called, and really threw");
+    assert(trigger.runCalls.load() == 1 && "the finalisation after the notification ran exactly once");
+}
+
 } // namespace
 
 int runApplicationPipelineTests()
@@ -893,5 +1020,7 @@ int runApplicationPipelineTests()
     testCancellingAQueuedRunSettlesItsStages();
     testASettlementIsIdempotentAndNeverTouchesATerminalStage();
     testACrashBetweenTheStagesAndTheRunIsFinishedByRecovery();
+    testAnEscapedRunnerExceptionFailsTheRunAndKeepsTheWorkerAlive();
+    testAThrowingEventHandlerDoesNotSkipTheFinalisationAfterTheNotification();
     return 0;
 }

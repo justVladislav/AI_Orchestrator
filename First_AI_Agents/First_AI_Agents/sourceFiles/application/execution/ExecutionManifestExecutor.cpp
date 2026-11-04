@@ -7,6 +7,7 @@
 #include "ai/application/verification/ManifestVerificationRepairability.hpp"
 #include "ai/application/agents/ModelExecutionService.hpp"
 #include "ai/application/Sha256.hpp"
+#include "ai/application/text/DiagnosticText.hpp"
 #include "ai/application/verification/VerificationEnvironmentDiscoveryService.hpp"
 
 #include <algorithm>
@@ -489,6 +490,9 @@ struct VerificationRepairScope {
     // Unique task ids, in dependency (topological) order - see
     // topologicallyOrderRepairScope below.
     std::vector<std::string> taskIds;
+    // Why the scope is NOT eligible (empty when it is). Backend-authored text built only from diagnostic
+    // codes and the manifest's own ids; it is what the Run's records say about why no repair session opened.
+    std::string reason;
 };
 
 // Real-Run observation (bb56e001-eac0-4b59-8d0b-d037c6bc1031, 2026-09-15): a
@@ -551,8 +555,15 @@ VerificationRepairScope determineVerificationRepairScope(
     const std::unordered_map<std::string, ManifestTaskState>& taskStates)
 {
     VerificationRepairScope scope;
+    const auto refuse = [](std::string reason) {
+        VerificationRepairScope refused;
+        // The reason carries manifest ids (any Unicode): cut on a character boundary, never inside one.
+        if (reason.size() > 300) reason.resize(utf8SafePrefixLength(reason, 300));
+        refused.reason = std::move(reason);
+        return refused;
+    };
     if (verification.proposalSafetyStatus != ExecutionVerificationStatus::Passed) {
-        return scope;
+        return refuse("proposal safety verification did not pass (a cross-proposal conflict has no single owner task)");
     }
     std::unordered_map<std::string, std::string> requirementOwner;
     std::unordered_map<std::string, const ExecutionManifestTask*> taskById;
@@ -574,10 +585,12 @@ VerificationRepairScope determineVerificationRepairScope(
     // closed for the WHOLE wave rather than spend the one bounded repair
     // session on a subset that cannot actually help.
     for (const auto& diagnostic : verification.diagnostics) {
-        if (!diagnostic.requirementId.has_value()) return {};
+        if (!diagnostic.requirementId.has_value()) {
+            return refuse("diagnostic " + diagnostic.code + " is not mapped to a specific requirement");
+        }
         if (!isContentRepairableDiagnosticCode(diagnostic.code)
             && !isIgnorableNonRepairDiagnosticCode(diagnostic.code)) {
-            return {};
+            return refuse("diagnostic " + diagnostic.code + " is not content-repairable");
         }
     }
     std::unordered_set<std::string> seen;
@@ -604,8 +617,13 @@ VerificationRepairScope determineVerificationRepairScope(
             continue;
         }
         const auto ownerIt = requirementOwner.find(criterion.requirementId);
-        if (ownerIt == requirementOwner.end()) return {};
-        if (!tryAddTask(ownerIt->second)) return {};
+        if (ownerIt == requirementOwner.end()) {
+            return refuse("failed criterion " + criterion.requirementId + " has no owning task");
+        }
+        if (!tryAddTask(ownerIt->second)) {
+            return refuse("task " + ownerIt->second + ", which owns failed criterion " + criterion.requirementId
+                + ", is not a Propose task with a final proposal to replace");
+        }
         // File-level widening: a diagnostic attached to this same failed
         // criterion may point at a file a DIFFERENT task owns (see this
         // function's class comment) - include that task too, best-effort.
@@ -628,6 +646,7 @@ VerificationRepairScope determineVerificationRepairScope(
         }
     }
     scope.eligible = !scope.taskIds.empty();
+    if (!scope.eligible) scope.reason = "no failed required criterion could be attributed to a task";
     return scope;
 }
 
@@ -1132,6 +1151,7 @@ ExecutionManifestExecutor::TaskAttemptResult ExecutionManifestExecutor::runOneTa
     attempt.totalReturnedBytes = result.totalReturnedBytes;
     attempt.repairAttempted = result.repairAttempted;
     attempt.nonEmptyRejected = result.nonEmptyRejected;
+    attempt.diagnosticWarnings = result.diagnosticWarnings;
     attempt.workerNoChanges = result.workerNoChanges;
     attempt.taskVerification = result.taskVerification;
 
@@ -1171,6 +1191,30 @@ ExecutionManifestExecutor::TaskAttemptResult ExecutionManifestExecutor::runOneTa
     state.errorMessage = result.errorMessage;
     return attempt;
 }
+
+namespace {
+
+constexpr std::size_t kMaxDiagnosticWarningsPerTask = 8;
+constexpr std::size_t kMaxDiagnosticWarningBytes = 320;
+
+// Keeps one attempt's warnings next to those of the task's earlier attempts (never replacing them).
+// Bounded per task and per line; the text only ever comes from the Backend's own codes.
+void accumulateTaskWarnings(
+    ExecutionManifestExecutionOutcome& aggregate, const std::string& taskId,
+    std::size_t attemptNumber, const std::vector<std::string>& warnings, const char* kind)
+{
+    if (warnings.empty()) return;
+    auto& kept = aggregate.taskDiagnosticWarnings[taskId];
+    for (const auto& warning : warnings) {
+        if (kept.size() >= kMaxDiagnosticWarningsPerTask) return;
+        std::string line = std::string(kind) + " " + std::to_string(attemptNumber) + ": " + warning;
+        if (line.size() > kMaxDiagnosticWarningBytes)
+            line.resize(utf8SafePrefixLength(line, kMaxDiagnosticWarningBytes));
+        kept.push_back(std::move(line));
+    }
+}
+
+} // namespace
 
 ExecutionManifestExecutionOutcome ExecutionManifestExecutor::execute(
     ExecutionManifestExecutionRequest request, std::stop_token stopToken) const
@@ -1468,6 +1512,8 @@ ExecutionManifestExecutionOutcome ExecutionManifestExecutor::execute(
             }
         }
         mergeAccumulatedUsage(aggregate.usage, attemptResult.usage);
+        accumulateTaskWarnings(aggregate, taskId, attemptCounts[taskId] + 1,
+            attemptResult.diagnosticWarnings, "attempt");
         aggregate.totalTurns += attemptResult.totalTurns;
         aggregate.totalToolCalls += attemptResult.totalToolCalls;
         aggregate.successfulInspectionCalls += attemptResult.successfulInspectionCalls;
@@ -1508,12 +1554,16 @@ ExecutionManifestExecutionOutcome ExecutionManifestExecutor::execute(
         // cost while creating another accounting row.
         const bool providerBudgetStop =
             outcome.errorCode.rfind("provider_budget.", 0) == 0;
+        // An exhausted credit balance / quota / billing limit does not clear by dispatching the task again: a retry
+        // session would only be refused the same way (or be billed once the limit is raised), so it is never opened.
+        const bool durableProviderRefusal = outcome.errorCode == providers::kProviderInsufficientQuotaCode;
         if (outcome.status == ManifestTaskStatus::Failed
                 && !outcome.errorCode.empty() && outcome.errorCode != "manifest.task_cancelled"
                 && !repairAlreadyConsumed
                 && !nonEmptyRejectionPersisted
                 && !attemptResult.nonRetryable
                 && !providerBudgetStop
+                && !durableProviderRefusal
                 && attemptsSoFar < maxAttempts) {
             // Bounded retry: put it back to Pending so the next free slot
             // picks it up again - never more than maxAttemptsPerTask total
@@ -1772,7 +1822,7 @@ ExecutionManifestExecutionOutcome ExecutionManifestExecutor::execute(
             // (an ineligible scope below, same as any other non-repairable
             // failure).
             const auto repairScope = boundManifest.bootstrapDeclaration.has_value()
-                ? VerificationRepairScope {}
+                ? VerificationRepairScope {false, {}, "a bootstrap Run's candidate profile is not repaired"}
                 : determineVerificationRepairScope(
                       *aggregate.proposalSetVerification, boundManifest, aggregate.taskStates);
             if (!repairScope.eligible || stopToken.stop_requested()) {
@@ -1784,7 +1834,10 @@ ExecutionManifestExecutionOutcome ExecutionManifestExecutor::execute(
                 aggregate.status = ManifestExecutionStatus::Failed;
                 aggregate.verificationErrorCode = "verification.required_acceptance_failed";
                 aggregate.verificationErrorMessage =
-                    "Combined candidate failed or could not verify a required acceptance item";
+                    "Combined candidate failed or could not verify a required acceptance item; "
+                    "automatic verification repair was not attempted: "
+                    + (stopToken.stop_requested() ? std::string("the Run was cancelled")
+                                                   : repairScope.reason);
                 return aggregate;
             }
 
@@ -1947,6 +2000,8 @@ ExecutionManifestExecutionOutcome ExecutionManifestExecutor::execute(
                     break;
                 }
                 mergeAccumulatedUsage(aggregate.usage, repairAttempt.usage);
+                accumulateTaskWarnings(aggregate, taskId, stateIt->second.attempts + 1,
+                    repairAttempt.diagnosticWarnings, "repair attempt");
                 aggregate.totalTurns += repairAttempt.totalTurns;
                 aggregate.totalToolCalls += repairAttempt.totalToolCalls;
                 aggregate.successfulInspectionCalls += repairAttempt.successfulInspectionCalls;

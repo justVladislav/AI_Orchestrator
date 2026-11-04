@@ -183,6 +183,10 @@ struct ExecutionManifestExecutionOutcome {
     std::unordered_map<std::string, ManifestWorkerNoChanges> workerNoChanges;
     std::unordered_map<std::string, ManifestTaskVerificationSubmission>
         taskVerifications;
+    // Diagnostic warnings per task id (see AgentToolTurnLoopOutcome::diagnosticWarnings), accumulated
+    // over EVERY attempt of the task - retries and the verification repair worker included - each
+    // prefixed with its attempt number. Report-only: never changes a status, the usage or a gate.
+    std::unordered_map<std::string, std::vector<std::string>> taskDiagnosticWarnings;
     // Populated only after combined proposal-set verification. Always the
     // FINAL authoritative result: when a bounded verification repair wave
     // ran (see below), this is the repeat verification after the repair,
@@ -275,6 +279,8 @@ private:
         // all, so this must gate outer retry on its own.
         bool nonEmptyRejected {false};
         bool nonRetryable {false};
+        // Propagated from AgentToolTurnLoopOutcome::diagnosticWarnings of this attempt.
+        std::vector<std::string> diagnosticWarnings;
         std::optional<ManifestWorkerNoChanges> workerNoChanges;
         std::optional<ManifestTaskVerificationSubmission> taskVerification;
     };

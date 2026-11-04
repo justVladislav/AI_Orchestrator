@@ -4,8 +4,11 @@
 #include "ai/application/inmemory/InMemoryRepositories.hpp"
 #include "ai/infrastructure/SqliteRepositories.hpp"
 
+#include <sqlite3.h>
+
 #include <chrono>
 #include <filesystem>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -192,6 +195,183 @@ void testTurnInsertAndList()
 
     const auto empty = repo.listTurns("s-nonexistent");
     req(empty.success() && empty.value().empty(), "turns: listTurns for nonexistent session should be empty");
+}
+
+// ── provider-turn diagnostics (schema step 72) ────────────────────────────────
+
+std::string rawExecOrThrow(const fs::path& databasePath, const char* sql)
+{
+    sqlite3* handle = nullptr;
+    req(sqlite3_open_v2(databasePath.string().c_str(), &handle, SQLITE_OPEN_READWRITE, nullptr) == SQLITE_OK,
+        "raw: Could not open the database");
+    char* message = nullptr;
+    const int result = sqlite3_exec(handle, sql, nullptr, nullptr, &message);
+    std::string text = result == SQLITE_OK ? std::string {} : (message != nullptr ? message : "unknown SQLite error");
+    sqlite3_free(message);
+    sqlite3_close_v2(handle);
+    return text;
+}
+
+AgentProviderTurn makeCutTurn(const std::string& turnId, const std::string& sessionId, std::size_t index)
+{
+    auto turn = makeTurn(turnId, sessionId, index);
+    turn.finishReason = "max_output_tokens";
+    turn.outputTokens = 9400;
+    turn.diagnostics.requestedMaxOutputTokens = 64000;
+    turn.diagnostics.echoedMaxOutputTokens = 64000;
+    turn.diagnostics.reasoningTokens = 0;   // a reported zero, NOT "absent"
+    turn.diagnostics.providerStatus = "incomplete";
+    turn.diagnostics.incompleteReason = "max_output_tokens";
+    return turn;
+}
+
+void requireCutDiagnostics(const AgentProviderTurn& turn, const char* where)
+{
+    const std::string at = where;
+    req(turn.diagnostics.requestedMaxOutputTokens == std::optional<std::uint64_t>(64000), (at + ": requested limit lost").c_str());
+    req(turn.diagnostics.echoedMaxOutputTokens == std::optional<std::uint64_t>(64000), (at + ": echoed limit lost").c_str());
+    req(turn.diagnostics.reasoningTokens.has_value() && *turn.diagnostics.reasoningTokens == 0,
+        (at + ": a reported reasoning count of 0 must stay 0, not become absent").c_str());
+    req(turn.diagnostics.providerStatus == "incomplete", (at + ": provider status lost").c_str());
+    req(turn.diagnostics.incompleteReason == "max_output_tokens", (at + ": incomplete reason lost").c_str());
+}
+
+// The cut turn's diagnostics must outlive the process: written, the database closed, reopened, read back.
+void testTurnDiagnosticsSurviveReopen()
+{
+    AuditWorkspace workspace;
+    {
+        const auto opened = SqliteDatabase::open(workspace.database);
+        req(opened.success(), "diag-reopen: Could not open database");
+        SqliteAgentToolSessionRepository repo(opened.value());
+        req(repo.insertSession(makeSession("s-diag-1")).success(), "diag-reopen: Insert session failed");
+        req(repo.insertTurn(makeCutTurn("t-diag-cut", "s-diag-1", 0)).success(), "diag-reopen: Insert cut turn failed");
+
+        // A turn that reported nothing: NULL / empty, never zeros.
+        req(repo.insertTurn(makeTurn("t-diag-plain", "s-diag-1", 1)).success(), "diag-reopen: Insert plain turn failed");
+    }
+    const auto reopened = SqliteDatabase::open(workspace.database);
+    req(reopened.success(), "diag-reopen: Could not reopen database");
+    SqliteAgentToolSessionRepository repo(reopened.value());
+    const auto turns = repo.listTurns("s-diag-1");
+    req(turns.success() && turns.value().size() == 2, "diag-reopen: listTurns failed");
+    requireCutDiagnostics(turns.value()[0], "diag-reopen");
+    req(turns.value()[0].outputTokens == 9400, "diag-reopen: usage figure changed");
+    const auto& plain = turns.value()[1].diagnostics;
+    req(plain.empty(), "diag-reopen: a turn without diagnostics must read back as no diagnostics at all");
+    req(!plain.requestedMaxOutputTokens.has_value() && !plain.echoedMaxOutputTokens.has_value()
+            && !plain.reasoningTokens.has_value(),
+        "diag-reopen: an absent counter must not turn into 0");
+}
+
+// A row written before step 72 stays readable (as "not recorded"), new rows can carry diagnostics, and the step is
+// repeatable over a database that already has some or all of its columns.
+void testStep72KeepsOlderTurnRowsAndIsRepeatable()
+{
+    AuditWorkspace workspace;
+    {
+        const auto opened = SqliteDatabase::open(workspace.database);
+        req(opened.success(), "step72: Could not open database");
+        SqliteAgentToolSessionRepository repo(opened.value());
+        req(repo.insertSession(makeSession("s-old-1")).success(), "step72: Insert session failed");
+        req(repo.insertTurn(makeTurn("t-old-1", "s-old-1", 0)).success(), "step72: Insert old-shape turn failed");
+    }
+    // Rewind to the v71 shape: the five columns do not exist.
+    const auto rewound = rawExecOrThrow(workspace.database,
+        "ALTER TABLE agent_provider_turns DROP COLUMN requested_max_output_tokens;"
+        "ALTER TABLE agent_provider_turns DROP COLUMN echoed_max_output_tokens;"
+        "ALTER TABLE agent_provider_turns DROP COLUMN reasoning_tokens;"
+        "ALTER TABLE agent_provider_turns DROP COLUMN provider_status;"
+        "ALTER TABLE agent_provider_turns DROP COLUMN incomplete_reason;"
+        "PRAGMA user_version = 71;");
+    req(rewound.empty(), ("step72: could not rewind the database: " + rewound).c_str());
+    {
+        const auto upgraded = SqliteDatabase::open(workspace.database);
+        req(upgraded.success(), "step72: A v71 database must upgrade");
+        SqliteAgentToolSessionRepository repo(upgraded.value());
+        const auto old = repo.listTurns("s-old-1");
+        req(old.success() && old.value().size() == 1, "step72: the old row must stay readable");
+        req(old.value()[0].diagnostics.empty(), "step72: an old row has no diagnostics (not zeros)");
+        req(old.value()[0].inputTokens == 10 && old.value()[0].outputTokens == 20 && old.value()[0].callCount == 1,
+            "step72: the old row's usage figures must be untouched");
+        req(repo.insertTurn(makeCutTurn("t-new-1", "s-old-1", 1)).success(), "step72: Insert after upgrade failed");
+        const auto both = repo.listTurns("s-old-1");
+        req(both.success() && both.value().size() == 2, "step72: both rows expected");
+        requireCutDiagnostics(both.value()[1], "step72");
+    }
+    // Rewound again WITHOUT dropping anything: the columns already exist, the step must be a no-op, not a failure.
+    req(rawExecOrThrow(workspace.database, "PRAGMA user_version = 71;").empty(), "step72: could not rewind again");
+    const auto again = SqliteDatabase::open(workspace.database);
+    req(again.success(), "step72: re-running the step over existing columns must succeed");
+    SqliteAgentToolSessionRepository repo(again.value());
+    const auto kept = repo.listTurns("s-old-1");
+    req(kept.success() && kept.value().size() == 2, "step72: rows must survive the repeated step");
+    requireCutDiagnostics(kept.value()[1], "step72 repeat");
+}
+
+void testInMemoryTurnKeepsDiagnostics()
+{
+    InMemoryAgentToolSessionRepository repo;
+    req(repo.insertSession(makeSession("s-mem-diag")).success(), "mem-diag: insertSession failed");
+    req(repo.insertTurn(makeCutTurn("t-mem-diag", "s-mem-diag", 0)).success(), "mem-diag: insertTurn failed");
+    const auto turns = repo.listTurns("s-mem-diag");
+    req(turns.success() && turns.value().size() == 1, "mem-diag: listTurns failed");
+    requireCutDiagnostics(turns.value()[0], "mem-diag");
+}
+
+// The Run-diagnostics sentence names every fact it has and says "none"/"unknown" for what the provider did not report.
+void testOutputTokenCutDescription()
+{
+    ProviderTurnDiagnostics none;
+    req(describeOutputTokenCut(4054, none)
+            == "requested limit unknown, provider reported limit none, produced 4054 in that turn",
+        "cut-text: absent facts must read as unknown/none, never as 0");
+    const auto turn = makeCutTurn("t", "s", 0);
+    req(describeOutputTokenCut(9400, turn.diagnostics)
+            == "requested limit 64000, provider reported limit 64000, produced 9400 (reasoning 0) in that turn, "
+               "incomplete reason max_output_tokens, provider status incomplete",
+        "cut-text: full diagnostics sentence changed");
+    req(isBoundedDiagnosticToken("max_output_tokens") && isBoundedDiagnosticToken("")
+            && isBoundedDiagnosticToken(kUnrecognizedDiagnosticWord)
+            && !isBoundedDiagnosticToken("two words") && !isBoundedDiagnosticToken(std::string(65, 'a'))
+            && !isBoundedDiagnosticToken("content_filter_sk-secret-key"),
+        "token-bounds: wrong verdict");
+    req(toBoundedDiagnosticToken("two words\nand a newline") == kUnrecognizedDiagnosticWord
+            && toBoundedDiagnosticToken("content_filter_sk-secret-key") == kUnrecognizedDiagnosticWord
+            && toBoundedDiagnosticToken("max_output_tokens") == "max_output_tokens"
+            && toBoundedDiagnosticToken("").empty(),
+        "token-bounds: the allow-list mapping is wrong");
+}
+
+// A secret-shaped provider word must not reach the stored record, not even when a caller bypasses the adapters.
+void testStoredDiagnosticWordsAreAllowListed()
+{
+    AuditWorkspace workspace;
+    const auto opened = SqliteDatabase::open(workspace.database);
+    req(opened.success(), "allow-list: Could not open database");
+    SqliteAgentToolSessionRepository repo(opened.value());
+    req(repo.insertSession(makeSession("s-allow-1")).success(), "allow-list: Insert session failed");
+    auto turn = makeCutTurn("t-allow-1", "s-allow-1", 0);
+    turn.diagnostics.incompleteReason = "content_filter_sk-secret-key_0123";
+    turn.diagnostics.providerStatus = "incomplete";
+    req(repo.insertTurn(turn).success(), "allow-list: Insert failed");
+    const auto turns = repo.listTurns("s-allow-1");
+    req(turns.success() && turns.value().size() == 1, "allow-list: listTurns failed");
+    req(turns.value()[0].diagnostics.incompleteReason == kUnrecognizedDiagnosticWord,
+        "allow-list: the stored reason must be the safe marker");
+    req(turns.value()[0].diagnostics.providerStatus == "incomplete", "allow-list: a known word is kept");
+    sqlite3* handle = nullptr;
+    req(sqlite3_open_v2(workspace.database.string().c_str(), &handle, SQLITE_OPEN_READONLY, nullptr) == SQLITE_OK,
+        "allow-list: raw open failed");
+    sqlite3_stmt* statement = nullptr;
+    req(sqlite3_prepare_v2(handle,
+            "SELECT count(*) FROM agent_provider_turns WHERE incomplete_reason LIKE '%secret%' "
+            "OR provider_status LIKE '%secret%';", -1, &statement, nullptr) == SQLITE_OK,
+        "allow-list: raw prepare failed");
+    req(sqlite3_step(statement) == SQLITE_ROW && sqlite3_column_int(statement, 0) == 0,
+        "allow-list: the secret must not be present in the stored row");
+    sqlite3_finalize(statement);
+    sqlite3_close_v2(handle);
 }
 
 // ── tool call lifecycle ───────────────────────────────────────────────────────
@@ -454,6 +634,11 @@ int runAgentToolAuditTests()
     testSessionActiveToCompleted();
     testSessionActiveToInterrupted();
     testTurnInsertAndList();
+    testTurnDiagnosticsSurviveReopen();
+    testStep72KeepsOlderTurnRowsAndIsRepeatable();
+    testInMemoryTurnKeepsDiagnostics();
+    testOutputTokenCutDescription();
+    testStoredDiagnosticWordsAreAllowListed();
     testToolCallRequestedToCompleted();
     testToolCallInterruptRunning();
     testInterruptAllRunning();

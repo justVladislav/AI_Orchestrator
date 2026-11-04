@@ -23,7 +23,9 @@
 #include "ai/application/catalog/ProviderCatalogService.hpp"
 #include "ai/application/execution/RunPathClaimRegistry.hpp"
 #include "ai/application/execution/WorkflowRouter.hpp"
+#include "ai/application/artifacts/ArtifactService.hpp"
 #include "ai/infrastructure/FileChangeProposalStore.hpp"
+#include "FailableTurnSessionRepository.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -478,7 +480,7 @@ struct WorkspaceFixture {
     TempDir tempDir;
     TempDir workspaceDir;
     Catalog catalog;
-    InMemoryAgentToolSessionRepository toolSessions;
+    ai::application::testing::FailableTurnSessionRepository toolSessions;
     InMemoryAgentToolAuditRepository toolAudits;
     AlwaysSucceedExecutor executor;
     ScriptedProviderAgentSessionFactory sessionFactory;
@@ -655,6 +657,80 @@ void testWorkspaceAccessAgentProducesProposal()
     const auto proposals = fx.changeRepo.listForRun(run.id);
     assert(proposals.success() && proposals.value().size() == 1);
     assert(proposals.value().front().state == ChangeSetState::ReadyForReview);
+}
+
+// The Profile workflow's stage report: a workspace agent that succeeds while the store refuses its provider-turn
+// records still gets the loss written into the PERSISTED stage report (found again through the artifact list and read
+// from the store), and the stage, the Run and the proposal are exactly as without the loss.
+void testRefusedTurnRecordsOfASuccessfulWorkspaceAgentReachThePersistedStageReport()
+{
+    WorkspaceFixture fx;
+    fx.toolSessions.failTurnInserts = true;
+    InMemoryArtifactRepository artifactRepository;
+    InMemoryArtifactStore artifactStore;
+    ArtifactService artifactService(artifactRepository, artifactStore);
+    auto toolExecution = fx.makeToolExecution();
+    auto changeProposals = fx.makeChangeProposals();
+
+    const Provider architectProvider = makeProvider(fx.catalog, "Architect Provider");
+    const Model architectModel = makeModel(fx.catalog, architectProvider.id, "architect-model");
+    FakeProviderClient architectClient;
+    architectClient.content = architectManifest({{"worker", {"notes.md"}, {}}}, 2);
+    FakeProviderClientFactory clientFactory;
+    clientFactory.registerClient(architectProvider.id, architectClient);
+
+    const Provider workerProvider = makeProvider(fx.catalog, "Worker Provider");
+    const Model workerModel = makeModel(fx.catalog, workerProvider.id, "worker-model");
+    fx.sessionFactory.prepareSessionFor(workerProvider.id, kCreateNotesArgs);
+
+    ExecutionProfileWorkflowRunner runner(
+        clientFactory, fx.catalog.providers, fx.catalog.models,
+        &artifactService, nullptr, nullptr,
+        &fx.sessionFactory, &toolExecution, &changeProposals);
+
+    StageModelAssignment architect {"architect", architectProvider.id, architectModel.id, 5000ms};
+    architect.leadArchitect = true;
+    StageModelAssignment worker {"worker", workerProvider.id, workerModel.id, 5000ms};
+    worker.workspaceAccess = true;
+
+    ResolvedExecutionPlan plan;
+    plan.workflowId = kExecutionProfileWorkflowId;
+    plan.assignments = {architect, worker};
+    plan.maxParallelism = 2;
+
+    Run run;
+    run.id = "workspace-run-warn";
+    run.projectId = "workspace-graph-project";
+    run.title = "Workspace agent run with a refusing turn store";
+    run.task = "Exercise a single workspaceAccess agent";
+    run.workflowId = kExecutionProfileWorkflowId;
+    run.assignmentSnapshot = plan.assignments;
+    run.maxParallelism = 2;
+    run.workspacePath = fx.workspaceDir.path;
+    run.status = RunStatus::Running;
+
+    const Project project = makeProject(fx.workspaceDir.path);
+    const auto stages = runner.createStages(run.id, plan);
+    const WorkflowRunContext context {run, project, stages};
+    NullEventSink sink;
+
+    const WorkflowResult result = runner.run(context, std::stop_token {}, sink);
+    assert(result.success && result.finalStatus == RunStatus::Completed);
+    const auto proposals = fx.changeRepo.listForRun(run.id);
+    assert(proposals.success() && proposals.value().size() == 1);
+    assert(proposals.value().front().state == ChangeSetState::ReadyForReview);
+
+    const auto artifacts = artifactService.listArtifacts(run.id);
+    assert(artifacts.success());
+    const auto report = std::find_if(artifacts.value().begin(), artifacts.value().end(),
+        [](const Artifact& artifact) { return artifact.name == "worker-output.md"; });
+    assert(report != artifacts.value().end());
+    const auto content = artifactService.getArtifactContent(report->id);
+    assert(content.success());
+    assert(content.value().find("## Diagnostic warnings") != std::string::npos);
+    assert(content.value().find("provider turn 0 record not stored (persistence.insert_failed)")
+        != std::string::npos);
+    assert(content.value().find("notes.md") != std::string::npos);   // the worker's own text is still there
 }
 
 // Regression test for a real bug: executeWorkspaceTask never recorded a
@@ -1532,6 +1608,7 @@ void testRetryOfRetiredReadOnlyRunConvertsAndNeverReachesTheLegacyRunner()
 int runExecutionProfileWorkflowRunnerWorkspaceTests()
 {
     testWorkspaceAccessAgentProducesProposal();
+    testRefusedTurnRecordsOfASuccessfulWorkspaceAgentReachThePersistedStageReport();
     testWorkspaceAccessAgentRecordsModelExecution();
     testLegacyWorkspaceAgentIsPricedPerResponseFromTheModelCopyOfTheAttempt();
     testWorkspaceAccessSessionIncludesReadOnlyToolDefinitions();

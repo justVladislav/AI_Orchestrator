@@ -227,13 +227,13 @@ void testAnUpgradeTakesAVerifiedRawCopyFirst()
         require(opened.success(), "The upgrade must succeed");
         const auto& info = opened.value()->preMigrationBackup();
         require(info.has_value(), "The upgrade must report its copy");
-        require(info->fromVersion == 69 && info->toVersion == 71, "The copy must name both versions");
+        require(info->fromVersion == 69 && info->toVersion == 72, "The copy must name both versions");
         require(info->path.parent_path() == backups, "The copy lives in the configured folder");
         require(info->sizeBytes > 0 && fs::exists(info->path), "The copy must exist");
         backupPath = info->path;
     }
     requireVerifiedV69Copy(backupPath, 3);
-    require(rawNumber(temp.database, "PRAGMA user_version;") == 71, "The working database is upgraded");
+    require(rawNumber(temp.database, "PRAGMA user_version;") == 72, "The working database is upgraded");
     require(rawNumber(temp.database, "SELECT count(*) FROM projects;") == 3, "...and keeps its data");
     require(namesIn(backups).size() == 1, "Exactly one copy: no .part and no second file");
     require(namesIn(backups).front().find(".part") == std::string::npos, "...and it is the published name");
@@ -289,7 +289,7 @@ void testANewOrEmptyDatabaseGetsNoCopy()
         require(opened.success(), "A new database is created");
         require(!opened.value()->preMigrationBackup().has_value(), "...without a copy");
         require(!fs::exists(backups), "...and without creating the backup folder");
-        require(rawNumber(temp.database, "PRAGMA user_version;") == 71, "...at the current version");
+        require(rawNumber(temp.database, "PRAGMA user_version;") == 72, "...at the current version");
     }
     {
         TempDir temp;
@@ -360,7 +360,7 @@ void testWithoutTheOptionNothingChanges()
         makeV69Database(temp.database, 2);
         const auto opened = SqliteDatabase::open(temp.database);
         require(opened.success() && !opened.value()->preMigrationBackup().has_value(), "No option, no copy");
-        require(rawNumber(temp.database, "PRAGMA user_version;") == 71, "...and the upgrade runs as it always did");
+        require(rawNumber(temp.database, "PRAGMA user_version;") == 72, "...and the upgrade runs as it always did");
         require(!fs::exists(temp.root / "backups"), "...with no folder");
     }
     {
@@ -417,7 +417,7 @@ void testCopyVerifyAndPublishFailuresBlockTheUpgradeAndLeaveNothingBehind()
 void testAnOccupiedFinalOrPartNameIsNeverOverwritten()
 {
     const std::string stamp = "20250101T000000Z";
-    const std::string finalName = "orchestrator.sqlite3.pre-migration-v69-to-v71." + stamp + ".sqlite";
+    const std::string finalName = "orchestrator.sqlite3.pre-migration-v69-to-v72." + stamp + ".sqlite";
     {   // the final name is taken
         TempDir temp;
         makeV69Database(temp.database, 2);
@@ -479,7 +479,7 @@ void testAnOccupiedFinalOrPartNameIsNeverOverwritten()
 void testForeignSidecarsSurviveAFailedAttempt()
 {
     const std::string stamp = "20250101T000000Z";
-    const std::string finalName = "orchestrator.sqlite3.pre-migration-v69-to-v71." + stamp + ".sqlite";
+    const std::string finalName = "orchestrator.sqlite3.pre-migration-v69-to-v72." + stamp + ".sqlite";
     const char* suffixes[] = {".part-journal", ".part-wal", ".part-shm"};
     const detail::BackupFaultForTesting faults[] = {detail::BackupFaultForTesting::Copy, detail::BackupFaultForTesting::Verify,
         detail::BackupFaultForTesting::Publish};
@@ -572,7 +572,7 @@ void testTheCopyRestoresToASeparatePlace()
         const auto opened = SqliteDatabase::open(restored);
         require(opened.success(), "The restored copy opens normally");
     }
-    require(rawNumber(restored, "PRAGMA user_version;") == 71, "...and an ordinary open upgrades the restored copy");
+    require(rawNumber(restored, "PRAGMA user_version;") == 72, "...and an ordinary open upgrades the restored copy");
     require(rawNumber(restored, "SELECT count(*) FROM projects;") == 3, "...with all its data");
     require(rawText(restored, "SELECT name FROM projects WHERE id = 'p2';") == "Fixture 2", "...unchanged");
     require(fileBytes(backupPath) == copyBefore, "The backup itself is not changed by restoring from it");
@@ -614,11 +614,11 @@ void testAVersion70DatabaseIsCopiedBeforeStep71()
         const auto opened = SqliteDatabase::open(temp.database, optionsFor(backups));
         require(opened.success(), "The v70 database must upgrade");
         const auto& info = opened.value()->preMigrationBackup();
-        require(info.has_value() && info->fromVersion == 70 && info->toVersion == 71, "The copy names versions 70 and 71");
+        require(info.has_value() && info->fromVersion == 70 && info->toVersion == 72, "The copy names versions 70 and 72");
         backupPath = info->path;
     }
     requireVerifiedV70Copy(backupPath, 3);
-    require(rawNumber(temp.database, "PRAGMA user_version;") == 71, "The working database is at 71");
+    require(rawNumber(temp.database, "PRAGMA user_version;") == 72, "The working database is at 72");
     require(rawNumber(temp.database, "SELECT count(*) FROM sqlite_master WHERE name = 'project_output_approvals' AND type = 'table';") == 1,
         "...with the new table");
     require(rawNumber(temp.database, "SELECT count(*) FROM projects;") == 3, "...and its data");

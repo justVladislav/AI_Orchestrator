@@ -49,10 +49,22 @@ namespace ai::application {
 // entries of that task are removed, all duplicates of the path at once, with one audit line per
 // path. The path stays read-only and no write authority appears. Deliberately NOT touched:
 //   - a path the task writes (owned_write / planned_create): that conflict stays a hard error;
-//   - deferredPaths, which express a separate "not now" decision;
+//   - deferredPaths, which express a separate "not now" decision (see part 3 for its own pass);
 //   - every other task's entries (a path excluded in one task and read in another is no conflict).
 // Paths are compared case- and separator-insensitively on the exact path; the full validator still
 // runs afterwards and judges anything this pass did not resolve. Idempotent.
 [[nodiscard]] std::vector<std::string> canonicalizeExcludedReadConflicts(ExecutionManifest& manifest);
+
+// Part 3 (Runs a97f60f8 / c05e264e, 2026-10-31: a task listed a path it reads as deferred too; the
+// validator rejected manifest.conflicting_path_role and the one repair regressed).
+//
+// deferredPaths says "not changed now"; reading the same file for context does not contradict it. When
+// the SAME task still actively reads a path (required_read, then reference_only), the task's matching
+// deferredPaths entries are removed - all duplicates at once, one audit line per path - and the read
+// stays. Like part 2 this grants nothing: no write authority, no dependency edge and no new read appears
+// (the read was already there), and the excluded/deferred notes of other tasks are untouched. Not
+// touched: a path the task writes (owned_write / planned_create; a hard validator error), excludedPaths
+// (part 2), and another task's entries. Idempotent.
+[[nodiscard]] std::vector<std::string> canonicalizeDeferredReadConflicts(ExecutionManifest& manifest);
 
 } // namespace ai::application

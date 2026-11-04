@@ -17,7 +17,9 @@
 #include "ai/application/execution/RunPathClaimRegistry.hpp"
 #include "ai/application/execution/RunWorkspaceScopeService.hpp"
 #include "ai/application/Sha256.hpp"
+#include "ai/application/text/DiagnosticText.hpp"
 #include "ai/infrastructure/FileChangeProposalStore.hpp"
+#include "FailableTurnSessionRepository.hpp"
 #include "ai/infrastructure/SqliteRepositories.hpp"
 
 #include <cassert>
@@ -469,7 +471,7 @@ public:
 struct Fixture {
     TempDir tempDir;
     TempDir workspace;
-    InMemoryAgentToolSessionRepository toolSessions;
+    ai::application::testing::FailableTurnSessionRepository toolSessions;
     InMemoryAgentToolAuditRepository toolAudits;
     AlwaysSucceedExecutor executor;
     ScriptedProviderAgentSessionFactory sessionFactory;
@@ -1333,6 +1335,85 @@ void testExecutorRetryRecoversTransientFailureThenSucceeds()
     require(outcome.status == ManifestExecutionStatus::Completed, "Second attempt must succeed");
     require(outcome.taskStates.at("a").attempts == 2, "Exactly two attempts should have been consumed");
     require(fx.sessionFactory.createCalls == 2, "Retry must create a fresh provider session");
+}
+
+// The executor passes no event sink to its workers, so before this the loss of a provider-turn record was
+// invisible when the task succeeded. The warnings now reach the outcome per task, one entry per attempt - the
+// failed first attempt's warning is kept next to the successful retry's - and nothing else moves.
+void testExecutorKeepsTurnRecordWarningsOfEveryAttemptWithoutChangingTheResult()
+{
+    const auto runOnce = [](bool refuse) {
+        Fixture fx;
+        fx.toolSessions.failTurnInserts = refuse;
+        auto toolExecution = fx.makeToolExecution();
+        auto changeProposals = fx.makeChangeProposals();
+        ExecutionManifestExecutor executorUnderTest(fx.sessionFactory, toolExecution, changeProposals);
+        fx.sessionFactory.preparedSessions.push(failingSession());
+        fx.sessionFactory.preparedSessions.push(sessionEndingWith(proposalJson("a/one.md")));
+        auto manifest = makeManifest({makeTask("a", {}, {"a/one.md"})}, 1);
+        auto request = makeExecutionRequest(fx, std::move(manifest), /*maxAttempts=*/2);
+        std::stop_source ss;
+        auto outcome = executorUnderTest.execute(std::move(request), ss.get_token());
+        return std::make_pair(std::move(outcome), fx.sessionFactory.createCalls);
+    };
+
+    const auto control = runOnce(false);
+    require(control.first.status == ManifestExecutionStatus::Completed && control.first.taskDiagnosticWarnings.empty(),
+        "A healthy store must produce no warnings");
+
+    const auto refused = runOnce(true);
+    const auto& outcome = refused.first;
+    require(outcome.status == ManifestExecutionStatus::Completed, "A refused turn record must not fail the execution");
+    require(outcome.taskStates.at("a").attempts == 2 && refused.second == 2,
+        "The attempts and provider sessions are exactly those of the healthy run: nothing is retried because of the loss");
+    require(outcome.taskStates.at("a").errorCode.empty(), "The task result must be untouched");
+    require(outcome.usage.inputTokens == control.first.usage.inputTokens
+            && outcome.usage.outputTokens == control.first.usage.outputTokens,
+        "The usage must be exactly that of the healthy run");
+    const auto found = outcome.taskDiagnosticWarnings.find("a");
+    require(found != outcome.taskDiagnosticWarnings.end() && found->second.size() == 2,
+        "One warning per attempt must be kept for the task");
+    require(found->second[0].find("attempt 1: provider turn 0 record not stored (persistence.insert_failed)")
+                    != std::string::npos
+            && found->second[1].find("attempt 2: provider turn") != std::string::npos,
+        "The earlier attempt's warning must survive the successful retry");
+}
+
+// A durable credit/quota refusal must not be retried even when several attempts are allowed; a temporary rate
+// limit with the same shape of failure still is. The work already done in the refused attempt keeps its usage.
+void testDurableQuotaRefusalIsNeverRetriedAndKeepsTheUsageOfTheAttempt()
+{
+    const auto runWith = [](const char* code) {
+        Fixture fx;
+        auto toolExecution = fx.makeToolExecution();
+        auto changeProposals = fx.makeChangeProposals();
+        ExecutionManifestExecutor executorUnderTest(fx.sessionFactory, toolExecution, changeProposals);
+        auto refused = std::make_unique<ScriptedProviderAgentSession>();
+        auto firstTurn = toolCallResponse("workspace_read_file", R"({"path":"README.md"})");
+        firstTurn.usage.inputTokens = 10;
+        firstTurn.usage.outputTokens = 5;
+        refused->responses.push(common::Result<ProviderAgentTurnResponse>::ok(std::move(firstTurn)));
+        refused->responses.push(common::Result<ProviderAgentTurnResponse>::failure({code, "refused"}));
+        fx.sessionFactory.preparedSessions.push(std::move(refused));
+        fx.sessionFactory.preparedSessions.push(sessionEndingWith(proposalJson("a/one.md")));   // a retry would use this
+        auto request = makeExecutionRequest(fx, makeManifest({makeTask("a", {}, {"a/one.md"})}, 1), /*maxAttempts=*/3);
+        std::stop_source ss;
+        auto outcome = executorUnderTest.execute(std::move(request), ss.get_token());
+        return std::make_pair(std::move(outcome), fx.sessionFactory.createCalls);
+    };
+
+    const auto durable = runWith(kProviderInsufficientQuotaCode);
+    require(durable.first.status == ManifestExecutionStatus::Failed
+            && durable.first.taskStates.at("a").errorCode == kProviderInsufficientQuotaCode,
+        "A durable quota refusal must fail the task with its own code");
+    require(durable.second == 1 && durable.first.taskStates.at("a").attempts == 1,
+        "No retry session may be opened after a durable quota refusal, although three attempts were allowed");
+    require(durable.first.usage.inputTokens == 10 && durable.first.usage.outputTokens == 5,
+        "The usage of the work done before the refusal must be kept");
+
+    const auto temporary = runWith("provider.rate_limited");
+    require(temporary.second == 2 && temporary.first.status == ManifestExecutionStatus::Completed,
+        "A temporary rate limit keeps its previous behaviour: one bounded retry session");
 }
 
 void testExecutorRetryExhaustedMarksFailed()
@@ -6339,6 +6420,191 @@ void testVerificationRepairWaveReservesEveryRepairTaskBeforeTheFirstRepairWorker
     require(guard->reservedUnusedTurns() == 0, "No repair reservation may outlive the wave");
 }
 
+// Item 3 (absent repair wave): the shape of Run 98eb2364 - TWO propose tasks, each with its own inspect + cmake_build
+// criterion, the combined build fails for both. Provider-free and deterministic.
+struct TwoBuildTaskFixture {
+    Fixture fx;
+    FakeVerificationCommandRunner verifier;
+    ExecutionManifest manifest;
+
+    TwoBuildTaskFixture()
+    {
+        auto first = makeReadGatedTask("native-api-p0", {}, "native-api-p0.md", {"README.md"});
+        ExecutionAcceptanceContract firstContract;
+        firstContract.requirements.push_back({"abi-inspection", "Inspect the output", {"native-api-p0.md"},
+            ExecutionVerificationKind::InspectPaths, {}, true});
+        firstContract.requirements.push_back(cmakeBuildRequirement("abi-build"));
+        first.acceptanceContract = std::move(firstContract);
+        auto second = makeReadGatedTask("native-api-qa", {}, "native-api-qa.md", {"README.md"});
+        ExecutionAcceptanceContract secondContract;
+        secondContract.requirements.push_back({"api-qa-inspection", "Inspect the output", {"native-api-qa.md"},
+            ExecutionVerificationKind::InspectPaths, {}, true});
+        secondContract.requirements.push_back(cmakeBuildRequirement("api-qa-build"));
+        second.acceptanceContract = std::move(secondContract);
+        // Primary verification: both build criteria fail; every later command succeeds.
+        verifier.queuedOutcomes = {cmakeConfigureOkOutcome(), cmakeBuildFailOutcome(),
+            cmakeConfigureOkOutcome(), cmakeBuildFailOutcome()};
+        verifier.outcome = cmakeBuildOkOutcome();
+        manifest = makeManifest({std::move(first), std::move(second)}, /*parallelism=*/1);
+    }
+};
+
+std::size_t countDiagnostics(const ManifestProposalSetVerification& verification, const std::string& code)
+{
+    return static_cast<std::size_t>(std::count_if(verification.diagnostics.begin(), verification.diagnostics.end(),
+        [&](const auto& diagnostic) { return diagnostic.code == code; }));
+}
+
+// The wave fits: both failing build tasks are in scope and each gets exactly one repair session.
+void testTwoFailingBuildTasksBothGetOneRepairSessionWhenTheWaveFits()
+{
+    TwoBuildTaskFixture wave;
+    auto toolExecution = wave.fx.makeToolExecution();
+    auto changeProposals = wave.fx.makeChangeProposals();
+    ExecutionManifestExecutor executorUnderTest(wave.fx.sessionFactory, toolExecution, changeProposals);
+    for (int index = 0; index < 4; ++index) {   // two primary + two repair sessions
+        wave.fx.sessionFactory.preparedSessions.push(capacitySession(1, ""));
+    }
+    auto request = makeExecutionRequest(wave.fx, wave.manifest, /*maxAttempts=*/1);
+    request.requireCombinedVerification = true;
+    request.verificationCommandRunner = &wave.verifier;
+    request.providerBudgetGuard = makeTurnGuard(24);
+    const auto outcome = executorUnderTest.execute(std::move(request), {});
+
+    require(outcome.primaryProposalSetVerification.has_value()
+            && countDiagnostics(*outcome.primaryProposalSetVerification, "verification.command_failed") == 2,
+        "The primary verification must carry one command_failed diagnostic per failing build criterion");
+    require(outcome.verificationRepairAttempted && wave.fx.sessionFactory.createCalls == 4,
+        "Two failing build tasks must open exactly two repair sessions after the two primary ones");
+    std::vector<std::string> repaired = outcome.verificationRepairedTaskIds;
+    std::sort(repaired.begin(), repaired.end());
+    require(repaired == std::vector<std::string> {"native-api-p0", "native-api-qa"},
+        "Both failing build tasks must be in the repair scope");
+    require(outcome.status == ManifestExecutionStatus::Completed,
+        ("The repaired candidate must verify: " + outcome.verificationErrorCode + " " + outcome.verificationErrorMessage).c_str());
+}
+
+// The wave does not fit the remaining turns (the Run 98eb2364 class: limit 24 with 15 turns already spent): no repair
+// session opens, the typed refusal is recorded, and the primary verification stays the final authoritative result.
+void testTwoFailingBuildTasksGetNoRepairSessionWhenTheWaveDoesNotFitAndTheRefusalIsTyped()
+{
+    TwoBuildTaskFixture wave;
+    auto toolExecution = wave.fx.makeToolExecution();
+    auto changeProposals = wave.fx.makeChangeProposals();
+    ExecutionManifestExecutor executorUnderTest(wave.fx.sessionFactory, toolExecution, changeProposals);
+    for (int index = 0; index < 4; ++index) wave.fx.sessionFactory.preparedSessions.push(capacitySession(1, ""));
+    auto request = makeExecutionRequest(wave.fx, wave.manifest, /*maxAttempts=*/1);
+    request.requireCombinedVerification = true;
+    request.verificationCommandRunner = &wave.verifier;
+    auto guard = makeTurnGuard(6);   // 4 primary turns; 2 left for 2+2 reserved
+    request.providerBudgetGuard = guard;
+    const auto outcome = executorUnderTest.execute(std::move(request), {});
+
+    require(outcome.status == ManifestExecutionStatus::Failed
+            && outcome.verificationErrorCode == "verification.repair_unavailable"
+            && outcome.verificationErrorMessage.find(kExecutionCapacityInsufficientCode) != std::string::npos
+            && !outcome.verificationRepairAttempted && wave.fx.sessionFactory.createCalls == 2,
+        "A wave that does not fit must open no repair session and say so with a typed code");
+    require(outcome.primaryProposalSetVerification.has_value() && outcome.proposalSetVerification.has_value()
+            && countDiagnostics(*outcome.proposalSetVerification, "verification.command_failed") == 2,
+        "The primary verification must stay the final authoritative result");
+}
+
+// A repair scope that is NOT eligible must name the reason in the outcome (it used to be a generic message that left
+// no trace of WHY no repair session was opened).
+void testIneligibleRepairScopeNamesItsReason()
+{
+    TwoBuildTaskFixture wave;
+    auto toolExecution = wave.fx.makeToolExecution();
+    auto changeProposals = wave.fx.makeChangeProposals();
+    ExecutionManifestExecutor executorUnderTest(wave.fx.sessionFactory, toolExecution, changeProposals);
+    for (int index = 0; index < 4; ++index) wave.fx.sessionFactory.preparedSessions.push(capacitySession(1, ""));
+    // The build tool cannot even start: an environment condition no proposal content could fix.
+    ManifestVerificationCommandOutcome unusable;
+    unusable.started = false;
+    unusable.errorCode = "verification.tool_unavailable";
+    wave.verifier.queuedOutcomes = {cmakeConfigureOkOutcome(), unusable, cmakeConfigureOkOutcome(), unusable};
+    auto request = makeExecutionRequest(wave.fx, wave.manifest, /*maxAttempts=*/1);
+    request.requireCombinedVerification = true;
+    request.verificationCommandRunner = &wave.verifier;
+    request.providerBudgetGuard = makeTurnGuard(24);
+    const auto outcome = executorUnderTest.execute(std::move(request), {});
+
+    require(outcome.status == ManifestExecutionStatus::Failed && !outcome.verificationRepairAttempted
+            && wave.fx.sessionFactory.createCalls == 2,
+        "A non-content failure must not open a repair session");
+    require(outcome.verificationErrorCode == "verification.required_acceptance_failed",
+        "The ordinary failure code must stay as it was");
+    require(outcome.verificationErrorMessage.find("automatic verification repair was not attempted") != std::string::npos
+            && outcome.verificationErrorMessage.find("not content-repairable") != std::string::npos,
+        ("The outcome must say why no repair session was opened: " + outcome.verificationErrorMessage).c_str());
+}
+
+// The reason of an ineligible repair scope embeds manifest ids and is cut to a bound. An id made of multi-byte
+// characters must never be cut INSIDE a character: the message stays valid UTF-8 (a byte-wise resize left a lone
+// lead byte). The failed criterion here belongs to a coordination (None) task, which is not repairable.
+void testIneligibleRepairReasonIsCutOnACharacterBoundary()
+{
+    TwoBuildTaskFixture wave;
+    std::string longId;
+    for (int i = 0; i < 150; ++i) longId += "Ð";   // 150 x U+0416: 300 bytes, the 300-byte cut lands mid-character
+    auto propose = makeReadGatedTask("native-api-p0", {}, "native-api-p0.md", {"README.md"});
+    // A Propose task that finished with the typed "already satisfied" no-changes terminal: it owns the failed build
+    // criterion but has no final proposal to replace, so the repair scope is not eligible and names it.
+    auto coordination = makeTask(longId, {}, {"README.md"});
+    ExecutionAcceptanceContract contract;
+    contract.requirements.push_back({"req-1", "Inspect the test fixture", {"README.md"},
+        ExecutionVerificationKind::InspectPaths, {}, true});
+    contract.requirements.push_back(cmakeBuildRequirement(longId + "-build"));
+    coordination.acceptanceContract = std::move(contract);
+    wave.manifest = makeManifest({std::move(propose), std::move(coordination)}, /*parallelism=*/1);
+    wave.verifier.queuedOutcomes = {cmakeConfigureOkOutcome(), cmakeBuildFailOutcome()};
+
+    {
+        std::ofstream readme(wave.fx.workspace.path / "README.md", std::ios::binary);
+        readme << "baseline readme";
+    }
+    RecordingFilesystemExecutor filesystem;
+    auto registry = ToolRegistry::createDefaultReadOnly();
+    require(registry.success(), "Could not create tool registry");
+    AgentToolExecutionService toolExecution(
+        std::move(registry.value()), filesystem, wave.fx.toolSessions, wave.fx.toolAudits, true);
+    auto changeProposals = wave.fx.makeChangeProposals();
+    ExecutionManifestExecutor executorUnderTest(wave.fx.sessionFactory, toolExecution, changeProposals);
+    wave.fx.sessionFactory.preparedSessions.push(capacitySession(1, ""));
+    {
+        auto inspector = std::make_unique<ScriptedProviderAgentSession>();
+        const auto withUsage = [](ProviderAgentTurnResponse response) {
+            response.usage.inputTokens = 10;
+            response.usage.outputTokens = 5;
+            return response;
+        };
+        inspector->beginSessionHandler = [withUsage](const ProviderAgentSessionRequest&) {
+            return common::Result<ProviderAgentTurnResponse>::ok(withUsage(
+                toolCallResponse("workspace_read_file", R"({"path":"README.md"})")));
+        };
+        inspector->responses.push(common::Result<ProviderAgentTurnResponse>::ok(withUsage(
+            toolCallResponse(kSubmitTaskNoChangesToolName,
+                R"({"schemaVersion":"manifest-worker-no-changes.v1","reason":"already_satisfied_in_baseline","summary":"The assigned requirement is already satisfied.","criterionEvidence":[{"requirementId":"req-1","inspectedPath":"README.md","observation":"The required repository state is present."}]})"))));
+        wave.fx.sessionFactory.preparedSessions.push(std::move(inspector));
+    }
+    auto request = makeExecutionRequest(wave.fx, wave.manifest, /*maxAttempts=*/1);
+    request.requireCombinedVerification = true;
+    request.verificationCommandRunner = &wave.verifier;
+    request.providerBudgetGuard = makeTurnGuard(24);
+    const auto outcome = executorUnderTest.execute(std::move(request), {});
+
+    std::string states;
+    for (const auto& [id, state] : outcome.taskStates) states += id.substr(0, 14) + "=" + std::to_string(static_cast<int>(state.status)) + "/" + state.errorCode + "/" + state.errorMessage + "; ";
+    require(outcome.status == ManifestExecutionStatus::Failed && !outcome.verificationRepairAttempted,
+        ("A failed criterion owned by a coordination task must not open a repair session: " + states).c_str());
+    require(outcome.verificationErrorMessage.find("automatic verification repair was not attempted: task ")
+                != std::string::npos,
+        ("The reason must name the owning task: [" + outcome.verificationErrorCode + "] " + outcome.verificationErrorMessage + " / exec [" + outcome.executionErrorCode + "] " + outcome.executionErrorMessage + " / " + states + " ver=" + std::to_string(outcome.proposalSetVerification.has_value())).c_str());
+    require(isWellFormedUtf8(outcome.verificationErrorMessage),
+        "The reason was cut inside a multi-byte character: the message is not valid UTF-8");
+}
+
 void testVerificationRepairWaveIsRefusedAsAWholeWhenFloorsDoNotFit()
 {
     RepairWaveFixture wave;
@@ -7231,6 +7497,12 @@ int main()
         testExecutorClaimRegistryIsFinalRaceGuardBetweenTasks();
         testExecutorCancellationBeforeDispatchStopsImmediately();
         testExecutorRetryRecoversTransientFailureThenSucceeds();
+        testDurableQuotaRefusalIsNeverRetriedAndKeepsTheUsageOfTheAttempt();
+        testTwoFailingBuildTasksBothGetOneRepairSessionWhenTheWaveFits();
+        testTwoFailingBuildTasksGetNoRepairSessionWhenTheWaveDoesNotFitAndTheRefusalIsTyped();
+        testIneligibleRepairScopeNamesItsReason();
+        testIneligibleRepairReasonIsCutOnACharacterBoundary();
+        testExecutorKeepsTurnRecordWarningsOfEveryAttemptWithoutChangingTheResult();
         testExecutorRetryExhaustedMarksFailed();
         testExecutorRepairAbandonmentDoesNotTriggerOuterRetry();
         testExecutorClosesOuterRetryAfterNonEmptyNonRepairableRejection();

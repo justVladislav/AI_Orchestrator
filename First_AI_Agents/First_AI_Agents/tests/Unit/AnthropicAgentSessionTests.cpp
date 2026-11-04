@@ -376,6 +376,16 @@ void testMaxTokens()
     req(resp.success(), "a-maxTokens: expected ok");
     req(resp.value().finishReason == ProviderAgentFinishReason::MaxOutputTokens,
         "a-maxTokens: expected MaxOutputTokens");
+    // Cut diagnostics: the limit that went on the wire is kept; Anthropic reports no echoed limit and no
+    // reasoning split, which must read as "not reported", never as 0.
+    const auto& d = resp.value().diagnostics;
+    req(d.requestedMaxOutputTokens == std::optional<std::uint64_t>(1024), "a-maxTokens: requested limit lost");
+    req(!d.echoedMaxOutputTokens.has_value() && !d.reasoningTokens.has_value(),
+        "a-maxTokens: unreported counters must stay absent");
+    req(d.providerStatus == "max_tokens" && d.incompleteReason == "max_tokens",
+        "a-maxTokens: the stop reason must be kept as status and incomplete reason");
+    req(resp.value().errorCode.empty() && resp.value().errorMessage.empty(),
+        "a-maxTokens: a cut is not an error response");
 }
 
 // ---------------------------------------------------------------------------

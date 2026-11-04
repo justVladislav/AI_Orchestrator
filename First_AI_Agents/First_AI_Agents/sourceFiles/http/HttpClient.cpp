@@ -439,12 +439,18 @@ HttpResponse performRequest(const HttpRequest& request)
 
 HttpResponse HttpClient::send(const HttpRequest& request)
 {
+    return send(request, RetryVeto {});
+}
+
+HttpResponse HttpClient::send(const HttpRequest& request, const RetryVeto& retryVeto)
+{
     return sendWithRetry(
         request,
         [&request] { return performRequest(request); },
         [](std::chrono::milliseconds delay) { std::this_thread::sleep_for(delay); },
         kMaxAttempts,
-        kRetryBaseDelay);
+        kRetryBaseDelay,
+        retryVeto);
 }
 
 } // namespace ai::http

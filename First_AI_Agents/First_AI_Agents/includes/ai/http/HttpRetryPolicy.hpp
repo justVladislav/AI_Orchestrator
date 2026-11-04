@@ -23,11 +23,19 @@ namespace ai::http {
  * non-retryable response, on @p request.cancellationRequested becoming true,
  * or after @p maxAttempts attempts.
  */
+/**
+ * A caller-supplied verdict on a received response: true means "this refusal is durable - do not send it again".
+ * The generic HTTP layer knows no vendor codes; the provider that owns the error format decides (for OpenAI the shared
+ * classifier). An empty function vetoes nothing, so every existing caller behaves exactly as before.
+ */
+using RetryVeto = std::function<bool(const HttpResponse&)>;
+
 [[nodiscard]] HttpResponse sendWithRetry(
     const HttpRequest& request,
     const std::function<HttpResponse()>& sendOnce,
     const std::function<void(std::chrono::milliseconds)>& sleepFn,
     int maxAttempts,
-    std::chrono::milliseconds baseDelay);
+    std::chrono::milliseconds baseDelay,
+    const RetryVeto& retryVeto = {});
 
 } // namespace ai::http

@@ -1,5 +1,7 @@
 #include "ai/application/execution/ExecutionManifestRepairControls.hpp"
 
+#include "ai/application/workspace/FilesystemPathUtils.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
@@ -49,51 +51,68 @@ void restoreField(
 
 // Same comparable form as the Planner's own normalizeComparablePath (separator- and case-
 // insensitive); kept private here because that helper lives in the Planner's anonymous namespace.
+// path::generic_string() converts through the Windows ANSI code page and THROWS for a character it lacks
+// (a perfectly valid docs/Ж表.md), so the key and the audit text are built from the UTF-8 form instead.
 std::string comparableKey(const std::filesystem::path& path)
 {
-    std::string key = path.generic_string();
+    std::string key = detail::genericUtf8(path);
     std::replace(key.begin(), key.end(), '\\', '/');
-    std::transform(key.begin(), key.end(), key.begin(),
-        [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
-    return key;
+    return detail::asciiLower(std::move(key));
+}
+
+// One task-local note list (excludedPaths or deferredPaths) versus the SAME task's active reads. The
+// two public passes below differ only in which list they clean and how the audit line names it.
+std::vector<std::string> removeNotesOfPathsTheTaskReads(
+    ExecutionManifest& manifest,
+    std::vector<ManifestExcludedOrDeferredPath> ExecutionManifestTask::* notes,
+    std::string_view noteListName)
+{
+    std::vector<std::string> audit;
+    for (auto& task : manifest.tasks) {
+        auto& entries = task.*notes;
+        if (entries.empty()) continue;
+
+        // required_read > reference_only: the first emplace wins, so insert required reads first.
+        std::unordered_map<std::string, std::pair<std::string, std::string>> readByKey;
+        for (const auto& path : task.requiredReadPaths)
+            readByKey.emplace(comparableKey(path),
+                std::pair<std::string, std::string> {detail::genericUtf8(path), "required_read"});
+        for (const auto& path : task.referencePaths)
+            readByKey.emplace(comparableKey(path),
+                std::pair<std::string, std::string> {detail::genericUtf8(path), "reference_only"});
+
+        // A written path never loses its note here: that contradiction stays a hard validator
+        // error whatever order the passes run in.
+        std::unordered_set<std::string> writeKeys;
+        for (const auto& path : task.ownedPaths) writeKeys.insert(comparableKey(path));
+        for (const auto& path : task.plannedCreatePaths) writeKeys.insert(comparableKey(path));
+
+        std::unordered_set<std::string> reported;
+        std::erase_if(entries, [&](const ManifestExcludedOrDeferredPath& entry) {
+            const auto key = comparableKey(entry.path);
+            const auto read = readByKey.find(key);
+            if (read == readByKey.end() || writeKeys.contains(key)) return false;
+            if (reported.insert(key).second) {
+                audit.push_back("task '" + task.id + "': '" + read->second.first + "' is read as "
+                    + read->second.second + ", so its " + std::string(noteListName)
+                    + " entry was removed");
+            }
+            return true;
+        });
+    }
+    return audit;
 }
 
 } // namespace
 
 std::vector<std::string> canonicalizeExcludedReadConflicts(ExecutionManifest& manifest)
 {
-    std::vector<std::string> audit;
-    for (auto& task : manifest.tasks) {
-        if (task.excludedPaths.empty()) continue;
+    return removeNotesOfPathsTheTaskReads(manifest, &ExecutionManifestTask::excludedPaths, "excludedPaths");
+}
 
-        // required_read > reference_only: the first emplace wins, so insert required reads first.
-        std::unordered_map<std::string, std::pair<std::string, std::string>> readByKey;
-        for (const auto& path : task.requiredReadPaths)
-            readByKey.emplace(comparableKey(path),
-                std::pair<std::string, std::string> {path.generic_string(), "required_read"});
-        for (const auto& path : task.referencePaths)
-            readByKey.emplace(comparableKey(path),
-                std::pair<std::string, std::string> {path.generic_string(), "reference_only"});
-
-        // A written path never loses its excluded entry here: that contradiction stays a hard
-        // validator error whatever order the passes run in.
-        std::unordered_set<std::string> writeKeys;
-        for (const auto& path : task.ownedPaths) writeKeys.insert(comparableKey(path));
-        for (const auto& path : task.plannedCreatePaths) writeKeys.insert(comparableKey(path));
-
-        std::unordered_set<std::string> reported;
-        std::erase_if(task.excludedPaths, [&](const ManifestExcludedOrDeferredPath& entry) {
-            const auto key = comparableKey(entry.path);
-            const auto read = readByKey.find(key);
-            if (read == readByKey.end() || writeKeys.contains(key)) return false;
-            if (reported.insert(key).second) {
-                audit.push_back("task '" + task.id + "': '" + read->second.first + "' is read as "
-                    + read->second.second + ", so its excludedPaths entry was removed");
-            }
-            return true;
-        });
-    }
-    return audit;
+std::vector<std::string> canonicalizeDeferredReadConflicts(ExecutionManifest& manifest)
+{
+    return removeNotesOfPathsTheTaskReads(manifest, &ExecutionManifestTask::deferredPaths, "deferredPaths");
 }
 
 bool isGraphWideRepair(const std::vector<ExecutionManifestFinding>& primaryFindings)

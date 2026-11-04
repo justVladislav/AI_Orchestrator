@@ -20,53 +20,16 @@ common::Error error(std::string code, std::string message)
     return {std::move(code), std::move(message)};
 }
 
-std::string toLower(std::string value)
-{
-    std::transform(value.begin(), value.end(), value.begin(),
-        [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
-    return value;
-}
-
-// The legacy providers only give a human-readable errorMessage, never a
-// structured code, and never include the API key in it (see
-// OpenAIProvider.cpp/AnthropicProvider.cpp's own secret-handling
-// guarantees) - this is a best-effort text classification into the stable
-// codes IProviderClient::send() promises, not a guarantee every provider
-// failure mode is covered.
-std::string classifyProviderErrorCode(const std::string& message)
-{
-    const std::string lower = toLower(message);
-    if (lower.find("401") != std::string::npos || lower.find("unauthorized") != std::string::npos
-            || lower.find("invalid api key") != std::string::npos
-            || lower.find("authentication") != std::string::npos) {
-        return "provider.auth_failed";
-    }
-    if (lower.find("429") != std::string::npos || lower.find("rate limit") != std::string::npos) {
-        return "provider.rate_limited";
-    }
-    if (lower.find("timed out") != std::string::npos || lower.find("timeout") != std::string::npos) {
-        return "provider.timeout";
-    }
-    if (lower.find("curl") != std::string::npos || lower.find("could not resolve") != std::string::npos
-            || lower.find("connect") != std::string::npos || lower.find("network") != std::string::npos) {
-        return "provider.network_error";
-    }
-    if (lower.find("json") != std::string::npos || lower.find("parse") != std::string::npos
-            || lower.find("unexpected response") != std::string::npos) {
-        return "provider.invalid_response";
-    }
-    return "provider.request_failed";
-}
-
 // Shared by both provider adapters below: run the blocking legacy generate()
-// call, then translate its result/failure into the ProviderChatResponse/
-// Result<...> shape IProviderClient::send() promises. stopToken is checked
+// call (as a callable returning the response and its structured code), then translate its result/failure into the
+// ProviderChatResponse/Result<...> shape IProviderClient::send() promises. stopToken is checked
 // before and after the (currently non-interruptible, since the legacy
 // providers do not accept one) blocking call so a cancellation requested
 // just before or immediately after the call is still observed promptly
 // rather than only on the next stage.
+template <typename Generate>
 common::Result<application::ProviderChatResponse> runProviderCall(
-    providers::IModelProvider& provider,
+    Generate&& generate,
     const application::ProviderChatRequest& request,
     std::stop_token stopToken)
 {
@@ -75,19 +38,14 @@ common::Result<application::ProviderChatResponse> runProviderCall(
             error("provider.cancelled", "Cancelled before the request was sent"));
     }
 
-    const models::ModelResponse response = provider.generate(
-        provider_client_detail::toModelRequest(request, stopToken));
+    // ONE request: the callable performs it once and yields the response plus its structured failure code.
+    const auto outcome = generate(provider_client_detail::toModelRequest(request, stopToken));
 
     if (stopToken.stop_requested()) {
         return common::Result<application::ProviderChatResponse>::failure(
             error("provider.cancelled", "Cancelled while the request was in flight"));
     }
-    if (!response.success) {
-        return common::Result<application::ProviderChatResponse>::failure(
-            error(classifyProviderErrorCode(response.errorMessage), response.errorMessage));
-    }
-    return common::Result<application::ProviderChatResponse>::ok(
-        provider_client_detail::toChatResponse(response));
+    return provider_client_detail::toChatResult(outcome.first, outcome.second);
 }
 
 class OpenAIProviderClientAdapter final : public application::IProviderClient {
@@ -104,7 +62,10 @@ public:
             "openai", request.promptCache);
         if (!policy.success())
             return common::Result<application::ProviderChatResponse>::failure(*policy.error());
-        return runProviderCall(provider_, request, stopToken);
+        return runProviderCall([this](const models::ModelRequest& modelRequest) {
+            auto detailed = provider_.generateDetailed(modelRequest);
+            return std::make_pair(std::move(detailed.response), std::move(detailed.errorCode));
+        }, request, stopToken);
     }
 
 private:
@@ -125,7 +86,10 @@ public:
             "anthropic", request.promptCache);
         if (!policy.success())
             return common::Result<application::ProviderChatResponse>::failure(*policy.error());
-        return runProviderCall(provider_, request, stopToken);
+        return runProviderCall([this](const models::ModelRequest& modelRequest) {
+            // Anthropic supplies no structured code: the empty code selects the text fallback.
+            return std::make_pair(provider_.generate(modelRequest), std::string {});
+        }, request, stopToken);
     }
 
 private:
