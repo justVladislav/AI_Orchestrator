@@ -2533,10 +2533,22 @@ int main(int argc, char* argv[])
             return runData.value(QStringLiteral("runId")).toString() == secondRunId
                 && runData.value(QStringLiteral("task")).toString() == longTask;
         }) && "RunDetailsPanel did not receive the selected Run snapshot");
+    // Sizes at three moments (before the expansion, right after it, after the layout has settled): the next check needs a margin
+    // of MORE than 24 px, which only exists once the expanded context has been laid out completely.
+    const auto detailSizes = [&](const char* moment) {
+        checkpoint((std::string("run details sizes ") + moment
+            + ": window=" + std::to_string(window->property("width").toDouble())
+            + "x" + std::to_string(window->property("height").toDouble())
+            + " flickableHeight=" + std::to_string(runDetailsFlickable->property("height").toDouble())
+            + " contentHeight=" + std::to_string(runDetailsFlickable->property("contentHeight").toDouble())
+            + " maximumY=" + std::to_string(runDetailsPanel->property("detailMaximumY").toDouble())).c_str());
+    };
+    detailSizes("before expansion");
     assert(runDetailsPanel->setProperty("contextExpanded", true));
     assert(waitForProperty(runDetailsPanel, "contextExpanded",
         [](const QVariant& value) { return value.toBool(); })
         && "RunDetailsPanel reset contextExpanded after selecting the Run");
+    detailSizes("right after expansion");
     // AG-16.2 grew this binary (more ai::application includes/seeding code
     // later in main()) enough to push process/QML-engine startup weight up,
     // which made this pre-existing layout-settle wait marginal against the
@@ -2552,6 +2564,13 @@ int main(int argc, char* argv[])
         + " height=" + std::to_string(runDetailsFlickable->property("height").toDouble())
         + " maximumY=" + std::to_string(runDetailsPanel->property("detailMaximumY").toDouble())).c_str());
     assert(detailsOverflow && "Expanded Run context did not produce scrollable detail content");
+    detailSizes("after the first overflow");
+    // Any overflow (628 > 622) already satisfies the wait above, but the scroll test below needs detailMaximumY > 24: wait for
+    // exactly that, with the same 15 s budget. The assertion that follows is unchanged.
+    const bool detailMaximumReached = waitForProperty(runDetailsPanel, "detailMaximumY",
+        [](const QVariant& value) { return value.toDouble() > 24.0; }, 15s);
+    detailSizes("after waiting for detailMaximumY > 24");
+    assert(detailMaximumReached && "Expanded Run context never produced detailMaximumY > 24");
     const double detailMaximumY =
         runDetailsPanel->property("detailMaximumY").toDouble();
     assert(detailMaximumY > 24.0);
