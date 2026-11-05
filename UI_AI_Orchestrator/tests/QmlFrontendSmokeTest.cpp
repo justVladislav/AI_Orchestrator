@@ -57,6 +57,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -1576,6 +1577,259 @@ Item {
     checkpoint("C2-A: the Overview cost wording keeps the amount and the incomplete mark visible");
 }
 
+
+// C2-B/S1: the REAL ProjectMemoryPanel shows the STORED cost of every compaction record - whatever its status - with the amount and
+// the incompleteness whole (wrapped, never cut, inside the panel, clear of neighbours), reads the history through ONE snapshot per
+// refresh, shows an unreadable history as unavailable (no old rows) and drops exactly its own error on recovery.
+void runProjectMemoryCostTests(QQmlApplicationEngine& engine, QObject* hostWindow, const QVariant& colors)
+{
+    QQmlComponent component(&engine);
+    component.setData(R"QML(
+import QtQuick
+import QtQuick.Layouts
+import UI_AI_Orchestrator
+Item {
+    id: root
+    property var hostRef
+    property var colorsRef
+    property real panelWidth: 560
+    // bindings (not literals) so that backend is in place before projectId triggers the first refresh
+    property string projectIdValue: "project-s1"
+    property var backendObject: ({ projectMemory: fakeMemory })
+    property var snapshot: ({ state: "available", rows: [], errorCode: "", errorMessage: "" })
+    property bool failNext: false
+    property string failCode: "persistence.read_failed"
+    property string failMessage: "history unreadable"
+    property int snapshotCalls: 0
+    property int legacyHistoryCalls: 0
+    width: 700
+    height: 1400
+    function emitError(code, message) { fakeMemory.errorOccurred(code, message) }
+    QtObject {
+        id: fakeMemory
+        property bool compacting: false
+        property string compactingProjectId: ""
+        signal segmentsChanged(string projectId)
+        signal compactionHistoryChanged(string projectId)
+        signal errorOccurred(string code, string message)
+        function segments(projectId) { return [] }
+        function providerChoices() { return [] }
+        function stopCompaction() {}
+        function compact(projectId, providerId, modelId) { return false }
+        function compactionHistory(projectId) { root.legacyHistoryCalls++; return [] }
+        function compactionHistorySnapshot(projectId) {
+            root.snapshotCalls++
+            if (root.failNext) {
+                root.failNext = false
+                fakeMemory.errorOccurred(root.failCode, root.failMessage)
+                return { state: "unavailable", rows: [], errorCode: root.failCode, errorMessage: root.failMessage }
+            }
+            return root.snapshot
+        }
+    }
+    ProjectMemoryPanel {
+        id: panelItem
+        objectName: "projectMemoryPanel"
+        x: 10; y: 10
+        width: root.panelWidth
+        height: implicitHeight
+        hostWindow: root.hostRef; colors: root.colorsRef
+        backend: root.backendObject
+        projectId: root.projectIdValue
+    }
+    Rectangle {
+        objectName: "nextBlock"
+        x: 10
+        y: panelItem.y + panelItem.height + 12
+        width: root.panelWidth
+        height: 40
+        color: "#334455"
+    }
+}
+)QML", QUrl(QStringLiteral("qrc:/s1-memory/Harness.qml")));
+    if (component.isError()) {
+        for (const auto& error : component.errors()) std::fprintf(stderr, "[s1-memory] %s\n", error.toString().toUtf8().constData());
+    }
+    assert(component.isReady());
+
+    QQuickWindow window;
+    window.resize(720, 1420);
+    QVariantMap initial;
+    initial.insert(QStringLiteral("hostRef"), QVariant::fromValue(hostWindow));
+    initial.insert(QStringLiteral("colorsRef"), colors);
+    std::unique_ptr<QObject> owner(component.createWithInitialProperties(initial));
+    assert(owner);
+    auto* root = qobject_cast<QQuickItem*>(owner.get());
+    assert(root != nullptr);
+    root->setParentItem(window.contentItem());
+    window.show();
+    assert(ai::ui::test_support::waitForCondition("the memory harness is exposed", [&] { return window.isExposed(); }, 5s));
+    auto* panel = visualChildNamed(root, QStringLiteral("projectMemoryPanel"));
+    auto* nextBlock = visualChildNamed(root, QStringLiteral("nextBlock"));
+    assert(panel && nextBlock);
+    const auto setRoot = [&](const char* name, const QVariant& value) { assert(root->setProperty(name, value)); settle(); };
+    const auto refresh = [&] { assert(QMetaObject::invokeMethod(panel, "refreshHistory")); settle(); };
+
+    struct Kind { const char* state; const char* amount; const char* status; const char* wording; bool incomplete; const char* usage; };
+    const Kind kinds[] = {
+        {"partial", "$0.2507", "completed", "Incomplete estimate: $0.2507 recorded, total unknown", true, "1000 in / 200 out tok"},
+        {"known", "$0.0000", "completed", "$0.0000", false, "40 in / 15 out tok"},
+        {"unknown", "", "completed", "Cost unknown (price incomplete)", true, "100 in / 10 out tok"},
+        {"known", "$0.1200", "failed", "$0.1200", false, "40 in / 15 out tok"},
+        {"partial", "$1234.567890", "failed", "Incomplete estimate: $1234.567890 recorded, total unknown", true, "40 in / 15 out tok"},
+        {"none", "", "cancelled", "No cost recorded", false, ""},
+        {"unknown", "", "failed", "Cost unknown (price incomplete)", true, ""},
+        {"partial", "$0.0330", "cancelled", "Incomplete estimate: $0.0330 recorded, total unknown", true, ""}};
+    const auto rowsFor = [&](int count) {
+        QVariantList rows;
+        for (int index = 0; index < count; ++index) {
+            const Kind& kind = kinds[index % 8];
+            const bool paid = std::strlen(kind.usage) > 0;
+            rows.append(QVariantMap {{"recordId", QStringLiteral("r%1").arg(index)}, {"status", kind.status},
+                {"modelId", QStringLiteral("model-%1").arg(index)}, {"createdAt", QStringLiteral("2026-11-05 12:%1").arg(10 + index)},
+                {"errorMessage", std::strcmp(kind.status, "completed") == 0 ? "" : "Provider returned an empty compacted summary"},
+                {"inputTokens", paid ? 40 : 0}, {"outputTokens", paid ? 15 : 0},
+                {"sourceSegmentIds", QStringList {QStringLiteral("a"), QStringLiteral("b")}},
+                {"priceState", kind.state}, {"costText", kind.amount}, {"priceIncomplete", kind.incomplete}});
+        }
+        return rows;
+    };
+    const auto setHistory = [&](const QVariantList& rows) {
+        setRoot("snapshot", QVariantMap {{"state", "available"}, {"rows", rows}, {"errorCode", ""}, {"errorMessage", ""}});
+        refresh();
+    };
+
+    // Several records at a narrow and a normal width: EVERY cost line is whole, inside the panel, clear of its neighbours and of the
+    // block that follows - the panel grows with the rows.
+    for (const int count : {5, 8}) {
+        for (const double width : {330.0, 560.0}) {
+            setRoot("panelWidth", width);
+            setHistory(rowsFor(count));
+            QList<QObject*> costLines, usageLines;
+            visualChildrenNamed(panel, QStringLiteral("compactionCostLine"), costLines);
+            visualChildrenNamed(panel, QStringLiteral("compactionUsageLine"), usageLines);
+            assert(costLines.size() == count && "every record shows its cost line");
+            const QRectF panelRect = sceneRectOf(panel);
+            for (int index = 0; index < count; ++index) {
+                const Kind& kind = kinds[index % 8];
+                QObject* line = nullptr;
+                for (QObject* candidate : costLines) {
+                    // the delegates are created in model order; match by wording AND position so a stale line cannot pass
+                    if (candidate->property("text").toString() == QString::fromLatin1(kind.wording)) { line = candidate; break; }
+                }
+                assert(line != nullptr && flag(line, "visible"));
+                assertTextFits(line, "compaction cost line");
+                assert(inside(line, panelRect) && !overlaps(line, nextBlock));
+                const QString text = line->property("text").toString();
+                assert(!text.contains(QStringLiteral("At least")));
+                if (kind.incomplete && std::strlen(kind.amount) > 0) {
+                    assert(text.contains(QString::fromLatin1(kind.amount)) && text.contains(QStringLiteral("total unknown")));
+                }
+            }
+            for (QObject* usage : usageLines) {
+                if (!flag(usage, "visible")) continue;
+                assertTextFits(usage, "compaction usage line");
+                assert(inside(usage, panelRect) && !overlaps(usage, nextBlock));
+                for (QObject* cost : costLines) assert(!overlaps(usage, cost));
+            }
+            for (int a = 0; a < costLines.size(); ++a) {
+                for (int b = a + 1; b < costLines.size(); ++b) assert(!overlaps(costLines[a], costLines[b]));
+            }
+            assert(panelRect.bottom() <= sceneRectOf(nextBlock).top() - 0.5);
+            assert(!visibleNamed(panel, QStringLiteral("projectMemoryHistoryUnavailable")));
+        }
+    }
+    saveShot(root, QStringLiteral("s1-project-memory-cost-history"));
+    checkpoint("S1: compaction history cost lines verified");
+
+    // ONE read per refresh, through the snapshot only.
+    setRoot("panelWidth", 560.0);
+    setHistory(rowsFor(3));
+    const int callsBefore = root->property("snapshotCalls").toInt();
+    refresh();
+    assert(root->property("snapshotCalls").toInt() == callsBefore + 1 && root->property("legacyHistoryCalls").toInt() == 0);
+
+    // An unreadable history is shown as unavailable instead of "no compactions"; the earlier rows are gone.
+    assert(root->setProperty("failNext", true));
+    refresh();
+    assert(visibleNamed(panel, QStringLiteral("projectMemoryHistoryUnavailable")));
+    QList<QObject*> costLines;
+    visualChildrenNamed(panel, QStringLiteral("compactionCostLine"), costLines);
+    assert(costLines.isEmpty() && "no row of an earlier success survives a failed read");
+    assert(panel->property("historyErrorText").toString() == QStringLiteral("history unreadable"));
+    assert(visibleNamed(panel, QStringLiteral("projectMemoryHistoryError")));
+    assert(panel->property("errorText").toString().isEmpty() && "the history error is not the segments/compact error line");
+    assert(root->property("snapshotCalls").toInt() == callsBefore + 2);
+    saveShot(root, QStringLiteral("s1-project-memory-history-unavailable"));
+
+    // Recovery: the rows come back, the unavailable mark goes, and the history error leaves the shared error line.
+    refresh();
+    assert(!visibleNamed(panel, QStringLiteral("projectMemoryHistoryUnavailable")));
+    costLines.clear();
+    visualChildrenNamed(panel, QStringLiteral("compactionCostLine"), costLines);
+    assert(costLines.size() == 3);
+    assert(panel->property("historyErrorText").toString().isEmpty());
+    assert(!visibleNamed(panel, QStringLiteral("projectMemoryHistoryError")));
+    assert(panel->property("errorText").toString().isEmpty());
+
+    // An UNRELATED error (e.g. the segments read) is not cleared just because the history was read again.
+    assert(QMetaObject::invokeMethod(root, "emitError", Q_ARG(QVariant, QVariant(QStringLiteral("project_memory.other"))),
+        Q_ARG(QVariant, QVariant(QStringLiteral("segments boom")))));
+    settle();
+    refresh();
+    assert(panel->property("errorText").toString() == QStringLiteral("segments boom"));
+
+    // OWNERSHIP is the operation, not the text: a segments/compact error with the SAME message (and the same code) as a history
+    // failure stays through history-failure -> history-recovery; the history error itself is gone and the rows are back.
+    for (const bool sameCode : {true, false}) {
+        const QString code = sameCode ? QStringLiteral("persistence.read_failed") : QStringLiteral("project_memory.other");
+        assert(QMetaObject::invokeMethod(root, "emitError", Q_ARG(QVariant, QVariant(code)),
+            Q_ARG(QVariant, QVariant(QStringLiteral("The same storage message")))));
+        settle();
+        assert(panel->property("errorText").toString() == QStringLiteral("The same storage message"));
+        setRoot("failMessage", QStringLiteral("The same storage message"));
+        assert(root->setProperty("failNext", true));
+        refresh();
+        assert(visibleNamed(panel, QStringLiteral("projectMemoryHistoryUnavailable")));
+        assert(panel->property("historyErrorText").toString() == QStringLiteral("The same storage message"));
+        assert(panel->property("errorText").toString() == QStringLiteral("The same storage message"));
+        refresh();   // recovery
+        assert(!visibleNamed(panel, QStringLiteral("projectMemoryHistoryUnavailable")));
+        assert(panel->property("historyErrorText").toString().isEmpty());
+        assert(panel->property("errorText").toString() == QStringLiteral("The same storage message")
+            && "the unrelated error survives the history recovery");
+        costLines.clear();
+        visualChildrenNamed(panel, QStringLiteral("compactionCostLine"), costLines);
+        assert(costLines.size() == 3 && "the rows are back");
+        setRoot("failMessage", QStringLiteral("history unreadable"));
+    }
+
+    // A failed history of one project does not leave its own error behind when the project is cleared or replaced.
+    assert(root->setProperty("failNext", true));
+    refresh();
+    assert(panel->property("historyErrorText").toString() == QStringLiteral("history unreadable"));
+    setRoot("projectIdValue", QStringLiteral(""));
+    assert(panel->property("historyErrorText").toString().isEmpty());
+    assert(!visibleNamed(panel, QStringLiteral("projectMemoryHistoryError")));
+    assert(!visibleNamed(panel, QStringLiteral("projectMemoryHistoryUnavailable")));
+    assert(root->setProperty("failNext", true));
+    setRoot("projectIdValue", QStringLiteral("project-s1"));
+    settle();
+    assert(panel->property("historyErrorText").toString() == QStringLiteral("history unreadable"));
+    setRoot("projectIdValue", QStringLiteral("project-other"));
+    settle();
+    assert(panel->property("historyErrorText").toString().isEmpty() && "another project does not inherit the old history error");
+    assert(!visibleNamed(panel, QStringLiteral("projectMemoryHistoryUnavailable")));
+
+    // A real, available, EMPTY history is not "unavailable".
+    setHistory({});
+    assert(!visibleNamed(panel, QStringLiteral("projectMemoryHistoryUnavailable")));
+    costLines.clear();
+    visualChildrenNamed(panel, QStringLiteral("compactionCostLine"), costLines);
+    assert(costLines.isEmpty());
+    checkpoint("S1: the compaction history cost, unavailable state and recovery verified");
+}
+
 } // namespace
 
 int main(int argc, char* argv[])
@@ -1672,6 +1926,15 @@ int main(int argc, char* argv[])
         runOutputFoldersHarnessTests(engine, window, projectsPage, qmlWarnings);
         assert(qmlWarnings.isEmpty() && "QML runtime warnings were emitted");
         checkpoint("output-folders scenarios passed");
+        return 0;
+    }
+
+    // Scoped run of the project-memory cost/history scenarios only: the same function and the same real colors as in the full run
+    // below, started before Run Details. It does not replace the full run and weakens no assertion of it.
+    if (argc == 2 && std::string(argv[1]) == "--project-memory-cost-only") {
+        runProjectMemoryCostTests(engine, window, projectsPage->property("colors"));
+        assert(qmlWarnings.isEmpty() && "QML runtime warnings were emitted");
+        checkpoint("project-memory cost scenarios passed");
         return 0;
     }
 
@@ -2401,6 +2664,7 @@ int main(int argc, char* argv[])
         QStringLiteral("exact fingerprint"), Qt::CaseInsensitive));
     runRecordedWorkspaceCardTests(engine, window, projectsPage->property("colors"));
     runOverviewCostLayoutTests(engine, window, projectsPage->property("colors"));
+    runProjectMemoryCostTests(engine, window, projectsPage->property("colors"));
 
     // Durable Run warnings (a diagnostic artifact that could not be stored): a Run without any has no section; with
     // warnings the section appears and shows every one of them.

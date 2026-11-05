@@ -76,7 +76,19 @@ std::optional<ProjectMemoryCompactionStatus> projectMemoryCompactionStatusFromSt
 constexpr const char* projectMemoryCompactionRecordColumns =
     "id,project_id,provider_id,model_id,source_segment_ids,source_content_hash,"
     "result_segment_id,input_tokens,output_tokens,cost_micros,status,error_code,"
-    "error_message,created_at_ms";
+    "error_message,created_at_ms,cost_price_known";
+
+// cost_price_known is NULL (no evidence of completeness), 0 (incomplete price) or 1 (complete price). Persistence-private:
+// the repository port keeps speaking std::optional<bool>.
+common::Result<void> bindNullableFlag(sqlite3* h, sqlite3_stmt* statement, int index, const std::optional<bool>& value)
+{
+    const int code = value.has_value() ? sqlite3_bind_int64(statement, index, *value ? 1 : 0)
+                                       : sqlite3_bind_null(statement, index);
+    if (code != SQLITE_OK) {
+        return common::Result<void>::failure(databaseError(h, "persistence.write_failed", "Could not bind a nullable flag"));
+    }
+    return common::Result<void>::ok();
+}
 
 common::Result<void> insertProjectMemoryCompactionRecord(
     sqlite3* h, const ProjectMemoryCompactionRecord& record)
@@ -85,8 +97,8 @@ common::Result<void> insertProjectMemoryCompactionRecord(
     const auto prepared = prepare(h,
         "INSERT INTO project_memory_compaction_records (id,project_id,provider_id,model_id,"
         "source_segment_ids,source_content_hash,result_segment_id,input_tokens,output_tokens,"
-        "cost_micros,status,error_code,error_message,created_at_ms) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?);",
+        "cost_micros,status,error_code,error_message,created_at_ms,cost_price_known) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);",
         statement);
     if (!prepared.success()) return common::Result<void>::failure(*prepared.error());
     const common::Result<void> binds[] = {
@@ -103,7 +115,8 @@ common::Result<void> insertProjectMemoryCompactionRecord(
         bindText(h, statement.get(), 11, projectMemoryCompactionStatusToString(record.status)),
         bindText(h, statement.get(), 12, record.errorCode),
         bindText(h, statement.get(), 13, record.errorMessage),
-        bindInt64(h, statement.get(), 14, toMilliseconds(record.createdAt))};
+        bindInt64(h, statement.get(), 14, toMilliseconds(record.createdAt)),
+        bindNullableFlag(h, statement.get(), 15, record.costPriceKnown)};
     for (const auto& bound : binds) {
         if (!bound.success()) return common::Result<void>::failure(*bound.error());
     }
@@ -144,6 +157,20 @@ common::Result<ProjectMemoryCompactionRecord> readProjectMemoryCompactionRecord(
     record.errorCode = columnText(statement, 11);
     record.errorMessage = columnText(statement, 12);
     record.createdAt = fromMilliseconds(sqlite3_column_int64(statement, 13));
+    // Only SQL NULL, INTEGER 0 and INTEGER 1 mean something. Any other value (a stray text, a real, 2) is a damaged row:
+    // it is refused instead of being coerced into a price state.
+    const int flagType = sqlite3_column_type(statement, 14);
+    if (flagType == SQLITE_INTEGER) {
+        const std::int64_t flag = sqlite3_column_int64(statement, 14);
+        if (flag != 0 && flag != 1) {
+            return common::Result<ProjectMemoryCompactionRecord>::failure(
+                {"persistence.read_failed", "Invalid project memory compaction price flag"});
+        }
+        record.costPriceKnown = (flag == 1);
+    } else if (flagType != SQLITE_NULL) {
+        return common::Result<ProjectMemoryCompactionRecord>::failure(
+            {"persistence.read_failed", "Invalid project memory compaction price flag"});
+    }
     return common::Result<ProjectMemoryCompactionRecord>::ok(std::move(record));
 }
 

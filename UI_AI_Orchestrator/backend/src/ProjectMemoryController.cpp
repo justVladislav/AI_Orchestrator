@@ -31,6 +31,11 @@ QVariantMap compactionRecordMap(const ai::application::ProjectMemoryCompactionRe
     QStringList sourceIds;
     for (const auto& id : value.sourceSegmentIds) sourceIds.push_back(QString::fromStdString(id));
     const auto statusName = ai::application::toString(value.status);
+    // The stored cost of THIS record, classified by its own flag/amount/usage only (ProjectMemoryCompactionTypes.hpp); the
+    // current catalog is never consulted. An unknown or absent cost carries no amount - it is never a free "$0.0000".
+    const auto priceState = ai::application::compactionPriceState(value);
+    const bool showsAmount = priceState == ai::application::ExecutionPriceState::Known
+        || priceState == ai::application::ExecutionPriceState::Partial;
     return {
         {"recordId", QString::fromStdString(value.id)},
         {"providerId", QString::fromStdString(value.providerId)},
@@ -41,7 +46,11 @@ QVariantMap compactionRecordMap(const ai::application::ProjectMemoryCompactionRe
             ? QString::fromStdString(*value.resultSegmentId) : QString {}},
         {"inputTokens", QVariant::fromValue<qulonglong>(value.inputTokens)},
         {"outputTokens", QVariant::fromValue<qulonglong>(value.outputTokens)},
-        {"estimatedCost", QStringLiteral("$%1").arg(value.costMicros / 1'000'000.0, 0, 'f', 4)},
+        {"priceState", QString::fromLatin1(ai::application::toString(priceState))},
+        {"costText", showsAmount ? QStringLiteral("$%1").arg(value.costMicros / 1'000'000.0, 0, 'f', 4) : QString {}},
+        {"costMicros", QVariant::fromValue<qulonglong>(value.costMicros)},
+        {"priceIncomplete", priceState == ai::application::ExecutionPriceState::Partial
+            || priceState == ai::application::ExecutionPriceState::Unknown},
         {"status", QString::fromLatin1(statusName)},
         {"errorCode", QString::fromStdString(value.errorCode)},
         {"errorMessage", QString::fromStdString(value.errorMessage)},
@@ -81,13 +90,34 @@ QVariantList ProjectMemoryController::segments(const QString& projectId)
     return rows;
 }
 
+QVariantMap ProjectMemoryController::compactionHistorySnapshot(const QString& projectId)
+{
+    QVariantMap snapshot {
+        {"projectId", projectId},
+        {"state", QStringLiteral("available")},
+        {"rows", QVariantList {}},
+        {"errorCode", QString {}},
+        {"errorMessage", QString {}}};
+    if (projectId.isEmpty()) return snapshot;
+
+    const auto result = compactionService_.listCompactionRecords(projectId.toStdString());
+    if (!result.success()) {
+        // Unavailable is its own state: no rows, no earlier list, no amount - and the original error is reported.
+        snapshot["state"] = QStringLiteral("unavailable");
+        snapshot["errorCode"] = QString::fromStdString(result.error()->code);
+        snapshot["errorMessage"] = QString::fromStdString(result.error()->message);
+        report(*result.error());
+        return snapshot;
+    }
+    QVariantList rows;
+    for (const auto& value : result.value()) rows.push_back(compactionRecordMap(value));
+    snapshot["rows"] = rows;
+    return snapshot;
+}
+
 QVariantList ProjectMemoryController::compactionHistory(const QString& projectId)
 {
-    const auto result = compactionService_.listCompactionRecords(projectId.toStdString());
-    QVariantList rows;
-    if (!result.success()) { report(*result.error()); return rows; }
-    for (const auto& value : result.value()) rows.push_back(compactionRecordMap(value));
-    return rows;
+    return compactionHistorySnapshot(projectId).value(QStringLiteral("rows")).toList();
 }
 
 QVariantList ProjectMemoryController::providerChoices()

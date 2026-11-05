@@ -934,6 +934,206 @@ void testCompactSurfacesCompactionRepositoryPersistenceFailure()
         "A retry after an atomic persistence failure must succeed over the unchanged source set");
 }
 
+// ---------------------------------------------------------------------------
+// C2-B/S1: a record owns its amount AND whether that price was complete.
+// ---------------------------------------------------------------------------
+ProjectMemoryCompactionRecord storedRecordOf(CompactionFixture& fixture, const ProjectMemoryCompactionRecord& returned)
+{
+    const auto listed = fixture.compactionRepository.listCompactionRecords(fixture.project.id);
+    require(listed.success(), "Setup: the stored records must be readable");
+    for (const auto& stored : listed.value()) {
+        if (stored.id == returned.id) return stored;
+    }
+    require(false, "The returned record must be the stored one");
+    return {};
+}
+
+ProjectMemoryCompactionRecord compactWith(CompactionFixture& fixture, const Model& model)
+{
+    fixture.seedSegments(2);
+    const auto result = fixture.service.compact(fixture.project.id, fixture.provider.id, model.id, std::stop_token {});
+    require(result.success(), "A compaction attempt must be reported through its record");
+    return result.value();
+}
+
+void testCompactStoresTheCompletenessOfTheSingleCostCalculation()
+{
+    // Complete price: both used categories are priced -> true, and the stored copy carries it too.
+    {
+        CompactionFixture fixture;
+        const auto record = compactWith(fixture, fixture.model);
+        require(record.status == ProjectMemoryCompactionStatus::Completed && record.costMicros > 0,
+            "A priced success keeps its amount");
+        require(record.costPriceKnown == std::optional<bool> {true}, "A complete price is stored as true");
+        require(storedRecordOf(fixture, record).costPriceKnown == std::optional<bool> {true}, "...and so is the persisted record");
+        require(compactionPriceState(record) == ExecutionPriceState::Known, "...which is a known cost");
+    }
+    // A true zero: the prices are entered, the amount rounds to 0. Known, not unknown.
+    {
+        CompactionFixture fixture;
+        Model cheap = makeModel("model-cheap", fixture.provider.id);
+        cheap.inputPriceMicrosPerMillionTokens = 1;
+        cheap.outputPriceMicrosPerMillionTokens = 1;
+        require(fixture.models.insert(cheap).success(), "Setup: model");
+        const auto record = compactWith(fixture, cheap);
+        require(record.costMicros == 0 && record.costPriceKnown == std::optional<bool> {true}
+                && compactionPriceState(record) == ExecutionPriceState::Known,
+            "A complete price that rounds to zero is a known zero");
+    }
+    // A used category without a price: the amount is only what could be priced -> false, a positive partial estimate.
+    {
+        CompactionFixture fixture;
+        Model noOutputPrice = makeModel("model-no-output", fixture.provider.id);
+        noOutputPrice.outputPriceMicrosPerMillionTokens = 0;
+        require(fixture.models.insert(noOutputPrice).success(), "Setup: model");
+        const auto record = compactWith(fixture, noOutputPrice);
+        require(record.costMicros > 0 && record.costPriceKnown == std::optional<bool> {false}
+                && compactionPriceState(record) == ExecutionPriceState::Partial,
+            "An unset output price makes the recorded amount an incomplete estimate");
+        require(storedRecordOf(fixture, record).costPriceKnown == std::optional<bool> {false}, "...also in the persisted record");
+    }
+    // Nothing could be priced: false with no amount -> unknown, never a free zero.
+    {
+        CompactionFixture fixture;
+        Model unpriced = makeModel("model-unpriced", fixture.provider.id);
+        unpriced.inputPriceMicrosPerMillionTokens = 0;
+        unpriced.outputPriceMicrosPerMillionTokens = 0;
+        require(fixture.models.insert(unpriced).success(), "Setup: model");
+        const auto record = compactWith(fixture, unpriced);
+        require(record.costMicros == 0 && record.costPriceKnown == std::optional<bool> {false}
+                && compactionPriceState(record) == ExecutionPriceState::Unknown,
+            "A model with no prices yields an unknown cost, not zero");
+    }
+    // The stored flag is the record's own: a later catalog price change does not change what the record says.
+    {
+        CompactionFixture fixture;
+        Model noOutputPrice = makeModel("model-edit", fixture.provider.id);
+        noOutputPrice.outputPriceMicrosPerMillionTokens = 0;
+        require(fixture.models.insert(noOutputPrice).success(), "Setup: model");
+        const auto record = compactWith(fixture, noOutputPrice);
+        noOutputPrice.outputPriceMicrosPerMillionTokens = 15'000'000;
+        require(fixture.models.update(noOutputPrice).success(), "Setup: price edit");
+        const auto stored = storedRecordOf(fixture, record);
+        require(stored.costMicros == record.costMicros && stored.costPriceKnown == std::optional<bool> {false}
+                && compactionPriceState(stored) == ExecutionPriceState::Partial,
+            "A later catalog edit must not rewrite a stored amount or its completeness");
+    }
+}
+
+void testFailedAttemptsKeepTheFlagOnlyWhenThereWasAResponseToPrice()
+{
+    // Empty summary: the answer was paid for -> the record keeps usage, amount AND flag.
+    {
+        CompactionFixture fixture;
+        fixture.seedSegments(2);
+        fixture.client.content = "   \n\t  ";
+        const auto result = fixture.service.compact(fixture.project.id, fixture.provider.id, fixture.model.id, std::stop_token {});
+        require(result.success() && result.value().status == ProjectMemoryCompactionStatus::Failed
+                && result.value().errorCode == "project_memory.empty_summary",
+            "An empty summary is a Failed record");
+        const auto& record = result.value();
+        require(record.inputTokens == 40 && record.costMicros > 0 && record.costPriceKnown == std::optional<bool> {true},
+            "...which keeps the paid usage, the amount and the completeness flag");
+        require(storedRecordOf(fixture, record).costPriceKnown == std::optional<bool> {true}, "...in the stored copy too");
+    }
+    // Oversize summary: same.
+    {
+        CompactionFixture fixture;
+        fixture.seedSegments(2);
+        fixture.client.content = std::string(ProjectMemoryCompactionService::kMaxSummaryBytes + 1, 'x');
+        const auto result = fixture.service.compact(fixture.project.id, fixture.provider.id, fixture.model.id, std::stop_token {});
+        require(result.success() && result.value().errorCode == "project_memory.summary_too_large"
+                && result.value().costMicros > 0 && result.value().costPriceKnown == std::optional<bool> {true},
+            "An oversize summary keeps the flag next to the existing amount");
+    }
+    // Provider error: no response, nothing was priced -> the flag stays NULL (not a computed known 0), state none.
+    {
+        CompactionFixture fixture;
+        fixture.seedSegments(2);
+        fixture.client.nextError = common::Error {"provider.rate_limited", "Simulated rate limit"};
+        const auto result = fixture.service.compact(fixture.project.id, fixture.provider.id, fixture.model.id, std::stop_token {});
+        require(result.success() && result.value().status == ProjectMemoryCompactionStatus::Failed, "A provider failure is a Failed record");
+        require(!result.value().costPriceKnown.has_value() && result.value().costMicros == 0
+                && compactionPriceState(result.value()) == ExecutionPriceState::None,
+            "...without a flag and with no recorded cost");
+    }
+    // Cancelled (the S1 behaviour is unchanged: usage is not read on a stop): no flag, state none.
+    {
+        CompactionFixture fixture;
+        fixture.seedSegments(2);
+        std::stop_source source;
+        source.request_stop();
+        const auto result = fixture.service.compact(fixture.project.id, fixture.provider.id, fixture.model.id, source.get_token());
+        require(result.success() && result.value().status == ProjectMemoryCompactionStatus::Cancelled
+                && !result.value().costPriceKnown.has_value() && result.value().inputTokens == 0
+                && compactionPriceState(result.value()) == ExecutionPriceState::None,
+            "A cancelled attempt keeps no flag and is not changed by this package");
+    }
+}
+
+// Two paid answers that could not be stored (empty summary) leave the source segments in place, so the same source set is available
+// to the second call: two records, each with its own amount and flag; neither replaces the other and nothing is summed or doubled.
+void testTwoPaidFailuresOverTheSameSourcesStayTwoIndependentRecords()
+{
+    CompactionFixture fixture;
+    fixture.seedSegments(2);
+    fixture.client.content = "   ";
+    const auto first = fixture.service.compact(fixture.project.id, fixture.provider.id, fixture.model.id, std::stop_token {});
+    fixture.client.usage.inputTokens = 80;
+    const auto second = fixture.service.compact(fixture.project.id, fixture.provider.id, fixture.model.id, std::stop_token {});
+    require(first.success() && second.success(), "Both attempts are reported through their records");
+    require(first.value().id != second.value().id && first.value().sourceContentHash == second.value().sourceContentHash,
+        "Two records, two ids, the same unchanged source set");
+    require(first.value().inputTokens == 40 && second.value().inputTokens == 80 && first.value().costMicros < second.value().costMicros,
+        "Each keeps the amount of its OWN answer");
+    require(first.value().costPriceKnown == std::optional<bool> {true} && second.value().costPriceKnown == std::optional<bool> {true},
+        "...and its own flag");
+    const auto listed = fixture.service.listCompactionRecords(fixture.project.id);
+    require(listed.success() && listed.value().size() == 2, "Exactly the two records are stored");
+    const auto segments = fixture.memoryRepository.listMemorySegments(fixture.project.id);
+    require(segments.success() && segments.value().size() == 2, "The source segments were never replaced");
+}
+
+// The pure state of one stored record, in the normative order (false is not NULL; a positive amount is never hidden).
+void testCompactionPriceStateFollowsTheNormativeOrder()
+{
+    const auto record = [](std::optional<bool> flag, std::uint64_t micros, std::uint64_t tokens, ProjectMemoryCompactionStatus status) {
+        ProjectMemoryCompactionRecord value;
+        value.costPriceKnown = flag;
+        value.costMicros = micros;
+        value.inputTokens = tokens;
+        value.status = status;
+        return value;
+    };
+    constexpr auto Done = ProjectMemoryCompactionStatus::Completed;
+    constexpr auto Failed = ProjectMemoryCompactionStatus::Failed;
+    constexpr auto Cancelled = ProjectMemoryCompactionStatus::Cancelled;
+    struct Row { std::optional<bool> flag; std::uint64_t micros; std::uint64_t tokens; ProjectMemoryCompactionStatus status; ExecutionPriceState expected; const char* what; };
+    const Row table[] = {
+        {true, 500, 10, Done, ExecutionPriceState::Known, "true + positive amount"},
+        {true, 0, 10, Done, ExecutionPriceState::Known, "true + zero amount (a true zero)"},
+        {true, 0, 0, Done, ExecutionPriceState::Known, "true + no usage at all (a known zero of the calculator)"},
+        {true, 0, 0, Failed, ExecutionPriceState::Known, "true is known whatever the status"},
+        {false, 500, 10, Done, ExecutionPriceState::Partial, "false + positive amount"},
+        {false, 500, 0, Failed, ExecutionPriceState::Partial, "false + positive amount with zero tokens is still shown"},
+        {std::nullopt, 500, 10, Done, ExecutionPriceState::Partial, "NULL + positive amount (legacy)"},
+        {std::nullopt, 500, 0, Cancelled, ExecutionPriceState::Partial, "NULL + positive amount, zero tokens, cancelled"},
+        {false, 0, 10, Done, ExecutionPriceState::Unknown, "false + zero amount"},
+        {false, 0, 0, Failed, ExecutionPriceState::Unknown, "an explicit false with no tokens is NOT 'no operation'"},
+        {std::nullopt, 0, 10, Done, ExecutionPriceState::Unknown, "NULL + zero amount + tokens"},
+        {std::nullopt, 0, 10, Failed, ExecutionPriceState::Unknown, "NULL + zero amount + tokens, failed"},
+        {std::nullopt, 0, 0, Done, ExecutionPriceState::Unknown, "NULL + zero + no tokens + Completed does not prove an exact zero"},
+        {std::nullopt, 0, 0, Failed, ExecutionPriceState::None, "NULL + zero + no tokens + Failed: nothing recorded"},
+        {std::nullopt, 0, 0, Cancelled, ExecutionPriceState::None, "NULL + zero + no tokens + Cancelled: nothing recorded"}};
+    for (const Row& row : table) {
+        require(compactionPriceState(record(row.flag, row.micros, row.tokens, row.status)) == row.expected, row.what);
+    }
+    // Output-only usage counts as usage too.
+    ProjectMemoryCompactionRecord outputOnly = record(std::nullopt, 0, 0, Failed);
+    outputOnly.outputTokens = 7;
+    require(compactionPriceState(outputOnly) == ExecutionPriceState::Unknown, "Output tokens alone are usage");
+}
+
 void testCompactRejectsBoundedInputBeforeProviderCall()
 {
     CompactionFixture fixture;
@@ -1070,6 +1270,10 @@ int runProjectMemoryServiceTests()
     testCompactRecordsFailureOnEmptySummary();
     testCompactRecordsCancellation();
     testCompactSurfacesCompactionRepositoryPersistenceFailure();
+    testCompactStoresTheCompletenessOfTheSingleCostCalculation();
+    testFailedAttemptsKeepTheFlagOnlyWhenThereWasAResponseToPrice();
+    testTwoPaidFailuresOverTheSameSourcesStayTwoIndependentRecords();
+    testCompactionPriceStateFollowsTheNormativeOrder();
     testCompactRejectsBoundedInputBeforeProviderCall();
     testCompactRejectsOversizedSourceTextBeforeProviderCall();
     testCompactRecordsOversizedProviderSummaryWithoutMutation();

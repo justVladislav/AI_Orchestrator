@@ -227,13 +227,13 @@ void testAnUpgradeTakesAVerifiedRawCopyFirst()
         require(opened.success(), "The upgrade must succeed");
         const auto& info = opened.value()->preMigrationBackup();
         require(info.has_value(), "The upgrade must report its copy");
-        require(info->fromVersion == 69 && info->toVersion == 73, "The copy must name both versions");
+        require(info->fromVersion == 69 && info->toVersion == 74, "The copy must name both versions");
         require(info->path.parent_path() == backups, "The copy lives in the configured folder");
         require(info->sizeBytes > 0 && fs::exists(info->path), "The copy must exist");
         backupPath = info->path;
     }
     requireVerifiedV69Copy(backupPath, 3);
-    require(rawNumber(temp.database, "PRAGMA user_version;") == 73, "The working database is upgraded");
+    require(rawNumber(temp.database, "PRAGMA user_version;") == 74, "The working database is upgraded");
     require(rawNumber(temp.database, "SELECT count(*) FROM projects;") == 3, "...and keeps its data");
     require(namesIn(backups).size() == 1, "Exactly one copy: no .part and no second file");
     require(namesIn(backups).front().find(".part") == std::string::npos, "...and it is the published name");
@@ -289,7 +289,7 @@ void testANewOrEmptyDatabaseGetsNoCopy()
         require(opened.success(), "A new database is created");
         require(!opened.value()->preMigrationBackup().has_value(), "...without a copy");
         require(!fs::exists(backups), "...and without creating the backup folder");
-        require(rawNumber(temp.database, "PRAGMA user_version;") == 73, "...at the current version");
+        require(rawNumber(temp.database, "PRAGMA user_version;") == 74, "...at the current version");
     }
     {
         TempDir temp;
@@ -360,7 +360,7 @@ void testWithoutTheOptionNothingChanges()
         makeV69Database(temp.database, 2);
         const auto opened = SqliteDatabase::open(temp.database);
         require(opened.success() && !opened.value()->preMigrationBackup().has_value(), "No option, no copy");
-        require(rawNumber(temp.database, "PRAGMA user_version;") == 73, "...and the upgrade runs as it always did");
+        require(rawNumber(temp.database, "PRAGMA user_version;") == 74, "...and the upgrade runs as it always did");
         require(!fs::exists(temp.root / "backups"), "...with no folder");
     }
     {
@@ -417,7 +417,7 @@ void testCopyVerifyAndPublishFailuresBlockTheUpgradeAndLeaveNothingBehind()
 void testAnOccupiedFinalOrPartNameIsNeverOverwritten()
 {
     const std::string stamp = "20250101T000000Z";
-    const std::string finalName = "orchestrator.sqlite3.pre-migration-v69-to-v73." + stamp + ".sqlite";
+    const std::string finalName = "orchestrator.sqlite3.pre-migration-v69-to-v74." + stamp + ".sqlite";
     {   // the final name is taken
         TempDir temp;
         makeV69Database(temp.database, 2);
@@ -479,7 +479,7 @@ void testAnOccupiedFinalOrPartNameIsNeverOverwritten()
 void testForeignSidecarsSurviveAFailedAttempt()
 {
     const std::string stamp = "20250101T000000Z";
-    const std::string finalName = "orchestrator.sqlite3.pre-migration-v69-to-v73." + stamp + ".sqlite";
+    const std::string finalName = "orchestrator.sqlite3.pre-migration-v69-to-v74." + stamp + ".sqlite";
     const char* suffixes[] = {".part-journal", ".part-wal", ".part-shm"};
     const detail::BackupFaultForTesting faults[] = {detail::BackupFaultForTesting::Copy, detail::BackupFaultForTesting::Verify,
         detail::BackupFaultForTesting::Publish};
@@ -572,7 +572,7 @@ void testTheCopyRestoresToASeparatePlace()
         const auto opened = SqliteDatabase::open(restored);
         require(opened.success(), "The restored copy opens normally");
     }
-    require(rawNumber(restored, "PRAGMA user_version;") == 73, "...and an ordinary open upgrades the restored copy");
+    require(rawNumber(restored, "PRAGMA user_version;") == 74, "...and an ordinary open upgrades the restored copy");
     require(rawNumber(restored, "SELECT count(*) FROM projects;") == 3, "...with all its data");
     require(rawText(restored, "SELECT name FROM projects WHERE id = 'p2';") == "Fixture 2", "...unchanged");
     require(fileBytes(backupPath) == copyBefore, "The backup itself is not changed by restoring from it");
@@ -614,11 +614,11 @@ void testAVersion70DatabaseIsCopiedBeforeStep71()
         const auto opened = SqliteDatabase::open(temp.database, optionsFor(backups));
         require(opened.success(), "The v70 database must upgrade");
         const auto& info = opened.value()->preMigrationBackup();
-        require(info.has_value() && info->fromVersion == 70 && info->toVersion == 73, "The copy names versions 70 and 73");
+        require(info.has_value() && info->fromVersion == 70 && info->toVersion == 74, "The copy names versions 70 and 74");
         backupPath = info->path;
     }
     requireVerifiedV70Copy(backupPath, 3);
-    require(rawNumber(temp.database, "PRAGMA user_version;") == 73, "The working database is at 73");
+    require(rawNumber(temp.database, "PRAGMA user_version;") == 74, "The working database is at 74");
     require(rawNumber(temp.database, "SELECT count(*) FROM sqlite_master WHERE name = 'project_output_approvals' AND type = 'table';") == 1,
         "...with the new table");
     require(rawNumber(temp.database, "SELECT count(*) FROM projects;") == 3, "...and its data");
@@ -720,13 +720,13 @@ void testAVersion72SolSeedIsCopiedBeforeStep73AndTheCopyKeepsTheOldPrices()
         const auto opened = SqliteDatabase::open(temp.database, optionsFor(backups));
         require(opened.success(), "The v72 database must upgrade");
         const auto& info = opened.value()->preMigrationBackup();
-        require(info.has_value() && info->fromVersion == 72 && info->toVersion == 73, "The copy names versions 72 and 73");
+        require(info.has_value() && info->fromVersion == 72 && info->toVersion == 74, "The copy names versions 72 and 74");
         backupPath = info->path;
     }
     require(rawNumber(backupPath, "PRAGMA user_version;", true) == 72, "The copy is at version 72");
     require(rawNumber(backupPath, "SELECT input_price_micros_per_million_tokens FROM models WHERE id='m-sol';", true) == 1'500'000,
         "...and keeps the old price");
-    require(rawNumber(temp.database, "PRAGMA user_version;") == 73, "The working database is at 73");
+    require(rawNumber(temp.database, "PRAGMA user_version;") == 74, "The working database is at 74");
     require(rawNumber(temp.database, "SELECT input_price_micros_per_million_tokens FROM models WHERE id='m-sol';") == 4'000'000
             && rawNumber(temp.database, "SELECT long_context_input_price_micros_per_million_tokens FROM models WHERE id='m-sol';")
                 == 8'000'000,
@@ -754,6 +754,211 @@ void testAFailedStep73KeepsTheCopyAndTheOldPrices()
         "...with the old prices, nothing half-applied");
 }
 
+// C2-B/S1 (step 74): a REAL version-73 database whose project-memory compaction history was written before the price-completeness
+// flag existed. The fixture is a migrated database with ONLY the column step 74 introduces removed again (and the version
+// rewound), so the table is otherwise exactly the shipped one.
+void makeV73CompactionDatabase(const fs::path& databasePath, bool keepTable = true)
+{
+    {
+        const auto opened = SqliteDatabase::open(databasePath);
+        require(opened.success(), "Could not create the fixture database");
+    }
+    require(rawExec(databasePath,
+                "INSERT INTO projects(id,name,description,root_path,status,created_at_ms,updated_at_ms) "
+                "VALUES('p1','Fixture','d','C:/fixture/1','active',1,1);")
+                .empty(),
+        "Could not seed the project");
+    require(rawExec(databasePath, "ALTER TABLE project_memory_compaction_records DROP COLUMN cost_price_known;").empty(),
+        "Could not remove the step-74 column to construct the previous schema");
+    require(rawNumber(databasePath,
+                "SELECT count(*) FROM pragma_table_info('project_memory_compaction_records') WHERE name='cost_price_known';") == 0,
+        "The fixture must really be the previous table definition");
+    // Three records written by the previous release: a priced success, a success with tokens but no amount, a failure without usage.
+    require(rawExec(databasePath,
+                "INSERT INTO project_memory_compaction_records(id,project_id,provider_id,model_id,source_segment_ids,source_content_hash,"
+                "result_segment_id,input_tokens,output_tokens,cost_micros,status,error_code,error_message,created_at_ms) VALUES"
+                "('legacy-priced','p1','prov','model','[]','h1',NULL,1000,200,250700,'completed','','',1),"
+                "('legacy-tokens-no-amount','p1','prov','model','[]','h2',NULL,100,10,0,'completed','','',2),"
+                "('legacy-failed','p1','prov','model','[]','h3',NULL,0,0,0,'failed','provider.failed','x',3);"
+                "PRAGMA user_version = 73;")
+                .empty(),
+        "Could not seed the previous-release history");
+    if (!keepTable) require(rawExec(databasePath, "DROP TABLE project_memory_compaction_records;").empty(), "Could not drop the table");
+}
+
+void requireTheLegacyHistoryIsUntouched(const fs::path& databasePath, bool readOnly)
+{
+    require(rawNumber(databasePath, "SELECT count(*) FROM project_memory_compaction_records;", readOnly) == 3,
+        "All three history rows are kept");
+    require(rawNumber(databasePath, "SELECT sum(cost_micros) FROM project_memory_compaction_records;", readOnly) == 250'700,
+        "...with their stored amounts (nothing recomputed from the catalog)");
+    require(rawNumber(databasePath,
+                "SELECT count(*) FROM project_memory_compaction_records WHERE (id='legacy-priced' AND input_tokens=1000 AND "
+                "output_tokens=200 AND cost_micros=250700 AND status='completed') OR (id='legacy-tokens-no-amount' AND input_tokens=100 "
+                "AND cost_micros=0 AND status='completed') OR (id='legacy-failed' AND input_tokens=0 AND cost_micros=0 AND "
+                "status='failed' AND error_code='provider.failed');",
+                readOnly) == 3,
+        "...and every other field of them");
+}
+
+void testAVersion73CompactionHistoryIsCopiedBeforeStep74AndKeepsNoEvidenceOfCompleteness()
+{
+    TempDir temp;
+    makeV73CompactionDatabase(temp.database);
+    const fs::path backups = temp.root / "backups";
+    fs::path backupPath;
+    {
+        const auto opened = SqliteDatabase::open(temp.database, optionsFor(backups));
+        require(opened.success(), "The v73 database must upgrade");
+        const auto& info = opened.value()->preMigrationBackup();
+        require(info.has_value() && info->fromVersion == 73 && info->toVersion == 74, "The copy names versions 73 and 74");
+        backupPath = info->path;
+    }
+    require(rawNumber(backupPath, "PRAGMA user_version;", true) == 73, "The copy is at version 73");
+    require(rawNumber(backupPath,
+                "SELECT count(*) FROM pragma_table_info('project_memory_compaction_records') WHERE name='cost_price_known';", true)
+            == 0,
+        "...without the new column");
+    requireTheLegacyHistoryIsUntouched(backupPath, true);
+    require(rawNumber(temp.database, "PRAGMA user_version;") == 74, "The working database is at 74");
+    requireTheLegacyHistoryIsUntouched(temp.database, false);
+    require(rawNumber(temp.database,
+                "SELECT count(*) FROM pragma_table_info('project_memory_compaction_records') WHERE name='cost_price_known' "
+                "AND type='INTEGER' AND \"notnull\"=0 AND dflt_value IS NULL;")
+            == 1,
+        "The new column is a nullable INTEGER without a default");
+    require(rawNumber(temp.database, "SELECT count(*) FROM project_memory_compaction_records WHERE cost_price_known IS NULL;") == 3,
+        "EVERY previous record has NO evidence of completeness: NULL, not 1");
+    require(!rawExec(temp.database, "UPDATE project_memory_compaction_records SET cost_price_known = 2 WHERE id='legacy-failed';").empty(),
+        "The CHECK refuses any value except 0 and 1");
+    require(namesIn(backups).size() == 1, "Exactly one copy");
+
+    // Reopening a current database neither copies nor rewrites anything.
+    {
+        const auto again = SqliteDatabase::open(temp.database, optionsFor(backups));
+        require(again.success() && !again.value()->preMigrationBackup().has_value(), "A current database is reopened without a copy");
+    }
+    requireTheLegacyHistoryIsUntouched(temp.database, false);
+    require(namesIn(backups).size() == 1, "...and no second file appears");
+}
+
+// The step replayed over a database that already carries its OWN column (a recovery environment replaying the version step):
+// accepted, history and flags kept.
+void testStep74ReplayedOverItsOwnColumnKeepsTheHistoryAndTheFlags()
+{
+    TempDir temp;
+    makeV73CompactionDatabase(temp.database);
+    require(rawExec(temp.database,
+                "ALTER TABLE project_memory_compaction_records ADD COLUMN cost_price_known INTEGER CHECK(cost_price_known IN (0,1));"
+                "UPDATE project_memory_compaction_records SET cost_price_known = 0 WHERE id='legacy-priced';"
+                "UPDATE project_memory_compaction_records SET cost_price_known = 1 WHERE id='legacy-failed';")
+                .empty(),
+        "Plant the step's own column with real flags");
+    {
+        const auto opened = SqliteDatabase::open(temp.database, optionsFor(temp.root / "backups"));
+        require(opened.success(), "A replayed step over its own column succeeds");
+    }
+    require(rawNumber(temp.database, "PRAGMA user_version;") == 74, "...and ends at 74");
+    requireTheLegacyHistoryIsUntouched(temp.database, false);
+    require(rawNumber(temp.database,
+                "SELECT count(*) FROM project_memory_compaction_records WHERE (id='legacy-priced' AND cost_price_known=0) OR "
+                "(id='legacy-failed' AND cost_price_known=1) OR (id='legacy-tokens-no-amount' AND cost_price_known IS NULL);")
+            == 3,
+        "...and the explicit false, the explicit true and the NULL are all kept apart");
+}
+
+// A same-named column that is NOT the step's own DDL would silently change what every old record means (DEFAULT 1 = "known"):
+// refused with the step's code, the verified copy kept, the database untouched at 73.
+void testAnIncompatibleStep74ColumnIsRefusedAndKeepsTheCopyAndTheRows()
+{
+    const char* const lookAlikes[] = {
+        "ALTER TABLE project_memory_compaction_records ADD COLUMN cost_price_known INTEGER NOT NULL DEFAULT 1;",
+        "ALTER TABLE project_memory_compaction_records ADD COLUMN cost_price_known INTEGER DEFAULT 1;",
+        "ALTER TABLE project_memory_compaction_records ADD COLUMN cost_price_known INTEGER;",   // no CHECK
+        "ALTER TABLE project_memory_compaction_records ADD COLUMN cost_price_known TEXT CHECK(cost_price_known IN (0,1));"};
+    for (const char* lookAlike : lookAlikes) {
+        TempDir temp;
+        makeV73CompactionDatabase(temp.database);
+        require(rawExec(temp.database, lookAlike).empty(), "Plant the look-alike column");
+        const fs::path backups = temp.root / "backups";
+        const auto opened = SqliteDatabase::open(temp.database, optionsFor(backups));
+        require(!opened.success() && opened.error()->code == "migration.v74_failed", lookAlike);
+        require(opened.error()->message.find("kept at:") != std::string::npos, "...and the message says where the copy is");
+        const auto names = namesIn(backups);
+        require(names.size() == 1 && rawNumber(backups / names.front(), "PRAGMA user_version;", true) == 73, "The verified v73 copy is kept");
+        require(rawNumber(temp.database, "PRAGMA user_version;") == 73, "The database stays at 73");
+        require(rawNumber(temp.database, "SELECT count(*) FROM project_memory_compaction_records;") == 3
+                && rawNumber(temp.database, "SELECT sum(cost_micros) FROM project_memory_compaction_records;") == 250'700,
+            "...with its rows");
+    }
+}
+
+// The text of the step's own CHECK is not the CHECK: a FOREIGN column with the right name and the right pragma fields whose
+// stored SQL merely CONTAINS the step's DDL in a comment or in a string literal (or that carries one more constraint after it)
+// is refused. Nothing is changed: version 73, the stored table definition, the rows, and the verified copy are kept.
+void testStep74DoesNotTrustTheCheckTextInACommentOrLiteralOrBesideAnotherConstraint()
+{
+    const char* const lookAlikes[] = {
+        // the whole definition inside a block comment; the real column has no CHECK (COLLATE keeps the pragma fields equal)
+        "ALTER TABLE project_memory_compaction_records ADD COLUMN cost_price_known INTEGER "
+        "/* cost_price_known INTEGER CHECK(cost_price_known IN (0,1)) */ COLLATE NOCASE;",
+        // the whole definition inside a string literal of a CHECK that really allows 2
+        "ALTER TABLE project_memory_compaction_records ADD COLUMN cost_price_known INTEGER "
+        "CHECK(cost_price_known IN (0,1,2) OR 'cost_price_known INTEGER CHECK(cost_price_known IN (0,1))' = '');",
+        // the right CHECK, but one more constraint belongs to the same column
+        "ALTER TABLE project_memory_compaction_records ADD COLUMN cost_price_known INTEGER "
+        "CHECK(cost_price_known IN (0,1)) COLLATE NOCASE;"};
+    for (const char* lookAlike : lookAlikes) {
+        TempDir temp;
+        makeV73CompactionDatabase(temp.database);
+        require(rawExec(temp.database, lookAlike).empty(), "Plant the look-alike column");
+        const std::string definitionBefore =
+            rawText(temp.database, "SELECT sql FROM sqlite_master WHERE name='project_memory_compaction_records';");
+        const fs::path backups = temp.root / "backups";
+        const auto opened = SqliteDatabase::open(temp.database, optionsFor(backups));
+        require(!opened.success() && opened.error()->code == "migration.v74_failed", lookAlike);
+        require(opened.error()->message.find("kept at:") != std::string::npos, "...and the message says where the copy is");
+        const auto names = namesIn(backups);
+        require(names.size() == 1 && rawNumber(backups / names.front(), "PRAGMA user_version;", true) == 73,
+            "The verified v73 copy is kept");
+        require(rawNumber(temp.database, "PRAGMA user_version;") == 73, "The database stays at 73");
+        require(rawText(temp.database, "SELECT sql FROM sqlite_master WHERE name='project_memory_compaction_records';") == definitionBefore,
+            "...with the stored table definition untouched");
+        requireTheLegacyHistoryIsUntouched(temp.database, false);
+    }
+
+    // The same column spelled with a harmless comment between its parts is the step's own DDL and is still accepted.
+    TempDir temp;
+    makeV73CompactionDatabase(temp.database);
+    require(rawExec(temp.database,
+                "ALTER TABLE project_memory_compaction_records ADD COLUMN cost_price_known INTEGER /* own */ "
+                "CHECK(cost_price_known IN (0,1));"
+                "UPDATE project_memory_compaction_records SET cost_price_known = 0 WHERE id='legacy-priced';")
+                .empty(),
+        "Plant the step's own column with a harmless comment");
+    const auto opened = SqliteDatabase::open(temp.database, optionsFor(temp.root / "backups"));
+    require(opened.success(), "A comment between the parts of the step's own DDL does not make it foreign");
+    require(rawNumber(temp.database, "PRAGMA user_version;") == 74, "...and ends at 74");
+    require(rawNumber(temp.database, "SELECT count(*) FROM project_memory_compaction_records WHERE id='legacy-priced' AND cost_price_known=0;")
+            == 1,
+        "...with its flag kept");
+}
+
+// A failing step 74 (its table is gone, so the ALTER fails inside the transaction): rolled back as a whole, the version stays 73,
+// the verified copy is kept and the original error is reported.
+void testAFailedStep74RollsBackAndKeepsTheCopy()
+{
+    TempDir temp;
+    makeV73CompactionDatabase(temp.database, false);
+    const fs::path backups = temp.root / "backups";
+    const auto opened = SqliteDatabase::open(temp.database, optionsFor(backups));
+    require(!opened.success() && opened.error()->code == "migration.v74_failed", "Step 74 refuses with its own code");
+    require(opened.error()->message.find("kept at:") != std::string::npos, "...and says where the copy is");
+    const auto names = namesIn(backups);
+    require(names.size() == 1 && rawNumber(backups / names.front(), "PRAGMA user_version;", true) == 73, "The verified copy is kept at 73");
+    require(rawNumber(temp.database, "PRAGMA user_version;") == 73, "The working database stays at version 73 (no half-applied step)");
+}
+
 } // namespace
 
 int runSqlitePreMigrationBackupTests()
@@ -777,6 +982,11 @@ int runSqlitePreMigrationBackupTests()
     testAVersion72SolSeedIsCopiedBeforeStep73AndTheCopyKeepsTheOldPrices();
     testAFailedStep73KeepsTheCopyAndTheOldPrices();
     testAnIncompatibleStep71TableKeepsTheCopyAndItsRows();
+    testAVersion73CompactionHistoryIsCopiedBeforeStep74AndKeepsNoEvidenceOfCompleteness();
+    testStep74ReplayedOverItsOwnColumnKeepsTheHistoryAndTheFlags();
+    testAnIncompatibleStep74ColumnIsRefusedAndKeepsTheCopyAndTheRows();
+    testStep74DoesNotTrustTheCheckTextInACommentOrLiteralOrBesideAnotherConstraint();
+    testAFailedStep74RollsBackAndKeepsTheCopy();
     testCopyTimeOnAnOrdinaryFixtureIsReported();
     return 0;
 }

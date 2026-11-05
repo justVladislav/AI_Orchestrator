@@ -736,6 +736,7 @@ void requireSameCompaction(const ProjectMemoryCompactionRecord& actual, const Pr
             && actual.sourceContentHash == expected.sourceContentHash
             && actual.resultSegmentId == expected.resultSegmentId && actual.inputTokens == expected.inputTokens
             && actual.outputTokens == expected.outputTokens && actual.costMicros == expected.costMicros
+            && actual.costPriceKnown == expected.costPriceKnown
             && actual.status == expected.status && actual.errorCode == expected.errorCode
             && actual.errorMessage == expected.errorMessage && actual.createdAt == expected.createdAt,
         message);
@@ -830,6 +831,8 @@ void testSuccessfulCompactionCommitIsAtomic()
         ProjectMemoryCompactionRecord record = makeCompaction(
             recordId, "project-1", ProjectMemoryCompactionStatus::Completed, 5000, std::move(sources));
         record.resultSegmentId = resultId;
+        // The atomic commit writes the amount and its completeness flag in the one transaction with the segment.
+        record.costPriceKnown = false;
         return record;
     };
     const auto result = [](const char* id) { return makeProjectMemory(id, "project-1", 5000); };
@@ -943,6 +946,69 @@ void testCorruptCompactionRowsAreHandledAsPinned()
     require(mixed.size() == 2 && mixed[1].sourceSegmentIds == std::vector<std::string> {"a", "b"},
         "Non-string source entries are currently skipped");
 }
+
+// C2-B/S1: the price-completeness flag is stored with the amount - on the direct insert AND in the atomic successful commit - and
+// comes back as true / false / NULL after a reopen. Any other stored value is a damaged row: refused, never coerced into a state.
+void testCompactionPriceFlagRoundTripsAndInvalidStoredValuesFailClosed()
+{
+    Workspace workspace;
+    ProjectMemoryCompactionRecord known = makeCompaction("flag-true", "project-1", ProjectMemoryCompactionStatus::Failed, 1000, {"s1"});
+    known.costPriceKnown = true;
+    ProjectMemoryCompactionRecord incomplete = makeCompaction("flag-false", "project-1", ProjectMemoryCompactionStatus::Cancelled, 2000, {"s2"});
+    incomplete.costPriceKnown = false;
+    const ProjectMemoryCompactionRecord noEvidence = makeCompaction(
+        "flag-null", "project-1", ProjectMemoryCompactionStatus::Failed, 3000, {"s3"});
+    require(!noEvidence.costPriceKnown.has_value(), "A new record has no evidence of completeness until the service sets it");
+    {
+        const auto database = workspace.open();
+        addCatalogAndProjects(database, workspace);
+        SqliteProjectMemoryRepository memory(database);
+        SqliteProjectMemoryCompactionRepository compaction(database);
+        const std::initializer_list<const ProjectMemoryCompactionRecord*> toInsert {&known, &incomplete, &noEvidence};
+        for (const ProjectMemoryCompactionRecord* value : toInsert) {
+            require(compaction.insertCompactionRecord(*value).success(), "Could not insert a compaction record");
+        }
+        // The atomic commit: a Completed record with an explicit false.
+        require(memory.insertMemorySegment(makeProjectMemory("s4", "project-1", 1000)).success()
+                && memory.insertMemorySegment(makeProjectMemory("s5", "project-1", 1000)).success(),
+            "Could not seed the sources");
+        ProjectMemoryCompactionRecord completed = makeCompaction(
+            "flag-commit", "project-1", ProjectMemoryCompactionStatus::Completed, 4000, {"s4", "s5"});
+        completed.resultSegmentId = "result";
+        completed.costPriceKnown = false;
+        require(compaction.commitSuccessfulCompaction(completed, makeProjectMemory("result", "project-1", 4000)).success(),
+            "Could not commit a compaction");
+    }
+    const auto readAll = [&](const char* message) {
+        const auto reopened = workspace.open();
+        SqliteProjectMemoryCompactionRepository compaction(reopened);
+        const auto listed = compactionRecords(compaction, "project-1");
+        require(listed.size() == 4, message);
+        return listed;
+    };
+    const auto listed = readAll("All four records come back after a reopen");
+    require(listed[0].id == "flag-true" && listed[0].costPriceKnown == std::optional<bool> {true}, "true stays true");
+    require(listed[1].id == "flag-false" && listed[1].costPriceKnown == std::optional<bool> {false}, "false stays false (it is not NULL)");
+    require(listed[2].id == "flag-null" && !listed[2].costPriceKnown.has_value(), "NULL stays NULL (it is not true)");
+    require(listed[3].id == "flag-commit" && listed[3].costPriceKnown == std::optional<bool> {false},
+        "The atomic commit stores the flag with the amount");
+    require(listed[1].costMicros == incomplete.costMicros && listed[3].costMicros == 3'000'000'000ULL,
+        "...next to the unchanged amounts");
+
+    // A damaged flag fails the listing closed (the CHECK is bypassed only to plant it).
+    for (const char* damaged : {"2", "-1", "'yes'", "1.5"}) {
+        workspace.sql((std::string("PRAGMA ignore_check_constraints=1; UPDATE project_memory_compaction_records SET cost_price_known=")
+                       + damaged + " WHERE id='flag-null';").c_str());
+        const auto reopened = workspace.open();
+        SqliteProjectMemoryCompactionRepository compaction(reopened);
+        const auto bad = compaction.listCompactionRecords("project-1");
+        require(!bad.success() && bad.error()->code == "persistence.read_failed", damaged);
+    }
+    workspace.sql("UPDATE project_memory_compaction_records SET cost_price_known=1 WHERE id='flag-null';");
+    require(readAll("Repaired")[2].costPriceKnown == std::optional<bool> {true}, "A valid 1 reads as true again");
+    workspace.sql("UPDATE project_memory_compaction_records SET cost_price_known=NULL WHERE id='flag-null';");
+    require(!readAll("Repaired again")[2].costPriceKnown.has_value(), "...and NULL as no evidence");
+}
 } // namespace
 
 int main()
@@ -956,7 +1022,8 @@ int main()
         testCompactionRecordsRoundTripOrderingAndErrors();
         testSuccessfulCompactionCommitIsAtomic();
         testCorruptCompactionRowsAreHandledAsPinned();
-        std::cout << "SQLite Conversations contracts: 8 passed\n";
+        testCompactionPriceFlagRoundTripsAndInvalidStoredValuesFailClosed();
+        std::cout << "SQLite Conversations contracts: 9 passed\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "SQLite Conversations contracts failed: " << error.what() << '\n';

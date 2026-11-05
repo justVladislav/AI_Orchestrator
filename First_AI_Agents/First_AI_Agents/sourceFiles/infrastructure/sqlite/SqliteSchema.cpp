@@ -247,6 +247,60 @@ END;
 )sql";
 }
 
+// Step 74: is `cost_price_known` defined in the stored table SQL EXACTLY as this step's own DDL
+// ("cost_price_known INTEGER CHECK(cost_price_known IN (0,1))") and as a separate element of the column list?
+// The stored SQL is reduced to code only: comments are dropped, the content of string literals and quoted identifiers
+// is masked, whitespace is removed and letters are upper-cased. So the text of the CHECK inside a comment or a
+// literal proves nothing, a quoted/odd spelling is refused, and any constraint after the CHECK (the element must end
+// right there) makes the column a different definition. Unterminated comment or literal = not recognised.
+bool storedSqlHasTheStep74ColumnDefinition(const std::string& tableSql)
+{
+    std::string code;
+    const std::size_t size = tableSql.size();
+    for (std::size_t i = 0; i < size;) {
+        const char ch = tableSql[i];
+        if (ch == '-' && i + 1 < size && tableSql[i + 1] == '-') {
+            while (i < size && tableSql[i] != '\n') ++i;
+            continue;
+        }
+        if (ch == '/' && i + 1 < size && tableSql[i + 1] == '*') {
+            const std::size_t close = tableSql.find("*/", i + 2);
+            if (close == std::string::npos) return false;
+            i = close + 2;
+            continue;
+        }
+        if (ch == '\'' || ch == '"' || ch == '`' || ch == '[') {
+            const char closing = ch == '[' ? ']' : ch;
+            std::size_t j = i + 1;
+            for (;;) {
+                if (j >= size) return false;
+                if (tableSql[j] == closing) {
+                    if (closing != ']' && j + 1 < size && tableSql[j + 1] == closing) { j += 2; continue; }
+                    break;
+                }
+                ++j;
+            }
+            code += ch;
+            code += '?';
+            code += closing;
+            i = j + 1;
+            continue;
+        }
+        if (std::isspace(static_cast<unsigned char>(ch)) == 0) {
+            code += static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+        }
+        ++i;
+    }
+    static const std::string definition = "COST_PRICE_KNOWNINTEGERCHECK(COST_PRICE_KNOWNIN(0,1))";
+    const std::size_t at = code.find(definition);
+    if (at == std::string::npos || at == 0) return false;
+    const std::size_t end = at + definition.size();
+    if (end >= code.size()) return false;
+    const char before = code[at - 1];
+    const char after = code[end];
+    return (before == ',' || before == '(') && (after == ',' || after == ')');
+}
+
 } // namespace
 
 namespace sqlite_detail {
@@ -4014,6 +4068,74 @@ PRAGMA user_version = 73;
 COMMIT;
 )sql";
         const auto migrated = execute(handle, migration, "migration.v73_failed");
+        if (!migrated.success()) {
+            static_cast<void>(execute(handle, "ROLLBACK;", "migration.rollback_failed"));
+            return common::Result<void>::failure(*migrated.error());
+        }
+    }
+
+    if (schemaVersion < 74) {
+        // C2-B/S1: whether the cost of a project-memory compaction attempt was a COMPLETE price. Until now the record kept
+        // only cost_micros, so an incomplete estimate (an unset price for a used token category) was stored as if exact.
+        // A NEW step; no applied step is edited. The column is nullable with NO default and NO UPDATE of any row: every
+        // record written before this step keeps NULL = "no evidence of completeness" and is never rewritten, recomputed
+        // from today's catalog or declared exact.
+        //
+        // Replaying the step over a database that already has the column is accepted ONLY when the column is exactly this
+        // step's own DDL (INTEGER, nullable, no default, with the 0/1 CHECK). Any other same-named column would silently
+        // change what the legacy rows mean (a DEFAULT 1 would turn them all into "known"), so it is refused untouched.
+        bool hasColumn = false;
+        bool columnCompatible = false;
+        {
+            Statement info;
+            const auto prepared = prepare(handle, "PRAGMA table_info(project_memory_compaction_records);", info);
+            if (!prepared.success()) return common::Result<void>::failure(*prepared.error());
+            for (;;) {
+                const int step = sqlite3_step(info.get());
+                if (step == SQLITE_DONE) break;
+                if (step != SQLITE_ROW) {
+                    return common::Result<void>::failure(databaseError(
+                        handle, "migration.v74_failed", "Could not inspect project_memory_compaction_records table schema"));
+                }
+                if (columnText(info.get(), 1) == "cost_price_known") {
+                    hasColumn = true;
+                    std::string type = columnText(info.get(), 2);
+                    for (char& ch : type) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+                    columnCompatible = type == "INTEGER" && sqlite3_column_int(info.get(), 3) == 0
+                        && sqlite3_column_type(info.get(), 4) == SQLITE_NULL;
+                }
+            }
+        }
+        if (hasColumn && columnCompatible) {
+            // The CHECK lives only in the table's stored SQL.
+            Statement tableSql;
+            const auto prepared = prepare(handle,
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='project_memory_compaction_records';", tableSql);
+            if (!prepared.success()) return common::Result<void>::failure(*prepared.error());
+            const int step = sqlite3_step(tableSql.get());
+            if (step != SQLITE_ROW) {
+                return common::Result<void>::failure(databaseError(
+                    handle, "migration.v74_failed", "Could not read project_memory_compaction_records table definition"));
+            }
+            const std::string storedSql = columnText(tableSql.get(), 0);
+            // Exactly one table row; read to SQLITE_DONE so a failing read is an error, never a silent acceptance.
+            if (sqlite3_step(tableSql.get()) != SQLITE_DONE) {
+                return common::Result<void>::failure(databaseError(
+                    handle, "migration.v74_failed", "Could not read project_memory_compaction_records table definition"));
+            }
+            columnCompatible = storedSqlHasTheStep74ColumnDefinition(storedSql);
+        }
+        if (hasColumn && !columnCompatible) {
+            return common::Result<void>::failure(error("migration.v74_failed",
+                "project_memory_compaction_records.cost_price_known already exists with a different definition"));
+        }
+        std::string migration = "BEGIN IMMEDIATE;\n";
+        if (!hasColumn) {
+            migration += "ALTER TABLE project_memory_compaction_records ADD COLUMN cost_price_known "
+                "INTEGER CHECK(cost_price_known IN (0,1));\n";
+        }
+        migration += "PRAGMA user_version = 74;\nCOMMIT;";
+        const auto migrated = execute(handle, migration.c_str(), "migration.v74_failed");
         if (!migrated.success()) {
             static_cast<void>(execute(handle, "ROLLBACK;", "migration.rollback_failed"));
             return common::Result<void>::failure(*migrated.error());

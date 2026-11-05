@@ -42,9 +42,17 @@ public:
     // ARCHITECTURE_GAPS.md AG-11).
     Q_INVOKABLE QVariantList segments(const QString& projectId);
 
-    // Compaction history: status, provider/model, immutable source ids/hash,
-    // and actual token/cost usage only when the record has it (Failed/
-    // Cancelled records carry zero usage by construction, not an estimate).
+    // Compaction history, ONE read per call: {projectId, state, rows, errorCode, errorMessage}. state is "available" (rows may
+    // be empty: a real "no compactions yet") or "unavailable" (the records could not be read: rows are empty, the original
+    // error is in errorCode/errorMessage and was reported through errorOccurred; nothing is kept from an earlier success).
+    // A project id that is empty is "available" with no rows and reads nothing.
+    // Every row: status, provider/model, immutable source ids/hash, token usage and the STORED cost projection of that
+    // record - priceState (none|known|partial|unknown), costText (the stored amount, "" unless known or partial),
+    // costMicros, priceIncomplete. The cost is the record's own (never recomputed from the catalog) and is shown whatever the
+    // status: a Failed or Cancelled record keeps the usage it was paid for.
+    Q_INVOKABLE QVariantMap compactionHistorySnapshot(const QString& projectId);
+
+    // The rows of compactionHistorySnapshot() - a compatibility view; it reads (and reports a failed read) on its own.
     Q_INVOKABLE QVariantList compactionHistory(const QString& projectId);
 
     // {providerId, providerName, modelId, modelName, available, statusText}

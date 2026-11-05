@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ai/application/ApplicationTypes.hpp"
+#include "ai/application/analytics/ExecutionAnalyticsTypes.hpp"
 
 #include <chrono>
 #include <cstdint>
@@ -59,6 +60,13 @@ struct ProjectMemoryCompactionRecord {
     std::uint64_t inputTokens {0};
     std::uint64_t outputTokens {0};
     std::uint64_t costMicros {0};
+    // C2-B/S1: whether costMicros is a COMPLETE price for the usage above, as computeSingleResponseCostMicros reported it
+    // (CostBreakdown::priceKnown). This record is the only owner of the amount and of this flag.
+    //   true     the price was complete (a true zero included),
+    //   false    the price was incomplete: costMicros is only what could be priced,
+    //   nullopt  no evidence of completeness: a record written before this field existed, or an attempt that never got a
+    //            response to price. NEVER defaulted to true and never inferred from today's catalog.
+    std::optional<bool> costPriceKnown;
 
     ProjectMemoryCompactionStatus status {ProjectMemoryCompactionStatus::Failed};
     // Populated for Failed/Cancelled; empty for Completed.
@@ -67,5 +75,26 @@ struct ProjectMemoryCompactionRecord {
 
     std::chrono::system_clock::time_point createdAt;
 };
+
+// How completely the stored cost of ONE compaction record is known - the same four states as every other cost surface
+// (ExecutionPriceState: none | known | partial | unknown). A pure function of the stored record: it never reads the
+// catalog, so a later price change cannot rewrite history, and the status alone never hides or proves a cost.
+// Order matters; false and nullopt are NOT the same thing:
+//   1. costPriceKnown == true                      known (a true zero included; it proves the calculation was complete for the
+//                                                  usage received, not that the provider billed nothing)
+//   2. false or nullopt, costMicros > 0           partial: the recorded amount is an incomplete estimate, whatever the tokens/status
+//   3. false, costMicros == 0                     unknown, also with zero tokens (an explicit false is not "no operation")
+//   4. nullopt, costMicros == 0, tokens > 0       unknown
+//   5. nullopt, costMicros == 0, no tokens, Completed   unknown: an old successful answer does not prove an exact zero
+//   6. nullopt, costMicros == 0, no tokens, Failed/Cancelled   none: nothing was recorded (not a claim that it was free)
+[[nodiscard]] inline ExecutionPriceState compactionPriceState(const ProjectMemoryCompactionRecord& record) noexcept
+{
+    if (record.costPriceKnown.has_value() && *record.costPriceKnown) return ExecutionPriceState::Known;
+    if (record.costMicros > 0) return ExecutionPriceState::Partial;
+    if (record.costPriceKnown.has_value()) return ExecutionPriceState::Unknown;
+    if (record.inputTokens > 0 || record.outputTokens > 0) return ExecutionPriceState::Unknown;
+    if (record.status == ProjectMemoryCompactionStatus::Completed) return ExecutionPriceState::Unknown;
+    return ExecutionPriceState::None;
+}
 
 } // namespace ai::application

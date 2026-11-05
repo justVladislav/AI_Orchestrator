@@ -25,11 +25,12 @@ std::string trim(std::string value)
     return first < last ? std::string(first, last) : std::string {};
 }
 
-std::uint64_t costFor(const Model& model, const models::TokenUsage& usage)
+CostBreakdown costFor(const Model& model, const models::TokenUsage& usage)
 {
     // MW-P2: see CostCalculation.hpp. A compaction is ONE provider response, so it is classified
-    // against the model's long-context threshold by its own input_tokens (M2b).
-    return computeSingleResponseCostMicros(model, usage).costMicros;
+    // against the model's long-context threshold by its own input_tokens (M2b). Both results of the ONE calculation are
+    // kept: the amount AND whether the price was complete (C2-B/S1) - the record owns both.
+    return computeSingleResponseCostMicros(model, usage);
 }
 
 std::string safeProviderErrorCode(std::string_view code)
@@ -164,7 +165,9 @@ common::Result<ProjectMemoryCompactionRecord> ProjectMemoryCompactionService::co
     } else {
         record.inputTokens = response.value().usage.inputTokens;
         record.outputTokens = response.value().usage.outputTokens;
-        record.costMicros = costFor(model, response.value().usage);
+        const CostBreakdown cost = costFor(model, response.value().usage);
+        record.costMicros = cost.costMicros;
+        record.costPriceKnown = cost.priceKnown;
 
         const std::string summary = trim(response.value().content);
         if (summary.empty()) {

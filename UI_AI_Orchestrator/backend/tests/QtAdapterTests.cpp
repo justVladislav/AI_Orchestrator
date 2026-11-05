@@ -6549,6 +6549,218 @@ qulonglong attemptsInRows(const QVariantList& rows)
 
 // C2-A R2: ONE UI refresh of a conversation's cost reads the ledger ONCE, through the real ChatController, and the header and
 // the per-model rows both come from that read; a failed read is observable (errorOccurred) and shows no rows and no amount.
+// ---------------------------------------------------------------------------
+// C2-B/S1: the project-memory compaction history. ONE read per snapshot, available/unavailable as its own state, and the STORED
+// cost of every record projected by its own flag/amount/usage - whatever its status.
+// ---------------------------------------------------------------------------
+class StubProjectMemoryRepository final : public ai::application::IProjectMemoryRepository {
+public:
+    ai::common::Result<ai::application::ProjectMemorySegment> insertMemorySegment(ai::application::ProjectMemorySegment) override
+    {
+        return ai::common::Result<ai::application::ProjectMemorySegment>::failure({"stub.unused", "unused"});
+    }
+    [[nodiscard]] ai::common::Result<std::vector<ai::application::ProjectMemorySegment>> listMemorySegments(
+        const ai::application::ProjectId&) const override
+    {
+        return ai::common::Result<std::vector<ai::application::ProjectMemorySegment>>::ok({});
+    }
+    [[nodiscard]] ai::common::Result<std::optional<ai::application::ProjectMemorySegment>> findMemorySegment(
+        const ai::application::ProjectMemorySegmentId&) const override
+    {
+        return ai::common::Result<std::optional<ai::application::ProjectMemorySegment>>::ok(std::nullopt);
+    }
+    ai::common::Result<void> removeMemorySegments(const ai::application::ProjectId&) override
+    {
+        return ai::common::Result<void>::ok();
+    }
+};
+
+class StubProviderClientFactory final : public ai::application::IProviderClientFactory {
+public:
+    ai::common::Result<std::shared_ptr<ai::application::IProviderClient>> clientFor(
+        const ai::application::ProviderId&, const std::string&) override
+    {
+        return ai::common::Result<std::shared_ptr<ai::application::IProviderClient>>::failure({"stub.unused", "unused"});
+    }
+};
+
+class ScriptedCompactionHistory final : public ai::application::IProjectMemoryCompactionRepository {
+public:
+    struct Answer {
+        bool fails {false};
+        std::vector<ai::application::ProjectMemoryCompactionRecord> rows;
+    };
+    std::vector<Answer> answers;
+    mutable std::size_t reads {0};
+
+    ai::common::Result<void> insertCompactionRecord(const ai::application::ProjectMemoryCompactionRecord&) override
+    {
+        return ai::common::Result<void>::failure({"stub.unused", "unused"});
+    }
+    ai::common::Result<void> commitSuccessfulCompaction(
+        const ai::application::ProjectMemoryCompactionRecord&, ai::application::ProjectMemorySegment) override
+    {
+        return ai::common::Result<void>::failure({"stub.unused", "unused"});
+    }
+    [[nodiscard]] ai::common::Result<std::vector<ai::application::ProjectMemoryCompactionRecord>> listCompactionRecords(
+        const ai::application::ProjectId& projectId) const override
+    {
+        assert(projectId == "project-s1");
+        const Answer& answer = answers.at(reads < answers.size() ? reads : answers.size() - 1);
+        ++reads;
+        if (answer.fails) {
+            return ai::common::Result<std::vector<ai::application::ProjectMemoryCompactionRecord>>::failure(
+                {"persistence.read_failed", "compaction history unreadable"});
+        }
+        return ai::common::Result<std::vector<ai::application::ProjectMemoryCompactionRecord>>::ok(answer.rows);
+    }
+};
+
+ai::application::ProjectMemoryCompactionRecord historyRecord(const char* id, ai::application::ProjectMemoryCompactionStatus status,
+    std::optional<bool> priceKnown, std::uint64_t costMicros, std::uint64_t inputTokens, std::uint64_t outputTokens)
+{
+    ai::application::ProjectMemoryCompactionRecord value;
+    value.id = id;
+    value.projectId = "project-s1";
+    value.providerId = "provider-s1";
+    value.modelId = "model-s1";
+    value.sourceSegmentIds = {"a", "b"};
+    value.sourceContentHash = "hash";
+    value.inputTokens = inputTokens;
+    value.outputTokens = outputTokens;
+    value.costMicros = costMicros;
+    value.costPriceKnown = priceKnown;
+    value.status = status;
+    if (status != ai::application::ProjectMemoryCompactionStatus::Completed) {
+        value.errorCode = "project_memory.empty_summary";
+        value.errorMessage = "Provider returned an empty compacted summary";
+    }
+    value.createdAt = std::chrono::system_clock::now();
+    return value;
+}
+
+QVariantMap rowById(const QVariantList& rows, const char* id)
+{
+    for (const QVariant& row : rows) {
+        if (row.toMap().value(QStringLiteral("recordId")).toString() == QString::fromLatin1(id)) return row.toMap();
+    }
+    assert(false && "the record is in the history");
+    return {};
+}
+
+void testProjectMemoryHistorySnapshotIsOneReadWithItsOwnUnavailableStateAndStoredCostProjection()
+{
+    using ai::application::ProjectMemoryCompactionStatus;
+    constexpr auto Done = ProjectMemoryCompactionStatus::Completed;
+    constexpr auto Failed = ProjectMemoryCompactionStatus::Failed;
+    constexpr auto Cancelled = ProjectMemoryCompactionStatus::Cancelled;
+
+    TempWorkspace workspace;
+    ai::backend::BackendRuntime runtime({workspace.databasePath});
+    assert(runtime.storageAvailable());
+    StubProjectMemoryRepository memory;
+    ScriptedCompactionHistory history;
+    ai::application::InMemoryProjectRepository projects;
+    ai::application::InMemoryProviderRepository providers;
+    ai::application::InMemoryModelRepository models;
+    StubProviderClientFactory clients;
+    ai::application::ProjectMemoryCompactionService compaction(memory, history, projects, providers, models, clients);
+    ProjectMemoryController controller(runtime.projectMemoryService(), compaction, runtime.providerCatalogService());
+    QStringList errors;
+    QObject::connect(&controller, &ProjectMemoryController::errorOccurred, &controller,
+        [&](const QString& code, const QString&) { errors << code; });
+    const QString project = QStringLiteral("project-s1");
+    const auto stateOf = [](const QVariantMap& snapshot) { return snapshot.value(QStringLiteral("state")).toString(); };
+    const auto rowsOf = [](const QVariantMap& snapshot) { return snapshot.value(QStringLiteral("rows")).toList(); };
+
+    // An empty project id reads nothing and is simply available and empty.
+    history.answers = {{true, {}}};
+    const QVariantMap noProject = controller.compactionHistorySnapshot(QString());
+    assert(stateOf(noProject) == QStringLiteral("available") && rowsOf(noProject).isEmpty() && history.reads == 0 && errors.isEmpty());
+
+    // "No compactions yet" is a real, available, empty answer - not the unavailable state.
+    history.answers = {{false, {}}};
+    const QVariantMap empty = controller.compactionHistorySnapshot(project);
+    assert(stateOf(empty) == QStringLiteral("available") && rowsOf(empty).isEmpty() && history.reads == 1 && errors.isEmpty());
+    assert(empty.value(QStringLiteral("errorCode")).toString().isEmpty());
+
+    // Every kind of stored cost, each projected by its OWN flag/amount/usage, whatever its status.
+    const std::vector<ai::application::ProjectMemoryCompactionRecord> kinds {
+        historyRecord("known", Done, true, 250'700, 1'000, 200),
+        historyRecord("known-zero", Done, true, 0, 40, 15),
+        historyRecord("partial", Done, false, 250'700, 1'000, 200),
+        historyRecord("unknown-false", Done, false, 0, 40, 15),
+        historyRecord("legacy-positive", Done, std::nullopt, 500'000, 1'000, 200),
+        historyRecord("legacy-tokens-zero", Done, std::nullopt, 0, 100, 10),
+        historyRecord("legacy-done-empty", Done, std::nullopt, 0, 0, 0),
+        historyRecord("failed-paid", Failed, true, 120'000, 40, 15),
+        historyRecord("failed-partial", Failed, false, 80'000, 40, 15),
+        historyRecord("failed-false-empty", Failed, false, 0, 0, 0),
+        historyRecord("cancelled-none", Cancelled, std::nullopt, 0, 0, 0),
+        historyRecord("cancelled-legacy-amount", Cancelled, std::nullopt, 33'000, 0, 0)};
+    history.answers = {{false, kinds}};
+    history.reads = 0;
+    const QVariantMap snapshot = controller.compactionHistorySnapshot(project);
+    assert(stateOf(snapshot) == QStringLiteral("available") && history.reads == 1 && "one snapshot, one read");
+    const QVariantList rows = rowsOf(snapshot);
+    assert(rows.size() == static_cast<qsizetype>(kinds.size()));
+    const auto expect = [&](const char* id, const char* priceState, const QString& costText, bool incomplete) {
+        const QVariantMap row = rowById(rows, id);
+        assert(row.value(QStringLiteral("priceState")).toString() == QString::fromLatin1(priceState));
+        assert(row.value(QStringLiteral("costText")).toString() == costText);
+        assert(row.value(QStringLiteral("priceIncomplete")).toBool() == incomplete);
+        assert(!row.contains(QStringLiteral("estimatedCost")) && "the always-exact amount string is gone");
+    };
+    expect("known", "known", QStringLiteral("$0.2507"), false);
+    expect("known-zero", "known", QStringLiteral("$0.0000"), false);           // a true zero is shown as a known zero
+    expect("partial", "partial", QStringLiteral("$0.2507"), true);
+    expect("unknown-false", "unknown", QString(), true);                        // no amount, never a free "$0.0000"
+    expect("legacy-positive", "partial", QStringLiteral("$0.5000"), true);      // NULL + amount: an estimate, not exact
+    expect("legacy-tokens-zero", "unknown", QString(), true);
+    expect("legacy-done-empty", "unknown", QString(), true);                    // an old success does not prove an exact zero
+    expect("failed-paid", "known", QStringLiteral("$0.1200"), false);           // the status does not hide a stored cost
+    expect("failed-partial", "partial", QStringLiteral("$0.0800"), true);
+    expect("failed-false-empty", "unknown", QString(), true);                   // an explicit false is not "no operation"
+    expect("cancelled-none", "none", QString(), false);
+    expect("cancelled-legacy-amount", "partial", QStringLiteral("$0.0330"), true);
+    assert(rowById(rows, "failed-paid").value(QStringLiteral("status")).toString() == QStringLiteral("failed")
+        && rowById(rows, "failed-paid").value(QStringLiteral("errorMessage")).toString().size() > 0
+        && rowById(rows, "failed-paid").value(QStringLiteral("sourceSegmentIds")).toStringList().size() == 2
+        && rowById(rows, "failed-paid").value(QStringLiteral("sourceContentHash")).toString() == QStringLiteral("hash"));
+    assert(errors.isEmpty());
+
+    // success -> ONE failed read -> recovery. The failed refresh shows NO rows from the earlier success, carries the original
+    // error and reports it once; the next refresh is available again and the error is not repeated.
+    history.answers = {{false, kinds}, {true, {}}, {false, kinds}};
+    history.reads = 0;
+    const QVariantMap before = controller.compactionHistorySnapshot(project);
+    assert(stateOf(before) == QStringLiteral("available") && rowsOf(before).size() == static_cast<qsizetype>(kinds.size()));
+    const QVariantMap failed = controller.compactionHistorySnapshot(project);
+    assert(stateOf(failed) == QStringLiteral("unavailable") && rowsOf(failed).isEmpty());
+    assert(failed.value(QStringLiteral("errorCode")).toString() == QStringLiteral("persistence.read_failed")
+        && failed.value(QStringLiteral("errorMessage")).toString() == QStringLiteral("compaction history unreadable"));
+    assert(errors == QStringList {QStringLiteral("persistence.read_failed")} && history.reads == 2 && "one read per snapshot");
+    const QVariantMap recovered = controller.compactionHistorySnapshot(project);
+    assert(stateOf(recovered) == QStringLiteral("available") && rowsOf(recovered).size() == static_cast<qsizetype>(kinds.size())
+        && recovered.value(QStringLiteral("errorCode")).toString().isEmpty());
+    assert(errors.size() == 1 && history.reads == 3);
+
+    // The compatible list view: rows only, its own read, and an observable error with no stale list.
+    history.answers = {{false, kinds}, {true, {}}};
+    history.reads = 0;
+    errors.clear();
+    assert(controller.compactionHistory(project).size() == static_cast<qsizetype>(kinds.size()) && history.reads == 1);
+    assert(controller.compactionHistory(project).isEmpty() && history.reads == 2
+        && errors == QStringList {QStringLiteral("persistence.read_failed")});
+
+    // The QML reads the history through the ONE snapshot and words the stored cost without computing it.
+    const QString panelSource = readQmlSource("pages/Projects/Projects_Objets/ProjectMemoryPanel.qml");
+    assert(panelSource.contains(QStringLiteral("compactionHistorySnapshot(panel.projectId)")));
+    assert(!panelSource.contains(QStringLiteral("memory.compactionHistory(")) && !panelSource.contains(QStringLiteral(".compactionHistory(")));
+    assert(!panelSource.contains(QStringLiteral("estimatedCost")) && !panelSource.contains(QStringLiteral("costMicros")));
+    assert(panelSource.contains(QStringLiteral("qsTr(\"Incomplete estimate: %1 recorded, total unknown\")")));
+}
+
 void testChatCostHeaderAndModelRowsShareOneObservableLedgerRead()
 {
     TempWorkspace workspace;
@@ -6747,6 +6959,7 @@ int main(int argc, char* argv[])
     testRejectProposalBlocksApplyEvenWithPriorApproval();
     testProposalLineageRolesLinkPredecessorAndSuccessor();
     testProjectMemoryControllerViewerCompactionValidationAndClear();
+    testProjectMemoryHistorySnapshotIsOneReadWithItsOwnUnavailableStateAndStoredCostProjection();
     testEligibleManifestProposalProjectsApplyAllowedTrue();
     testMissingVerificationProjectsApplyAllowedFalse();
     testFailedRequiredVerificationProjectsApplyAllowedFalse();

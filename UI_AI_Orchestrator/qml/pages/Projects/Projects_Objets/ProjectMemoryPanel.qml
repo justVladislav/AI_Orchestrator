@@ -27,6 +27,13 @@ ColumnLayout {
 
     property var segmentsSnapshot: []
     property var historySnapshot: []
+    // "available" or "unavailable" (the compaction records could not be read) - from the SAME single read as the rows.
+    property string historyState: "available"
+    // The error of the history read, kept apart from errorText (segments / compact errors). Ownership comes from WHICH
+    // operation was running when the backend reported it (historyReadActive), never from comparing message text, so an
+    // unrelated error with the same code or message is never taken for it and never cleared by a history recovery.
+    property string historyErrorText: ""
+    property bool historyReadActive: false
     property var providerChoicesSnapshot: []
     property int selectedChoiceIndex: -1
     property string errorText: ""
@@ -47,8 +54,38 @@ ColumnLayout {
     }
 
     function refreshHistory() {
-        panel.historySnapshot = panel.projectId.length > 0
-                ? panel.backend.projectMemory.compactionHistory(panel.projectId) : []
+        if (panel.projectId.length === 0) {
+            panel.historySnapshot = []
+            panel.historyState = "available"
+            panel.historyErrorText = ""
+            return
+        }
+        // ONE read per refresh: the state and the rows below come from the same snapshot. A failed read replaces the list
+        // (no earlier rows survive) and is shown as unavailable instead of as "no compactions". The backend reports the
+        // failure through errorOccurred synchronously inside this call; it is the history's own error only because of that.
+        panel.historyErrorText = ""
+        panel.historyReadActive = true
+        let snapshot
+        try {
+            snapshot = panel.backend.projectMemory.compactionHistorySnapshot(panel.projectId)
+        } finally {
+            panel.historyReadActive = false
+        }
+        panel.historyState = snapshot.state
+        panel.historySnapshot = snapshot.rows
+        if (snapshot.state === "unavailable" && panel.historyErrorText.length === 0)
+            panel.historyErrorText = snapshot.errorMessage
+    }
+
+    // Wording of a record's STORED cost (the Backend classified it; nothing is summed or looked up here). A cost that is
+    // not known is never shown as a free "$0".
+    function costWording(row) {
+        switch (row.priceState) {
+        case "known": return row.costText
+        case "partial": return qsTr("Incomplete estimate: %1 recorded, total unknown").arg(row.costText)
+        case "unknown": return qsTr("Cost unknown (price incomplete)")
+        default: return qsTr("No cost recorded")
+        }
     }
 
     function refreshProviderChoices() {
@@ -87,7 +124,10 @@ ColumnLayout {
                 panel.refreshHistory()
         }
         function onErrorOccurred(code, message) {
-            panel.errorText = message
+            if (panel.historyReadActive)
+                panel.historyErrorText = message
+            else
+                panel.errorText = message
         }
     }
 
@@ -136,6 +176,16 @@ ColumnLayout {
         Layout.fillWidth: true
         visible: panel.errorText.length > 0
         text: panel.errorText
+        color: panel.colors.error
+        wrapMode: Text.WordWrap
+        font.pixelSize: panel.hostWindow.dp(10)
+    }
+
+    Text {
+        objectName: "projectMemoryHistoryError"
+        Layout.fillWidth: true
+        visible: panel.historyErrorText.length > 0
+        text: panel.historyErrorText
         color: panel.colors.error
         wrapMode: Text.WordWrap
         font.pixelSize: panel.hostWindow.dp(10)
@@ -328,6 +378,16 @@ ColumnLayout {
     }
 
     Text {
+        objectName: "projectMemoryHistoryUnavailable"
+        Layout.fillWidth: true
+        visible: panel.historyState === "unavailable"
+        text: qsTr("Compaction history is unavailable: the records could not be read.")
+        color: panel.colors.error
+        wrapMode: Text.WordWrap
+        font.pixelSize: panel.hostWindow.dp(10)
+    }
+
+    Text {
         Layout.fillWidth: true
         Layout.topMargin: panel.hostWindow.dp(4)
         visible: panel.historySnapshot.length > 0
@@ -403,15 +463,28 @@ ColumnLayout {
                     font.pixelSize: panel.hostWindow.dp(9)
                 }
                 Text {
+                    objectName: "compactionUsageLine"
                     Layout.fillWidth: true
                     visible: historyRow.modelData.status === "completed"
-                    text: qsTr("%1 in / %2 out tok · %3 · from %4 segment(s)")
+                             || historyRow.modelData.inputTokens > 0 || historyRow.modelData.outputTokens > 0
+                    text: qsTr("%1 in / %2 out tok · from %3 segment(s)")
                         .arg(historyRow.modelData.inputTokens)
                         .arg(historyRow.modelData.outputTokens)
-                        .arg(historyRow.modelData.estimatedCost)
                         .arg(historyRow.modelData.sourceSegmentIds.length)
                     color: panel.colors.textMuted
+                    wrapMode: Text.WordWrap
                     font.pixelSize: panel.hostWindow.dp(8.5)
+                }
+                // The stored cost of the record, whatever its status: a Failed or Cancelled record keeps what it was paid
+                // for. An incomplete estimate is a sentence, so it wraps and the row grows with it.
+                Text {
+                    objectName: "compactionCostLine"
+                    Layout.fillWidth: true
+                    text: panel.costWording(historyRow.modelData)
+                    color: historyRow.modelData.priceIncomplete ? panel.colors.warning : panel.colors.textMuted
+                    wrapMode: Text.WordWrap
+                    font.pixelSize: panel.hostWindow.dp(8.5)
+                    font.italic: historyRow.modelData.priceIncomplete
                 }
             }
         }
