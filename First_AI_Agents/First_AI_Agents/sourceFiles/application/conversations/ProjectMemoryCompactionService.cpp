@@ -147,15 +147,48 @@ common::Result<ProjectMemoryCompactionRecord> ProjectMemoryCompactionService::co
     record.sourceContentHash = sourceHash;
     record.createdAt = std::chrono::system_clock::now();
 
-    auto clientResult = clients_.clientFor(provider.id, provider.kind);
-    common::Result<ProviderChatResponse> response = clientResult.success()
-        ? clientResult.value()->send(request, stopToken)
-        : common::Result<ProviderChatResponse>::failure(*clientResult.error());
-
-    if (stopToken.stop_requested()) {
+    const auto markCancelled = [&record] {
         record.status = ProjectMemoryCompactionStatus::Cancelled;
         record.errorCode = "provider.cancelled";
         record.errorMessage = "Compaction was cancelled";
+    };
+
+    // A stop that arrived before anything was sent prevents the call: ONE Cancelled terminal record with no usage (0/0/NULL = no
+    // recorded estimate, not a claim that nothing was spent), no client resolved or called, the source segments untouched.
+    if (stopToken.stop_requested()) {
+        markCancelled();
+        const auto insertedCancelled = compactionRepository_.insertCompactionRecord(record);
+        if (!insertedCancelled.success())
+            return common::Result<ProjectMemoryCompactionRecord>::failure(*insertedCancelled.error());
+        return common::Result<ProjectMemoryCompactionRecord>::ok(std::move(record));
+    }
+
+    auto clientResult = clients_.clientFor(provider.id, provider.kind);
+    // ONE call. sendObserved() is send() plus the received-but-discarded response of a call that was cancelled.
+    ProviderChatOutcome outcome = clientResult.success()
+        ? clientResult.value()->sendObserved(request, stopToken)
+        : ProviderChatOutcome {common::Result<ProviderChatResponse>::failure(*clientResult.error()), std::nullopt};
+    const common::Result<ProviderChatResponse>& response = outcome.result;
+
+    if (stopToken.stop_requested()) {
+        markCancelled();
+        // The operation stays Cancelled and replaces nothing; but a response that WAS received is paid for. Its usage is taken from
+        // exactly ONE place: the successful result (the stop came after the client returned) or, failing that, the response the
+        // client reports as discarded because of this cancellation. No other failure is evidence of a response. Without evidence
+        // the record keeps 0/0/NULL. The content of the cancelled answer is never kept.
+        const ProviderChatResponse* received = nullptr;
+        if (response.success()) {
+            received = &response.value();
+        } else if (outcome.discardedResponse.has_value() && response.error()->code == "provider.cancelled") {
+            received = &*outcome.discardedResponse;
+        }
+        if (received != nullptr) {
+            record.inputTokens = received->usage.inputTokens;
+            record.outputTokens = received->usage.outputTokens;
+            const CostBreakdown cost = costFor(model, received->usage);
+            record.costMicros = cost.costMicros;
+            record.costPriceKnown = cost.priceKnown;
+        }
     } else if (!response.success()) {
         record.status = ProjectMemoryCompactionStatus::Failed;
         record.errorCode = safeProviderErrorCode(response.error()->code);

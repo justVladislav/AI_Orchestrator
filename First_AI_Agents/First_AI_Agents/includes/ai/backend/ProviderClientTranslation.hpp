@@ -8,8 +8,11 @@
 
 #include <algorithm>
 #include <cctype>
+#include <functional>
+#include <optional>
 #include <stop_token>
 #include <string>
+#include <utility>
 
 namespace ai::backend::provider_client_detail {
 
@@ -103,5 +106,69 @@ namespace ai::backend::provider_client_detail {
     modelRequest.options.promptCache = request.promptCache;
     return modelRequest;
 }
+
+// The blocking legacy provider call as the common adapter sees it: the request it builds in, the response and the
+// structured failure code (empty = none) out. The provider that performs it is owned by the callable.
+using GenerateFn = std::function<std::pair<models::ModelResponse, std::string>(const models::ModelRequest&)>;
+
+// ONE provider call, with the cancellation points IProviderClient::send() has always had: a stop before the request prevents
+// it (the callable is not run); a stop seen after the call turns the outcome into `provider.cancelled`. NEW: when that
+// call had produced a complete SUCCESSFUL response, it is returned as `discardedResponse` instead of being lost. A failed
+// ModelResponse is never captured, so a stop during a failing or aborted call carries no payload.
+[[nodiscard]] inline application::ProviderChatOutcome runObservedProviderCall(
+    const GenerateFn& generate,
+    const application::ProviderChatRequest& request,
+    std::stop_token stopToken)
+{
+    using ChatResult = common::Result<application::ProviderChatResponse>;
+    if (stopToken.stop_requested()) {
+        return application::ProviderChatOutcome {
+            ChatResult::failure({"provider.cancelled", "Cancelled before the request was sent"}), std::nullopt};
+    }
+
+    // ONE request: the callable performs it once and yields the response plus its structured failure code.
+    const auto outcome = generate(toModelRequest(request, stopToken));
+
+    if (stopToken.stop_requested()) {
+        application::ProviderChatOutcome cancelled {
+            ChatResult::failure({"provider.cancelled", "Cancelled while the request was in flight"}), std::nullopt};
+        if (outcome.first.success) cancelled.discardedResponse = toChatResponse(outcome.first);
+        return cancelled;
+    }
+    return application::ProviderChatOutcome {toChatResult(outcome.first, outcome.second), std::nullopt};
+}
+
+// The ONE production IProviderClient for every real provider kind (the factory builds it for both OpenAI and Anthropic;
+// only the kind string and the callable differ). sendObserved() is the real implementation; send() is a view of the
+// result of that same single call, so a legacy caller sees exactly the result it always saw and no second call is made.
+// The prompt-cache policy is validated first: its typed error outranks a cancellation, as before.
+class GenerateProviderClient final : public application::IProviderClient {
+public:
+    GenerateProviderClient(std::string providerKind, GenerateFn generate)
+        : providerKind_(std::move(providerKind)), generate_(std::move(generate))
+    {
+    }
+
+    common::Result<application::ProviderChatResponse> send(
+        const application::ProviderChatRequest& request, std::stop_token stopToken) override
+    {
+        return sendObserved(request, stopToken).result;
+    }
+
+    application::ProviderChatOutcome sendObserved(
+        const application::ProviderChatRequest& request, std::stop_token stopToken) override
+    {
+        const auto policy = validatePromptCachePolicy(providerKind_, request.promptCache);
+        if (!policy.success()) {
+            return application::ProviderChatOutcome {
+                common::Result<application::ProviderChatResponse>::failure(*policy.error()), std::nullopt};
+        }
+        return runObservedProviderCall(generate_, request, stopToken);
+    }
+
+private:
+    std::string providerKind_;
+    GenerateFn generate_;
+};
 
 } // namespace ai::backend::provider_client_detail

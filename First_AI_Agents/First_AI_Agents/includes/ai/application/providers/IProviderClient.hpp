@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <stop_token>
 #include <string>
 
@@ -54,6 +55,20 @@ struct ProviderChatResponse {
     models::TokenUsage usage;
 };
 
+/**
+ * What one provider call produced, for a caller that must account for a paid response even when the operation was
+ * cancelled. `result` is EXACTLY what IProviderClient::send() returns for that call. `discardedResponse` is set ONLY when
+ * `result` is the failure `provider.cancelled` AND a complete, successful provider response was received and parsed
+ * and then thrown away because a stop was observed after the call. It is never set next to a successful `result`, and never
+ * for a stop before the request, a transport abort, a provider failure or an unusable response. A zero usage inside it is a
+ * received zero, not an absent response. It lives in memory only; it is the caller's job to keep what it needs (usage), never
+ * the content of a cancelled answer.
+ */
+struct ProviderChatOutcome {
+    common::Result<ProviderChatResponse> result;
+    std::optional<ProviderChatResponse> discardedResponse {std::nullopt};
+};
+
 /** One resolved, ready-to-call connection to a single provider. */
 class IProviderClient {
 public:
@@ -71,6 +86,16 @@ public:
     virtual common::Result<ProviderChatResponse> send(
         const ProviderChatRequest& request,
         std::stop_token stopToken) = 0;
+
+    // The same ONE call as send(), with the received-but-discarded response of a cancelled call made visible
+    // (ProviderChatOutcome). The default is exactly one send() and no discarded response, so a client that implements
+    // only send() keeps its behaviour. A production client overrides this and derives send() from it, never the reverse.
+    virtual ProviderChatOutcome sendObserved(
+        const ProviderChatRequest& request,
+        std::stop_token stopToken)
+    {
+        return ProviderChatOutcome {send(request, stopToken), std::nullopt};
+    }
 };
 
 /**

@@ -3,6 +3,7 @@
 // MockWorkflowRunner's WorkflowResult::finalOutput. ExecutionProfileWorkflowRunner's
 // finalOutput is covered separately in WorkflowRoutingAndProductionTests.cpp,
 // which already has the fake provider-client fixtures that test needs.
+#include "ai/application/budget/CostCalculation.hpp"
 #include "ai/application/inmemory/InMemoryRepositories.hpp"
 #include "ai/application/execution/IWorkflowResolver.hpp"
 #include "ai/application/execution/MockWorkflowRunner.hpp"
@@ -653,9 +654,14 @@ public:
         return initial;
     }();
 
+    // S2a: raised INSIDE the call, so the stop arrives after the client has produced its answer (window W3 for a client that
+    // implements only send()).
+    std::stop_source* stopDuringSend {nullptr};
+
     common::Result<ProviderChatResponse> send(const ProviderChatRequest&, std::stop_token) override
     {
         ++callCount;
+        if (stopDuringSend != nullptr) stopDuringSend->request_stop();
         if (nextError.has_value()) {
             const auto failure = *nextError;
             nextError.reset();
@@ -672,15 +678,47 @@ class FakeCompactionProviderClientFactory final : public IProviderClientFactory 
 public:
     explicit FakeCompactionProviderClientFactory(IProviderClient& client) : client_(client) {}
 
+    int resolutions {0};
+
     common::Result<std::shared_ptr<IProviderClient>> clientFor(
         const ProviderId&, const std::string&) override
     {
+        ++resolutions;
         return common::Result<std::shared_ptr<IProviderClient>>::ok(
             std::shared_ptr<IProviderClient>(&client_, [](IProviderClient*) {}));
     }
 
 private:
     IProviderClient& client_;
+};
+
+// S2a: a client that implements sendObserved() itself, as the production client does. send() is a trap: the service must
+// use sendObserved() exactly once. The scripted outcome is the failure it returns (or a success when `success` is set)
+// plus the response it reports as received-and-discarded; `stopSource` is raised inside the call.
+class ObservedCompactionClient final : public IProviderClient {
+public:
+    int sendCalls {0};
+    int observedCalls {0};
+    std::stop_source* stopSource {nullptr};
+    std::optional<common::Error> failure;                 // the failure result
+    std::optional<ProviderChatResponse> success;          // the successful result (wins over `failure`)
+    std::optional<ProviderChatResponse> discarded;        // the discarded response payload
+
+    common::Result<ProviderChatResponse> send(const ProviderChatRequest&, std::stop_token) override
+    {
+        ++sendCalls;
+        return common::Result<ProviderChatResponse>::failure({"test.send_used", "the service must call sendObserved"});
+    }
+
+    ProviderChatOutcome sendObserved(const ProviderChatRequest&, std::stop_token) override
+    {
+        ++observedCalls;
+        if (stopSource != nullptr) stopSource->request_stop();
+        if (success.has_value()) return {common::Result<ProviderChatResponse>::ok(*success), discarded};
+        return {common::Result<ProviderChatResponse>::failure(
+                    failure.value_or(common::Error {"provider.cancelled", "Cancelled while the request was in flight"})),
+                discarded};
+    }
 };
 
 Provider makeProvider(const char* id)
@@ -905,6 +943,17 @@ void testCompactRecordsCancellation()
     const auto segments = fixture.memoryRepository.listMemorySegments(fixture.project.id);
     require(segments.success() && segments.value().size() == 2,
         "A cancelled attempt must leave the original source segments untouched");
+
+    // S2a: an operation cancelled BEFORE anything was sent never reaches the client: no client resolved, no send, ONE terminal
+    // record with no recorded usage (NULL, state none - not a claim that it was free), and nothing was committed.
+    require(fixture.clientFactory.resolutions == 0 && fixture.client.callCount == 0,
+        "A compaction cancelled before the request resolves and calls no client");
+    require(record.inputTokens == 0 && record.outputTokens == 0 && record.costMicros == 0 && !record.costPriceKnown.has_value()
+            && compactionPriceState(record) == ExecutionPriceState::None && !record.resultSegmentId.has_value(),
+        "...and records 0/0/NULL");
+    const auto records = fixture.service.listCompactionRecords(fixture.project.id);
+    require(records.success() && records.value().size() == 1 && records.value().front().id == record.id,
+        "...as exactly one terminal record");
 }
 
 void testCompactSurfacesCompactionRepositoryPersistenceFailure()
@@ -1094,6 +1143,207 @@ void testTwoPaidFailuresOverTheSameSourcesStayTwoIndependentRecords()
     require(segments.success() && segments.value().size() == 2, "The source segments were never replaced");
 }
 
+// ---------------------------------------------------------------------------
+// C2-B/S2a: a response that WAS received is paid for even if the operation is then cancelled.
+// ---------------------------------------------------------------------------
+ProviderChatResponse receivedResponse(std::uint64_t input, std::uint64_t output, std::uint64_t cacheRead = 0)
+{
+    ProviderChatResponse response;
+    response.content = "CANCELLED_ANSWER_MUST_NOT_BE_KEPT";
+    response.usage.inputTokens = input;
+    response.usage.outputTokens = output;
+    response.usage.cacheReadInputTokens = cacheRead;
+    return response;
+}
+
+struct SourceSnapshot {
+    std::vector<std::string> ids;
+    bool operator==(const SourceSnapshot&) const = default;
+};
+
+SourceSnapshot sourceSnapshotOf(CompactionFixture& fixture)
+{
+    const auto listed = fixture.memoryRepository.listMemorySegments(fixture.project.id);
+    require(listed.success(), "Setup: the segments must be readable");
+    SourceSnapshot snapshot;
+    for (const auto& segment : listed.value()) snapshot.ids.push_back(segment.id + "|" + segment.summary);
+    return snapshot;
+}
+
+// Runs one cancelled compaction against `client` with the given model and checks everything that must hold for ANY cancelled
+// record: Cancelled/provider.cancelled, no result segment, the stored copy equals the returned one, exactly one record, the
+// source segments identical and the content of the cancelled answer nowhere.
+ProjectMemoryCompactionRecord runCancelled(CompactionFixture& fixture, IProviderClient& client, const Model& model, std::stop_source& stop)
+{
+    FakeCompactionProviderClientFactory factory {client};
+    ProjectMemoryCompactionService service {
+        fixture.memoryRepository, fixture.compactionRepository, fixture.projects, fixture.providers, fixture.models, factory};
+    fixture.seedSegments(2);
+    const SourceSnapshot before = sourceSnapshotOf(fixture);
+    const auto result = service.compact(fixture.project.id, fixture.provider.id, model.id, stop.get_token());
+    require(result.success(), "A cancelled attempt is reported through its record");
+    const ProjectMemoryCompactionRecord& record = result.value();
+    require(record.status == ProjectMemoryCompactionStatus::Cancelled && record.errorCode == "provider.cancelled"
+            && record.errorMessage == "Compaction was cancelled" && !record.resultSegmentId.has_value(),
+        "The operation stays Cancelled and creates no result segment");
+    require(sourceSnapshotOf(fixture) == before, "The source segments are identical (no summary replaced them)");
+    const auto listed = fixture.compactionRepository.listCompactionRecords(fixture.project.id);
+    require(listed.success() && listed.value().size() == 1, "Exactly ONE terminal record");
+    const auto& stored = listed.value().front();
+    require(stored.id == record.id && stored.status == ProjectMemoryCompactionStatus::Cancelled
+            && stored.inputTokens == record.inputTokens && stored.outputTokens == record.outputTokens
+            && stored.costMicros == record.costMicros && stored.costPriceKnown == record.costPriceKnown,
+        "...and the stored copy carries the same usage, amount and flag");
+    require(stored.errorMessage.find("CANCELLED_ANSWER") == std::string::npos
+            && stored.errorCode.find("CANCELLED_ANSWER") == std::string::npos,
+        "The content of a cancelled answer is never kept");
+    return record;
+}
+
+void testACancelledCompactionKeepsTheUsageOfAResponseThatWasReceived()
+{
+    // W2: the client reports the response it received and discarded because of the cancellation. Four price outcomes of the ONE
+    // calculation: complete, a true zero, an incomplete positive estimate, nothing priceable.
+    struct Case { const char* what; std::uint64_t inputPrice; std::uint64_t outputPrice; ExecutionPriceState state; };
+    const Case cases[] = {
+        {"complete", 5'000'000, 15'000'000, ExecutionPriceState::Known},
+        {"a true zero", 1, 1, ExecutionPriceState::Known},
+        {"incomplete positive", 5'000'000, 0, ExecutionPriceState::Partial},
+        {"nothing priceable", 0, 0, ExecutionPriceState::Unknown}};
+    for (const Case& c : cases) {
+        CompactionFixture fixture;
+        Model model = makeModel("model-w2", fixture.provider.id);
+        model.inputPriceMicrosPerMillionTokens = c.inputPrice;
+        model.outputPriceMicrosPerMillionTokens = c.outputPrice;
+        require(fixture.models.insert(model).success(), "Setup: model");
+        std::stop_source stop;
+        ObservedCompactionClient client;
+        client.stopSource = &stop;
+        client.discarded = receivedResponse(40, 15);
+        const auto record = runCancelled(fixture, client, model, stop);
+        const CostBreakdown oracle = computeSingleResponseCostMicros(model, client.discarded->usage);
+        require(client.observedCalls == 1 && client.sendCalls == 0, c.what);
+        require(record.inputTokens == 40 && record.outputTokens == 15 && record.costMicros == oracle.costMicros
+                && record.costPriceKnown == std::optional<bool> {oracle.priceKnown},
+            c.what);
+        require(compactionPriceState(record) == c.state, c.what);
+    }
+    // Zero usage of a RECEIVED response is the calculator's result as it is: known $0 only if the price is complete (true),
+    // otherwise unknown. Never "known" merely because a response existed.
+    {
+        CompactionFixture fixture;
+        std::stop_source stop;
+        ObservedCompactionClient client;
+        client.stopSource = &stop;
+        client.discarded = receivedResponse(0, 0);
+        const auto record = runCancelled(fixture, client, fixture.model, stop);
+        require(record.inputTokens == 0 && record.costMicros == 0 && record.costPriceKnown.has_value()
+                && compactionPriceState(record) == (*record.costPriceKnown ? ExecutionPriceState::Known : ExecutionPriceState::Unknown),
+            "A received zero is stored as the calculator reports it");
+    }
+    {
+        CompactionFixture fixture;
+        Model unpriced = makeModel("model-unpriced-zero", fixture.provider.id);
+        unpriced.inputPriceMicrosPerMillionTokens = 0;
+        unpriced.outputPriceMicrosPerMillionTokens = 0;
+        require(fixture.models.insert(unpriced).success(), "Setup: model");
+        std::stop_source stop;
+        ObservedCompactionClient client;
+        client.stopSource = &stop;
+        client.discarded = receivedResponse(0, 0);
+        const auto record = runCancelled(fixture, client, unpriced, stop);
+        const CostBreakdown oracle = computeSingleResponseCostMicros(unpriced, client.discarded->usage);
+        require(record.costPriceKnown == std::optional<bool> {oracle.priceKnown} && record.costMicros == 0
+                && compactionPriceState(record) == (oracle.priceKnown ? ExecutionPriceState::Known : ExecutionPriceState::Unknown),
+            "...and a zero that the calculator cannot call complete is never a free zero");
+    }
+    // The FULL usage reaches the one calculation (cache details), not only input/output.
+    {
+        CompactionFixture fixture;
+        Model cached = makeModel("model-cache", fixture.provider.id);
+        cached.cacheReadPriceMicrosPerMillionTokens = 500'000;
+        require(fixture.models.insert(cached).success(), "Setup: model");
+        std::stop_source stop;
+        ObservedCompactionClient client;
+        client.stopSource = &stop;
+        client.discarded = receivedResponse(1000, 20, 800);
+        const auto record = runCancelled(fixture, client, cached, stop);
+        ai::models::TokenUsage plain;
+        plain.inputTokens = 1000;
+        plain.outputTokens = 20;
+        const CostBreakdown full = computeSingleResponseCostMicros(cached, client.discarded->usage);
+        require(full.costMicros != computeSingleResponseCostMicros(cached, plain).costMicros,
+            "Setup: the cache detail must change the amount");
+        require(record.costMicros == full.costMicros && record.costPriceKnown == std::optional<bool> {full.priceKnown},
+            "The cache details of the received usage take part in the one calculation");
+    }
+}
+
+void testACancelledCompactionTakesTheUsageFromExactlyOnePlace()
+{
+    // W3 (the stop came after the client returned): a successful RESULT is the evidence - for a client that implements only send().
+    {
+        CompactionFixture fixture;
+        std::stop_source stop;
+        fixture.client.stopDuringSend = &stop;
+        const auto record = runCancelled(fixture, fixture.client, fixture.model, stop);
+        require(fixture.client.callCount == 1, "The default sendObserved performs exactly ONE send");
+        require(record.inputTokens == 40 && record.outputTokens == 15 && record.costMicros > 0
+                && record.costPriceKnown == std::optional<bool> {true} && compactionPriceState(record) == ExecutionPriceState::Known,
+            "A legacy client's response that raced the stop is accounted");
+    }
+    // A successful result AND a payload (the invariant says never): the result is used, the two are not added.
+    {
+        CompactionFixture fixture;
+        std::stop_source stop;
+        ObservedCompactionClient client;
+        client.stopSource = &stop;
+        client.success = receivedResponse(40, 15);
+        client.discarded = receivedResponse(4000, 1500);
+        const auto record = runCancelled(fixture, client, fixture.model, stop);
+        require(record.inputTokens == 40 && record.outputTokens == 15, "The successful result wins; nothing is summed");
+    }
+    // No evidence of a response: 0/0/NULL, state none, never a computed known zero.
+    {
+        CompactionFixture fixture;
+        std::stop_source stop;
+        ObservedCompactionClient client;
+        client.stopSource = &stop;
+        const auto record = runCancelled(fixture, client, fixture.model, stop);
+        require(record.inputTokens == 0 && record.costMicros == 0 && !record.costPriceKnown.has_value()
+                && compactionPriceState(record) == ExecutionPriceState::None,
+            "A cancellation without a received response records no estimate");
+    }
+    // An arbitrary failure that carries a payload is NOT evidence of a successful response.
+    {
+        CompactionFixture fixture;
+        std::stop_source stop;
+        ObservedCompactionClient client;
+        client.stopSource = &stop;
+        client.failure = common::Error {"provider.rate_limited", "Simulated rate limit"};
+        client.discarded = receivedResponse(40, 15);
+        const auto record = runCancelled(fixture, client, fixture.model, stop);
+        require(record.inputTokens == 0 && record.costMicros == 0 && !record.costPriceKnown.has_value(),
+            "A payload next to a foreign failure is not used");
+    }
+    // Without a stop the payload gives no permission to anything: the failure is a Failed record with no usage.
+    {
+        CompactionFixture fixture;
+        fixture.seedSegments(2);
+        ObservedCompactionClient client;
+        client.failure = common::Error {"provider.cancelled", "Cancelled while the request was in flight"};
+        client.discarded = receivedResponse(40, 15);
+        FakeCompactionProviderClientFactory factory {client};
+        ProjectMemoryCompactionService service {
+            fixture.memoryRepository, fixture.compactionRepository, fixture.projects, fixture.providers, fixture.models, factory};
+        const auto result = service.compact(fixture.project.id, fixture.provider.id, fixture.model.id, std::stop_token {});
+        require(result.success() && result.value().status == ProjectMemoryCompactionStatus::Failed
+                && result.value().inputTokens == 0 && !result.value().costPriceKnown.has_value() && !result.value().resultSegmentId.has_value(),
+            "A payload with no stop never completes or prices anything");
+        require(client.observedCalls == 1 && client.sendCalls == 0, "The service made exactly one observed call");
+    }
+}
+
 // The pure state of one stored record, in the normative order (false is not NULL; a positive amount is never hidden).
 void testCompactionPriceStateFollowsTheNormativeOrder()
 {
@@ -1273,6 +1523,8 @@ int runProjectMemoryServiceTests()
     testCompactStoresTheCompletenessOfTheSingleCostCalculation();
     testFailedAttemptsKeepTheFlagOnlyWhenThereWasAResponseToPrice();
     testTwoPaidFailuresOverTheSameSourcesStayTwoIndependentRecords();
+    testACancelledCompactionKeepsTheUsageOfAResponseThatWasReceived();
+    testACancelledCompactionTakesTheUsageFromExactlyOnePlace();
     testCompactionPriceStateFollowsTheNormativeOrder();
     testCompactRejectsBoundedInputBeforeProviderCall();
     testCompactRejectsOversizedSourceTextBeforeProviderCall();

@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <memory>
 #include <utility>
 
 namespace ai::backend {
@@ -20,81 +21,27 @@ common::Error error(std::string code, std::string message)
     return {std::move(code), std::move(message)};
 }
 
-// Shared by both provider adapters below: run the blocking legacy generate()
-// call (as a callable returning the response and its structured code), then translate its result/failure into the
-// ProviderChatResponse/Result<...> shape IProviderClient::send() promises. stopToken is checked
-// before and after the (currently non-interruptible, since the legacy
-// providers do not accept one) blocking call so a cancellation requested
-// just before or immediately after the call is still observed promptly
-// rather than only on the next stage.
-template <typename Generate>
-common::Result<application::ProviderChatResponse> runProviderCall(
-    Generate&& generate,
-    const application::ProviderChatRequest& request,
-    std::stop_token stopToken)
+// Both provider kinds are served by ONE client, provider_client_detail::GenerateProviderClient (ProviderClientTranslation.hpp):
+// the policy gate, the cancellation points, the cancelled-response capture and the send() view are shared and tested there
+// with a fake callable. Only the callable below differs; it OWNS its provider (shared, so the client can never hold a dangling
+// reference to it) and performs the one blocking legacy call.
+provider_client_detail::GenerateFn openAIGenerate(std::string apiKey)
 {
-    if (stopToken.stop_requested()) {
-        return common::Result<application::ProviderChatResponse>::failure(
-            error("provider.cancelled", "Cancelled before the request was sent"));
-    }
-
-    // ONE request: the callable performs it once and yields the response plus its structured failure code.
-    const auto outcome = generate(provider_client_detail::toModelRequest(request, stopToken));
-
-    if (stopToken.stop_requested()) {
-        return common::Result<application::ProviderChatResponse>::failure(
-            error("provider.cancelled", "Cancelled while the request was in flight"));
-    }
-    return provider_client_detail::toChatResult(outcome.first, outcome.second);
+    auto provider = std::make_shared<providers::OpenAIProvider>(std::move(apiKey), providers::ModelTypeUnknown);
+    return [provider](const models::ModelRequest& modelRequest) {
+        auto detailed = provider->generateDetailed(modelRequest);
+        return std::make_pair(std::move(detailed.response), std::move(detailed.errorCode));
+    };
 }
 
-class OpenAIProviderClientAdapter final : public application::IProviderClient {
-public:
-    explicit OpenAIProviderClientAdapter(std::string apiKey)
-        : provider_(std::move(apiKey), providers::ModelTypeUnknown)
-    {
-    }
-
-    common::Result<application::ProviderChatResponse> send(
-        const application::ProviderChatRequest& request, std::stop_token stopToken) override
-    {
-        const auto policy = provider_client_detail::validatePromptCachePolicy(
-            "openai", request.promptCache);
-        if (!policy.success())
-            return common::Result<application::ProviderChatResponse>::failure(*policy.error());
-        return runProviderCall([this](const models::ModelRequest& modelRequest) {
-            auto detailed = provider_.generateDetailed(modelRequest);
-            return std::make_pair(std::move(detailed.response), std::move(detailed.errorCode));
-        }, request, stopToken);
-    }
-
-private:
-    providers::OpenAIProvider provider_;
-};
-
-class AnthropicProviderClientAdapter final : public application::IProviderClient {
-public:
-    explicit AnthropicProviderClientAdapter(std::string apiKey)
-        : provider_(std::move(apiKey), providers::ModelTypeUnknown)
-    {
-    }
-
-    common::Result<application::ProviderChatResponse> send(
-        const application::ProviderChatRequest& request, std::stop_token stopToken) override
-    {
-        const auto policy = provider_client_detail::validatePromptCachePolicy(
-            "anthropic", request.promptCache);
-        if (!policy.success())
-            return common::Result<application::ProviderChatResponse>::failure(*policy.error());
-        return runProviderCall([this](const models::ModelRequest& modelRequest) {
-            // Anthropic supplies no structured code: the empty code selects the text fallback.
-            return std::make_pair(provider_.generate(modelRequest), std::string {});
-        }, request, stopToken);
-    }
-
-private:
-    providers::AnthropicProvider provider_;
-};
+provider_client_detail::GenerateFn anthropicGenerate(std::string apiKey)
+{
+    auto provider = std::make_shared<providers::AnthropicProvider>(std::move(apiKey), providers::ModelTypeUnknown);
+    return [provider](const models::ModelRequest& modelRequest) {
+        // Anthropic supplies no structured code: the empty code selects the text fallback.
+        return std::make_pair(provider->generate(modelRequest), std::string {});
+    };
+}
 
 } // namespace
 
@@ -138,9 +85,11 @@ common::Result<std::shared_ptr<application::IProviderClient>> RealProviderClient
 
     std::shared_ptr<application::IProviderClient> client;
     if (providerKind == "openai") {
-        client = std::make_shared<OpenAIProviderClientAdapter>(*loaded.value());
+        client = std::make_shared<provider_client_detail::GenerateProviderClient>(
+            "openai", openAIGenerate(*loaded.value()));
     } else {
-        client = std::make_shared<AnthropicProviderClientAdapter>(*loaded.value());
+        client = std::make_shared<provider_client_detail::GenerateProviderClient>(
+            "anthropic", anthropicGenerate(*loaded.value()));
     }
 
     return common::Result<std::shared_ptr<application::IProviderClient>>::ok(std::move(client));
