@@ -9,6 +9,10 @@
 
 namespace ai::infrastructure {
 
+namespace sqlite_detail {
+struct ConnectionAccess;   // persistence-private test access (sourceFiles/infrastructure/sqlite/SqliteFaultForTesting.hpp)
+}
+
 /**
  * Optional behaviour of SqliteDatabase::open(). The defaults keep every existing call exactly as it was.
  */
@@ -64,6 +68,7 @@ private:
 
     std::unique_ptr<Impl> impl_;
 
+    friend struct sqlite_detail::ConnectionAccess;
     friend class SqliteProjectRepository;
     friend class SqliteTaskRepository;
     friend class SqliteRunRepository;

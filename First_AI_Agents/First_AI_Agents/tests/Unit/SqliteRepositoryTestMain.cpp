@@ -16,6 +16,7 @@ int runRunWorkspaceScopeRepositoryTests();
 int runVerificationEnvironmentSnapshotRepositoryTests();
 int runVerificationBootstrapRepositoryTests();
 int runSqlitePreMigrationBackupTests();
+int runSqliteCompactionWriteCertaintyTests();
 
 int main()
 {
@@ -38,6 +39,7 @@ int main()
         runVerificationEnvironmentSnapshotRepositoryTests();
         runVerificationBootstrapRepositoryTests();
         runSqlitePreMigrationBackupTests();
+        runSqliteCompactionWriteCertaintyTests();
         std::cout << "SQLite repository tests passed\n";
         return 0;
     } catch (const std::exception& exception) {

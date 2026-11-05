@@ -622,7 +622,10 @@ if(WIN32)
 
     set(AIOrchestrator_Sqlite3_Target unofficial::sqlite3::sqlite3)
 else()
-    find_package(SQLite3 REQUIRED)
+    # 3.44.0 is the minimum: the connection health uses sqlite3_set_clientdata, which does not exist before it. (On Windows the
+    # vcpkg package is not pinned to one version; SqliteConnectionHealth.hpp has a static_assert on SQLITE_VERSION_NUMBER that
+    # stops any platform's build against an older header with an explicit message.)
+    find_package(SQLite3 3.44.0 REQUIRED)
 
     # CMake's FindSQLite3 has been transitioning its imported-target name from
     # the deprecated SQLite::SQLite3 to SQLite3::SQLite3; prefer the new name
@@ -645,6 +648,8 @@ add_library(AIOrchestrator_Persistence STATIC
     sourceFiles/infrastructure/sqlite/SqliteSchema.cpp
     sourceFiles/infrastructure/sqlite/SqlitePreMigrationBackup.cpp
     sourceFiles/infrastructure/sqlite/SqlitePrimitives.cpp
+    sourceFiles/infrastructure/sqlite/SqliteConnectionHealth.cpp
+    sourceFiles/infrastructure/sqlite/SqliteTransactionScope.cpp
     sourceFiles/infrastructure/sqlite/catalog/SqliteExecutionProfileRepository.cpp
     sourceFiles/infrastructure/sqlite/catalog/SqliteModelRepository.cpp
     sourceFiles/infrastructure/sqlite/catalog/SqliteProfileMapping.cpp
@@ -653,6 +658,7 @@ add_library(AIOrchestrator_Persistence STATIC
     sourceFiles/infrastructure/sqlite/conversations/SqliteChatRepository.cpp
     sourceFiles/infrastructure/sqlite/conversations/SqliteProjectMemoryRepository.cpp
     sourceFiles/infrastructure/sqlite/conversations/SqliteProjectMemoryCompactionRepository.cpp
+    sourceFiles/infrastructure/sqlite/conversations/SqliteCompactionWriteCertainty.cpp
     sourceFiles/infrastructure/sqlite/execution/SqliteArtifactRepository.cpp
     sourceFiles/infrastructure/sqlite/execution/SqliteRunWarningRepository.cpp
     sourceFiles/infrastructure/sqlite/execution/SqliteManifestTaskExecutionRepository.cpp
@@ -725,6 +731,7 @@ if(AI_ORCHESTRATOR_BUILD_PERSISTENCE_TESTS)
           tests/Unit/VerificationEnvironmentSnapshotRepositoryTests.cpp
           tests/Unit/VerificationBootstrapRepositoryTests.cpp
           tests/Unit/SqlitePreMigrationBackupTests.cpp
+          tests/Unit/SqliteCompactionWriteCertaintyTests.cpp
       )
     target_compile_features(AIOrchestrator_Persistence_tests PRIVATE cxx_std_20)
     # The pre-migration backup tests drive the closed fault seam of the persistence-private helper (never an exported include path).

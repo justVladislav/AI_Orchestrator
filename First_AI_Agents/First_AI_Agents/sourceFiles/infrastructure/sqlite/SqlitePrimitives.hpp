@@ -37,7 +37,21 @@ private:
     sqlite3_stmt* statement_ {nullptr};
 };
 
+// The native result of the LAST failed call on a connection, captured at once: sqlite3_errmsg/errcode are overwritten by the next
+// call on the handle (a ROLLBACK, a proof read), so a primary error has to be copied BEFORE any cleanup.
+struct NativeError {
+    int code {SQLITE_OK};
+    int extendedCode {SQLITE_OK};
+    std::string message;
+};
+NativeError captureNativeError(sqlite3* handle);
+// The same, but it never throws: an allocation failure while copying the text yields nullopt (the codes are then lost, nothing else).
+std::optional<NativeError> tryCaptureNativeError(sqlite3* handle) noexcept;
+
 common::Error error(std::string code, std::string message);
+// The shared error for a failed call. If the failure is a refusal by THIS connection's quarantine (SQLITE_AUTH while the connection
+// is known to be quarantined) the code is persistence.connection_unusable and the text names the reason; any other error, including
+// any SQLITE_AUTH of a connection that is not quarantined, keeps `code`.
 common::Error databaseError(sqlite3* handle, std::string code, std::string_view operation);
 common::Result<void> execute(sqlite3* handle, const char* sql, std::string code);
 common::Result<void> prepare(sqlite3* handle, const char* sql, Statement& statement);

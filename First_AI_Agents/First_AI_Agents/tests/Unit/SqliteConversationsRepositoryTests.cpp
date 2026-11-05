@@ -1009,6 +1009,62 @@ void testCompactionPriceFlagRoundTripsAndInvalidStoredValuesFailClosed()
     workspace.sql("UPDATE project_memory_compaction_records SET cost_price_known=NULL WHERE id='flag-null';");
     require(!readAll("Repaired again")[2].costPriceKnown.has_value(), "...and NULL as no evidence");
 }
+
+// C2-B/S2b-1: the OBSERVED writes through the public port only (the connection internals are covered by the persistence-private
+// suite): a real COMMIT failure is proven not stored, the primary error is kept, the lookup is by the global id and the old methods
+// are a view of the observed ones. The deferred-FK fixture lives in the MAIN schema of the temporary database.
+void testObservedCompactionWritesProveWhatWasStoredAndTheLookupIsGlobal()
+{
+    Workspace workspace;
+    const auto database = workspace.open();
+    addCatalogAndProjects(database, workspace);
+    SqliteProjectMemoryRepository memory(database);
+    SqliteProjectMemoryCompactionRepository compaction(database);
+    for (const char* id : {"segment-1", "segment-2"}) {
+        require(memory.insertMemorySegment(makeProjectMemory(id, "project-1", 1000)).success(), "seed a segment");
+    }
+    using Ids = std::vector<std::string>;
+
+    // a real, deferred COMMIT failure
+    workspace.sql("CREATE TABLE s2b_parent(id INTEGER PRIMARY KEY);"
+                  "CREATE TABLE s2b_child(parent_id INTEGER REFERENCES s2b_parent(id) DEFERRABLE INITIALLY DEFERRED);"
+                  "CREATE TRIGGER s2b_fail_commit AFTER INSERT ON project_memory_compaction_records WHEN NEW.status = 'completed' "
+                  "BEGIN INSERT INTO s2b_child VALUES (999); END;");
+    ProjectMemoryCompactionRecord completed = makeCompaction(
+        "record-dfk", "project-1", ProjectMemoryCompactionStatus::Completed, 5000, {"segment-1", "segment-2"});
+    completed.resultSegmentId = "segment-result";
+    const auto failed = compaction.commitSuccessfulCompactionObserved(completed, makeProjectMemory("segment-result", "project-1", 5000));
+    require(!failed.result.success() && failed.result.error()->code == "persistence.transaction_failed",
+        "the primary COMMIT error is kept");
+    require(failed.state == ai::application::CompactionPersistState::NotCommitted
+            && failed.connection == ai::application::CompactionConnectionState::Healthy,
+        "a closed transaction and no stored rows: proven NotCommitted, Healthy connection");
+    require(projectMemoryIds(memory, "project-1") == Ids {"segment-1", "segment-2"}, "the sources are intact, the result is absent");
+    require(compactionRecords(compaction, "project-1").empty(), "no record was stored");
+    workspace.sql("DROP TRIGGER s2b_fail_commit;");
+
+    // success, the old methods as a view, and the lookup by the global id
+    const auto committed = compaction.commitSuccessfulCompactionObserved(completed, makeProjectMemory("segment-result", "project-1", 5000));
+    require(committed.result.success() && committed.state == ai::application::CompactionPersistState::Committed
+            && committed.connection == ai::application::CompactionConnectionState::Healthy,
+        "the same write succeeds once the failure is gone");
+    ProjectMemoryCompactionRecord later = makeCompaction("record-later", "project-2", ProjectMemoryCompactionStatus::Failed, 6000, {"x"});
+    later.costPriceKnown = std::nullopt;
+    require(compaction.insertCompactionRecord(later).success(), "the old insert is a view of the observed insert");
+    const auto foundLater = compaction.findCompactionRecord("record-later");
+    require(foundLater.success() && foundLater.value().has_value(), "found by its global id (another project)");
+    requireSameCompaction(*foundLater.value(), later, "the lookup returns every stored field");
+    const auto foundCompleted = compaction.findCompactionRecord("record-dfk");
+    require(foundCompleted.success() && foundCompleted.value().has_value()
+                && foundCompleted.value()->resultSegmentId == std::optional<std::string> {"segment-result"},
+        "the committed record is found with its result segment");
+    const auto unknown = compaction.findCompactionRecord("record-unknown");
+    require(unknown.success() && !unknown.value().has_value(), "an unknown id is an empty SUCCESS");
+    const auto duplicate = compaction.insertCompactionRecordObserved(later);
+    require(!duplicate.result.success() && duplicate.result.error()->code == "project_memory.duplicate_id"
+            && duplicate.state == ai::application::CompactionPersistState::NotCommitted,
+        "a duplicate id keeps its error and is not a new save");
+}
 } // namespace
 
 int main()
@@ -1023,7 +1079,8 @@ int main()
         testSuccessfulCompactionCommitIsAtomic();
         testCorruptCompactionRowsAreHandledAsPinned();
         testCompactionPriceFlagRoundTripsAndInvalidStoredValuesFailClosed();
-        std::cout << "SQLite Conversations contracts: 9 passed\n";
+        testObservedCompactionWritesProveWhatWasStoredAndTheLookupIsGlobal();
+        std::cout << "SQLite Conversations contracts: 10 passed\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "SQLite Conversations contracts failed: " << error.what() << '\n';
