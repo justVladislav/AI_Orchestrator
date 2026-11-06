@@ -26,6 +26,8 @@ int runWorkflowRoutingAndProductionTests();
 int runChatContextAssemblerTests();
 int runRunContextAssemblerTests();
 int runProjectMemoryServiceTests();
+int runProjectMemoryCompactionAccountingTests();
+int runProjectMemoryCompactionPersistenceServiceTests();
 int runChangeProposalTests();
 int runRunPathClaimRegistryTests();
 int runAgentToolTurnLoopRunnerTests();
@@ -103,6 +105,10 @@ int runTests(int argc, char** argv)
     if (argc == 2 && std::string(argv[1]) == "--provider-budget-only") {
         return runProviderExecutionBudgetTests();
     }
+    if (argc == 2 && std::string(argv[1]) == "--project-memory-compaction-accounting-only") {
+        if (runProjectMemoryCompactionAccountingTests() != 0) return 1;
+        return runProjectMemoryCompactionPersistenceServiceTests();
+    }
     if (argc == 2 && std::string(argv[1]) == "--cost-calculation-only") {
         return runCostCalculationTests();
     }
@@ -126,6 +132,8 @@ int runTests(int argc, char** argv)
     runChatContextAssemblerTests();
     runRunContextAssemblerTests();
     runProjectMemoryServiceTests();
+    if (runProjectMemoryCompactionAccountingTests() != 0) return 1;
+    if (runProjectMemoryCompactionPersistenceServiceTests() != 0) return 1;
     runChangeProposalTests();
     runRunPathClaimRegistryTests();
     runAgentToolTurnLoopRunnerTests();

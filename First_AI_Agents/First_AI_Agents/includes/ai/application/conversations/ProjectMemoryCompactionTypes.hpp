@@ -14,9 +14,10 @@ namespace ai::application {
 using ProjectMemoryCompactionId = std::string;
 
 // A compaction attempt's terminal disposition. There is no Pending row: one
-// synchronous compact() call produces exactly one durable record with its
-// final status - see ProjectMemoryCompactionService.hpp for why this differs
-// from ChatService's create-then-finish pattern.
+// synchronous compact() call tries to write exactly one record with its
+// final status (durable when the write succeeds; storage can fail) - see
+// ProjectMemoryCompactionService.hpp for why this differs from ChatService's
+// create-then-finish pattern.
 enum class ProjectMemoryCompactionStatus { Completed, Failed, Cancelled };
 
 // Header-only: a three-value enum does not warrant its own translation unit
