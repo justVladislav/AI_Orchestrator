@@ -34,8 +34,16 @@ ColumnLayout {
     // unrelated error with the same code or message is never taken for it and never cleared by a history recovery.
     property string historyErrorText: ""
     property bool historyReadActive: false
+    // The segments read has its own error slot, owned the same way (segmentsReadActive), so a segments failure, a history
+    // failure and an operation failure never overwrite or clear one another - also when their code and message are equal.
+    property string segmentsErrorText: ""
+    property bool segmentsReadActive: false
+    // The result of the last ACCEPTED compaction of THIS project (the map of compactionOutcomeReported), or null. Ephemeral: it
+    // is not a history row, not a project total, and never carried to another project.
+    property var operationOutcome: null
     property var providerChoicesSnapshot: []
     property int selectedChoiceIndex: -1
+    // The other synchronous actions (busy refusal, provider list, ...). The failure of a compaction itself is operationOutcome.
     property string errorText: ""
     // The Flickable that scrolls this panel (ProjectDetailsPanel's). With it the segment list creates delegates
     // only for the part that is on screen plus a margin; without it every delegate is created, as a Repeater would.
@@ -49,8 +57,18 @@ ColumnLayout {
     spacing: hostWindow.dp(8)
 
     function refreshSegments() {
-        panel.segmentsSnapshot = panel.projectId.length > 0
-                ? panel.backend.projectMemory.segments(panel.projectId) : []
+        // Only this read's own error is cleared here. A failed read returns no rows, so no stale row survives it.
+        panel.segmentsErrorText = ""
+        if (panel.projectId.length === 0) {
+            panel.segmentsSnapshot = []
+            return
+        }
+        panel.segmentsReadActive = true
+        try {
+            panel.segmentsSnapshot = panel.backend.projectMemory.segments(panel.projectId)
+        } finally {
+            panel.segmentsReadActive = false
+        }
     }
 
     function refreshHistory() {
@@ -105,10 +123,23 @@ ColumnLayout {
         if (panel.selectedChoiceIndex < 0 || panel.selectedChoiceIndex >= panel.providerChoicesSnapshot.length)
             return
         const choice = panel.providerChoicesSnapshot[panel.selectedChoiceIndex]
-        panel.backend.projectMemory.compact(panel.projectId, choice.providerId, choice.modelId)
+        // The previous result is dropped only when the call was ACCEPTED: a refusal (busy) must not erase an unsaved estimate.
+        if (panel.backend.projectMemory.compact(panel.projectId, choice.providerId, choice.modelId))
+            panel.operationOutcome = null
     }
 
-    onProjectIdChanged: panel.refreshAll()
+    // Another project (or none) shows nothing of the previous one: its result and every error slot are dropped BEFORE the reads.
+    function resetForProject() {
+        panel.operationOutcome = null
+        panel.errorText = ""
+        panel.segmentsErrorText = ""
+        panel.historyErrorText = ""
+    }
+
+    onProjectIdChanged: {
+        panel.resetForProject()
+        panel.refreshAll()
+    }
     // Defer the first synchronous backend read until the object tree has
     // fully constructed, matching ChatsPage's Qt.callLater(initializeBackendData).
     Component.onCompleted: Qt.callLater(panel.refreshAll)
@@ -123,9 +154,17 @@ ColumnLayout {
             if (changedProjectId === panel.projectId)
                 panel.refreshHistory()
         }
+        // The terminal result of an accepted compaction: shown only for the project it was accepted for AND that is selected now.
+        function onCompactionOutcomeReported(reportedProjectId, outcome) {
+            if (panel.projectId.length > 0 && reportedProjectId === panel.projectId)
+                panel.operationOutcome = outcome
+        }
+        // Ownership is the operation that was running when the backend reported, never the text or the code.
         function onErrorOccurred(code, message) {
             if (panel.historyReadActive)
                 panel.historyErrorText = message
+            else if (panel.segmentsReadActive)
+                panel.segmentsErrorText = message
             else
                 panel.errorText = message
         }
@@ -182,6 +221,16 @@ ColumnLayout {
     }
 
     Text {
+        objectName: "projectMemorySegmentsError"
+        Layout.fillWidth: true
+        visible: panel.segmentsErrorText.length > 0
+        text: panel.segmentsErrorText
+        color: panel.colors.error
+        wrapMode: Text.WordWrap
+        font.pixelSize: panel.hostWindow.dp(10)
+    }
+
+    Text {
         objectName: "projectMemoryHistoryError"
         Layout.fillWidth: true
         visible: panel.historyErrorText.length > 0
@@ -193,7 +242,8 @@ ColumnLayout {
 
     Text {
         Layout.fillWidth: true
-        visible: panel.segmentsSnapshot.length === 0
+        // A segments read that FAILED is not "no segments yet": its own error is shown instead.
+        visible: panel.segmentsSnapshot.length === 0 && panel.segmentsErrorText.length === 0
         text: qsTr("No memory segments yet. Segments are written automatically after a Run completes.")
         color: panel.colors.textMuted
         wrapMode: Text.WordWrap
@@ -375,6 +425,13 @@ ColumnLayout {
             colors: panel.colors
             onClicked: panel.backend.projectMemory.stopCompaction()
         }
+    }
+
+    ProjectMemoryOperationOutcome {
+        Layout.fillWidth: true
+        hostWindow: panel.hostWindow
+        colors: panel.colors
+        outcome: panel.operationOutcome
     }
 
     Text {

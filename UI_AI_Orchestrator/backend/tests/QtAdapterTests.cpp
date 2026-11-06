@@ -75,6 +75,9 @@
 
 // P3d: the controller of the output-folder approvals (tests live in ProjectOutputApprovalControllerTests.cpp).
 int runProjectOutputApprovalControllerTests();
+// C2-B/S2b-3: the compaction outcome projection and the controller's structured outcome (ProjectMemoryOutcome*Tests.cpp).
+int runProjectMemoryOutcomeProjectionTests();
+int runProjectMemoryOutcomeControllerTests();
 
 namespace {
 
@@ -5385,13 +5388,24 @@ void testProjectMemoryControllerViewerCompactionValidationAndClear()
     assert(memory.compactionHistory(projectAId).isEmpty());
     assert(!memory.compacting());
 
+    // C2-B/S2b-3: a failure found inside the accepted worker (project/provider/model/segments) is part of the structured
+    // outcome with the SAME code and text as before; errorOccurred keeps only the synchronous refusals (busy).
     QString lastErrorCode;
     QString lastErrorMessage;
+    QString syncErrorCode;
+    int outcomeCount = 0;
     int compactingChangedCount = 0;
     QObject::connect(&memory, &ProjectMemoryController::errorOccurred,
-        [&](const QString& code, const QString& message) {
-            lastErrorCode = code;
-            lastErrorMessage = message;
+        [&](const QString& code, const QString&) { syncErrorCode = code; });
+    QObject::connect(&memory, &ProjectMemoryController::compactionOutcomeReported,
+        [&](const QString& reportedProject, const QVariantMap& outcome) {
+            ++outcomeCount;
+            assert(reportedProject == projectAId && outcome.value(QStringLiteral("projectId")).toString() == projectAId);
+            assert(outcome.value(QStringLiteral("operationState")).toString() == QStringLiteral("failed"));
+            assert(!outcome.value(QStringLiteral("responseObserved")).toBool());
+            assert(outcome.value(QStringLiteral("accounting")).toString() == QStringLiteral("not_applicable"));
+            lastErrorCode = outcome.value(QStringLiteral("primaryCode")).toString();
+            lastErrorMessage = outcome.value(QStringLiteral("primaryMessage")).toString();
         });
     QObject::connect(&memory, &ProjectMemoryController::compactingChanged,
         [&] { ++compactingChangedCount; });
@@ -5431,6 +5445,7 @@ void testProjectMemoryControllerViewerCompactionValidationAndClear()
     }, [&] { return lastErrorCode.toStdString(); }, 4s));
     assert(lastErrorCode == QStringLiteral("project_memory.provider_unavailable"));
     assert(!lastErrorMessage.isEmpty());
+    assert(outcomeCount == 1 && syncErrorCode.isEmpty() && "one outcome, and the async failure is not sent through errorOccurred");
     assert(compactingChangedCount == 2);
     // A refused attempt before the provider check must never alter memory or
     // leave a compaction record behind.
@@ -5458,6 +5473,7 @@ void testProjectMemoryControllerViewerCompactionValidationAndClear()
         return !memory.compacting();
     }, [&] { return lastErrorCode.toStdString(); }, 4s));
     assert(lastErrorCode == QStringLiteral("project_memory.insufficient_segments_to_compact"));
+    assert(outcomeCount == 2 && syncErrorCode.isEmpty());
     assert(memory.segments(projectAId).size() == 1);
     assert(memory.compactionHistory(projectAId).isEmpty());
 
@@ -5470,9 +5486,11 @@ void testProjectMemoryControllerViewerCompactionValidationAndClear()
     assert(memory.compact(projectAId, providerId, modelId));
     assert(memory.compacting());
     assert(!memory.compact(projectAId, providerId, modelId));
+    assert(syncErrorCode == QStringLiteral("project_memory.busy") && "the synchronous busy refusal still uses errorOccurred");
     assert(ai::ui::test_support::waitForCondition("Compaction settles (second insufficient-segments attempt)", [&] {
         return !memory.compacting();
     }, [&] { return lastErrorCode.toStdString(); }, 4s));
+    assert(outcomeCount == 3 && "the refused busy call produced no outcome; the accepted one produced exactly one");
 
     // Isolation control: give the second project its own segment before
     // clearing the first, so a scoping bug would show up as project B losing
@@ -6923,6 +6941,12 @@ int main(int argc, char* argv[])
     ai::ui::test_support::configureHeadlessFailureMode();
     QCoreApplication application(argc, argv);
     if (argc == 2 && std::string(argv[1]) == "--output-approvals-only") return runProjectOutputApprovalControllerTests();
+    // Scoped run of the S2b-3 feature tests only: the same functions as the full run below, which also runs them.
+    if (argc == 2 && std::string(argv[1]) == "--project-memory-outcome-only") {
+        const int projection = runProjectMemoryOutcomeProjectionTests();
+        const int controller = runProjectMemoryOutcomeControllerTests();
+        return projection == 0 && controller == 0 ? 0 : 1;
+    }
     bool stressConfigured = false;
     const int stressIterations = qEnvironmentVariableIntValue(
         "AI_ORCHESTRATOR_B6_STRESS_ITERATIONS", &stressConfigured);
@@ -7007,5 +7031,7 @@ int main(int argc, char* argv[])
     testPromptWorkshopQmlOnlyRendersAndRelaysTheBackendsPreview();
     testManualHandoffPanelUsesBackendProjectionOnly();
     if (runProjectOutputApprovalControllerTests() != 0) return 1;
+    if (runProjectMemoryOutcomeProjectionTests() != 0) return 1;
+    if (runProjectMemoryOutcomeControllerTests() != 0) return 1;
     return 0;
 }

@@ -1,6 +1,7 @@
 #include <ai/ui/ProjectMemoryController.hpp>
 
 #include <ai/application/context/RunContextAssembler.hpp>
+#include <ai/ui/ProjectMemoryOutcomeProjection.hpp>
 
 #include <QDateTime>
 #include <QMetaObject>
@@ -47,7 +48,7 @@ QVariantMap compactionRecordMap(const ai::application::ProjectMemoryCompactionRe
         {"inputTokens", QVariant::fromValue<qulonglong>(value.inputTokens)},
         {"outputTokens", QVariant::fromValue<qulonglong>(value.outputTokens)},
         {"priceState", QString::fromLatin1(ai::application::toString(priceState))},
-        {"costText", showsAmount ? QStringLiteral("$%1").arg(value.costMicros / 1'000'000.0, 0, 'f', 4) : QString {}},
+        {"costText", showsAmount ? compactionAmountText(value.costMicros) : QString {}},
         {"costMicros", QVariant::fromValue<qulonglong>(value.costMicros)},
         {"priceIncomplete", priceState == ai::application::ExecutionPriceState::Partial
             || priceState == ai::application::ExecutionPriceState::Unknown},
@@ -158,12 +159,16 @@ void ProjectMemoryController::startCompaction(QString projectId, QString provide
     compactingProjectId_ = projectId;
     emit compactingChanged();
     worker_.emplace([this, projectId, providerId, modelId](std::stop_token token) {
-        auto result = compactionService_.compact(
+        // ONE call of the service: it makes at most one provider request and reports what happened to the received usage. Nothing
+        // else is sent or read for the sake of showing the result.
+        auto outcome = compactionService_.compactObserved(
             projectId.toStdString(), providerId.toStdString(), modelId.toStdString(), token);
-        QMetaObject::invokeMethod(this, [this, projectId, result = std::move(result)]() mutable {
-            if (!result.success()) report(*result.error());
+        QMetaObject::invokeMethod(this, [this, projectId, outcome = std::move(outcome)]() mutable {
             worker_.reset();
             compactingProjectId_.clear();
+            // The failure of THIS operation travels in its outcome (with the project it was accepted for), never through
+            // errorOccurred, which any panel would show.
+            emit compactionOutcomeReported(projectId, projectMemoryOutcomeMap(projectId, outcome));
             emit segmentsChanged(projectId);
             emit compactionHistoryChanged(projectId);
             emit compactingChanged();

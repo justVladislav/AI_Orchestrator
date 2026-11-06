@@ -34,6 +34,7 @@
 #include <ai/ui/RunListModel.hpp>
 #include <ai/ui/RunStageModel.hpp>
 #include "../test_support/QtTestSupport.hpp"
+#include "ProjectMemoryOutcomeQmlTests.hpp"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -1611,6 +1612,7 @@ Item {
         property string compactingProjectId: ""
         signal segmentsChanged(string projectId)
         signal compactionHistoryChanged(string projectId)
+        signal compactionOutcomeReported(string projectId, var outcome)
         signal errorOccurred(string code, string message)
         function segments(projectId) { return [] }
         function providerChoices() { return [] }
@@ -1933,6 +1935,7 @@ int main(int argc, char* argv[])
     // below, started before Run Details. It does not replace the full run and weakens no assertion of it.
     if (argc == 2 && std::string(argv[1]) == "--project-memory-cost-only") {
         runProjectMemoryCostTests(engine, window, projectsPage->property("colors"));
+        runProjectMemoryOutcomeQmlTests(engine, window, projectsPage->property("colors"));
         assert(qmlWarnings.isEmpty() && "QML runtime warnings were emitted");
         checkpoint("project-memory cost scenarios passed");
         return 0;
@@ -2684,6 +2687,7 @@ int main(int argc, char* argv[])
     runRecordedWorkspaceCardTests(engine, window, projectsPage->property("colors"));
     runOverviewCostLayoutTests(engine, window, projectsPage->property("colors"));
     runProjectMemoryCostTests(engine, window, projectsPage->property("colors"));
+    runProjectMemoryOutcomeQmlTests(engine, window, projectsPage->property("colors"));
 
     // Durable Run warnings (a diagnostic artifact that could not be stored): a Run without any has no section; with
     // warnings the section appears and shows every one of them.

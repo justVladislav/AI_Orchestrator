@@ -7,6 +7,7 @@
 
 #include <QObject>
 #include <QVariantList>
+#include <QVariantMap>
 
 #include <optional>
 #include <stop_token>
@@ -60,10 +61,13 @@ public:
     // "Ready/Credential required/Disabled" convention applies here too.
     Q_INVOKABLE QVariantList providerChoices();
 
-    // Starts one asynchronous, cancellable compact() call. Returns false
+    // Starts one asynchronous, cancellable compaction (ONE compactObserved() call of the service). Returns false
     // without starting anything if a compaction is already running (any
     // project - the underlying service makes one real provider call at a
-    // time from this controller) or if providerId/modelId is empty.
+    // time from this controller) or if projectId/providerId/modelId is empty.
+    // Every ACCEPTED call ends with exactly one compactionOutcomeReported() carrying the projectId it was accepted for; a
+    // failure of that operation - also one found inside the worker (project, provider, model, segments) - is part of that
+    // outcome and is NOT sent through errorOccurred. errorOccurred keeps the synchronous refusals (busy) and the reads.
     Q_INVOKABLE bool compact(const QString& projectId, const QString& providerId, const QString& modelId);
     Q_INVOKABLE void stopCompaction();
 
@@ -85,6 +89,10 @@ public:
     Q_INVOKABLE QVariantMap memoryBudgetEstimate(const QString& projectId, const QVariantList& modelIds);
 
 signals:
+    // The terminal result of one accepted compact() call, projected by projectMemoryOutcomeMap() (see its header for the map) with
+    // the project the call was accepted for - never the project that is selected when the signal arrives. It precedes
+    // segmentsChanged/compactionHistoryChanged/compactingChanged of the same call. Ephemeral: it is not stored and not re-sent.
+    void compactionOutcomeReported(const QString& projectId, const QVariantMap& outcome);
     void segmentsChanged(const QString& projectId);
     void compactionHistoryChanged(const QString& projectId);
     void compactingChanged();

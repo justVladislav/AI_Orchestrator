@@ -2,6 +2,7 @@
 # BackendBridge and drives ProjectsPage/RunsPage exactly like the UI does.
 qt_add_executable(AIOrchestrator_QmlFrontend_tests
     QmlFrontendSmokeTest.cpp
+    ProjectMemoryOutcomeQmlTests.cpp
 )
 
 # Own output directory, isolated from appUI_AI_Orchestrator's deployment root,
