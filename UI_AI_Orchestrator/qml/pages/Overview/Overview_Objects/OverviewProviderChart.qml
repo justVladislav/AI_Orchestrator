@@ -11,6 +11,10 @@ Rectangle {
     // Pass an empty array when provider cost data is not yet available;
     // the component shows an honest empty state instead of fabricated numbers.
     required property var providerModel
+    // Why no bar is drawn when the rows are not comparable for a reason other than an incomplete price (empty = nothing to say).
+    property string sharesNote: ""
+    // The load state of the cost result the rows come from: an empty list means "nothing recorded" only when it is "available".
+    property string loadState: "available"
     signal providerRequested(var providerData)
 
     // 326dp is the MINIMUM (the empty state and a few short rows). Every incomplete row also carries its own amount line,
@@ -52,10 +56,11 @@ Rectangle {
                 }
                 Text {
                     Layout.fillWidth: true
-                    text: qsTr("Recorded model executions · cost and token usage")
+                    objectName: "providerChartSubtitle"
+                    text: qsTr("Recorded executions and memory compactions · cost and token usage")
                     color: chart.colors.textMuted
                     font.pixelSize: chart.hostWindow.dp(10)
-                    elide: Text.ElideRight
+                    wrapMode: Text.WordWrap
                 }
             }
         }
@@ -84,15 +89,23 @@ Rectangle {
                 font.weight: Font.Thin
             }
             Text {
+                objectName: "providerChartEmptyTitle"
                 Layout.alignment: Qt.AlignHCenter
-                text: qsTr("Cost breakdown not available yet")
-                color: chart.colors.textSecondary
+                text: chart.loadState === "unavailable" ? qsTr("Cost breakdown unavailable")
+                                                         : qsTr("Cost breakdown not available yet")
+                color: chart.loadState === "unavailable" ? chart.colors.warning : chart.colors.textSecondary
                 font.pixelSize: chart.hostWindow.dp(12)
                 font.weight: Font.Medium
             }
             Text {
+                objectName: "providerChartEmptyBody"
                 Layout.alignment: Qt.AlignHCenter
-                text: qsTr("Provider cost and token aggregation will appear\nafter the first model execution.")
+                Layout.fillWidth: true
+                text: chart.loadState === "unavailable"
+                      ? qsTr("The project cost could not be read, so no provider breakdown is shown.")
+                      : chart.loadState === "available"
+                        ? qsTr("Provider cost and token aggregation will appear\nafter the first recorded execution or memory compaction.")
+                        : qsTr("Select a project to see its cost by provider.")
                 color: chart.colors.textMuted
                 font.pixelSize: chart.hostWindow.dp(9)
                 horizontalAlignment: Text.AlignHCenter
@@ -151,10 +164,11 @@ Rectangle {
                             font.pixelSize: chart.hostWindow.dp(11)
                             elide: Text.ElideRight
                         }
+                        // Ledger rows only. Memory compactions are counted next to it, never inside it.
                         Text {
                             objectName: "providerCallsLabel"
                             Layout.minimumWidth: implicitWidth
-                            text: qsTr("%1 calls").arg(providerRow.modelData.executionCount)
+                            text: qsTr("%1 executions").arg(providerRow.modelData.executionCount)
                             color: chart.colors.textMuted
                             font.pixelSize: chart.hostWindow.dp(9)
                         }
@@ -180,6 +194,18 @@ Rectangle {
                         }
                     }
 
+                    // Memory compactions of this provider, on a line of their own so the first row keeps its width for the name,
+                    // the tokens and the amount at every panel width.
+                    Text {
+                        objectName: "providerCompactionsLabel"
+                        visible: Number(providerRow.modelData.compactionCount || 0) > 0
+                        Layout.fillWidth: true
+                        text: qsTr("%1 memory compactions").arg(providerRow.modelData.compactionCount)
+                        color: chart.colors.textMuted
+                        font.pixelSize: chart.hostWindow.dp(9)
+                        wrapMode: Text.WordWrap
+                    }
+
                     // The incomplete amount (an incomplete estimate or unavailable) is drawn apart from an exact one:
                     // warning colour and italic, wrapped over the whole row so the recorded amount AND the "total
                     // unknown" mark both stay visible.
@@ -202,6 +228,7 @@ Rectangle {
                     // takes its place.
                     Rectangle {
                         visible: providerRow.modelData.shareBasis !== "incomplete"
+                                 && providerRow.modelData.shareBasis !== "unavailable"
                         Layout.fillWidth: true
                         Layout.preferredHeight: chart.hostWindow.dp(7)
                         radius: height / 2
@@ -225,6 +252,18 @@ Rectangle {
                     }
                 }
             }
+        }
+
+        // Rows that are not comparable because some of them have no price data at all (not an incomplete price).
+        Text {
+            objectName: "providerSharesNote"
+            Layout.fillWidth: true
+            visible: chart.sharesNote.length > 0 && chart.providerModel.length > 0
+            text: chart.sharesNote
+            color: chart.colors.textMuted
+            font.pixelSize: chart.hostWindow.dp(9)
+            font.italic: true
+            wrapMode: Text.WordWrap
         }
 
         // Push provider rows toward the top; no-op when the empty state fills height.

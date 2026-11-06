@@ -1838,6 +1838,7 @@ struct BackendRuntime::Impl {
               *storage.projectMemoryRepository, *storage.projectMemoryCompactionRepository,
               *storage.projectRepository, *storage.providerRepository, *storage.modelRepository,
               *providerClientFactory)
+        , projectCostService(executionAnalyticsService, projectMemoryCompactionService)
         , runManager(*storage.projectRepository, *storage.runRepository, workflowRouter,
               &projectMemoryService, &pathClaimRegistry, &modelExecutionService,
               &manifestWorkLedgerService)
@@ -2129,6 +2130,9 @@ struct BackendRuntime::Impl {
     // background worker - so its declaration position only has to satisfy
     // the ordinary "storage/providerClientFactory outlive it" rule.
     application::ProjectMemoryCompactionService projectMemoryCompactionService;
+    // A1-min: read-only composition of executionAnalyticsService and projectMemoryCompactionService. It keeps references to
+    // both, so it MUST be declared after both (members are built in declaration order). It owns no data and writes nothing.
+    application::ProjectCostService projectCostService;
     application::RunManager runManager;
     application::ProjectService projectService;
     application::TaskService taskService;
@@ -2384,6 +2388,11 @@ application::ModelExecutionService& BackendRuntime::modelExecutionService() noex
 application::ExecutionAnalyticsService& BackendRuntime::executionAnalyticsService() noexcept
 {
     return impl_->executionAnalyticsService;
+}
+
+application::ProjectCostService& BackendRuntime::projectCostService() noexcept
+{
+    return impl_->projectCostService;
 }
 
 application::ProjectMemoryService& BackendRuntime::projectMemoryService() noexcept

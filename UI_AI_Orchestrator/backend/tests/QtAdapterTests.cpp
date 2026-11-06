@@ -78,6 +78,8 @@ int runProjectOutputApprovalControllerTests();
 // C2-B/S2b-3: the compaction outcome projection and the controller's structured outcome (ProjectMemoryOutcome*Tests.cpp).
 int runProjectMemoryOutcomeProjectionTests();
 int runProjectMemoryOutcomeControllerTests();
+// A1-min: the project cost estimate at the Qt boundary (ProjectCostQtTests.cpp).
+int runProjectCostQtTests();
 
 namespace {
 
@@ -6111,12 +6113,12 @@ void testOverviewQmlWordsPriceStatesAndNeverReadsRawCost()
     assert(wording.contains(QStringLiteral("priceState === \"known\""))
         && wording.contains(QStringLiteral("priceState === \"partial\""))
         && wording.contains(QStringLiteral("priceState === \"unknown\"")));
-    assert(wording.contains(QStringLiteral("qsTr(\"Incomplete estimate: %1 recorded, total unknown\")")));
+    assert(wording.contains(QStringLiteral("qsTr(\"Incomplete estimate: %1; total unknown\")")));
     assert(!wording.contains(QStringLiteral("At least")) && "A partial amount is not promised to be a lower bound");
-    assert(wording.contains(QStringLiteral("qsTr(\"Cost unavailable\")")));
+    assert(wording.contains(QStringLiteral("qsTr(\"Cost unknown\")")) && !wording.contains(QStringLiteral("Cost unavailable")));
     // The unknown branch never touches the amount text.
     const auto unknownBranch = wording.indexOf(QStringLiteral("priceState === \"unknown\""));
-    const auto unavailable = wording.indexOf(QStringLiteral("Cost unavailable"), unknownBranch);
+    const auto unavailable = wording.indexOf(QStringLiteral("Cost unknown"), unknownBranch);
     assert(unavailable > unknownBranch);
     assert(!wording.mid(unknownBranch, unavailable - unknownBranch).contains(QStringLiteral("costText")));
 
@@ -6125,8 +6127,15 @@ void testOverviewQmlWordsPriceStatesAndNeverReadsRawCost()
     assert(!overview.contains(QStringLiteral("formatCost"))
         && !overview.contains(QStringLiteral("Pricing not set"))
         && !overview.contains(QStringLiteral("Not configured")));
-    assert(overview.contains(QStringLiteral("page.costWording(page.backend.executionAnalytics.priceState,")));
-    assert(overview.contains(QStringLiteral("incomplete: page.backend.executionAnalytics.priceIncomplete")));
+    assert(overview.contains(QStringLiteral("ProjectCostCard {")) && overview.contains(QStringLiteral("cost: page.backend.projectCost")));
+    assert(!overview.contains(QStringLiteral("executionAnalytics")) && "the Overview reads only the project cost controller");
+    const QString costCard = readQmlSource("pages/Overview/Overview_Objects/ProjectCostCard.qml");
+    assert(costCard.contains(QStringLiteral("card.moneyWording(card.cost.priceState, card.cost.costText)"))
+        && costCard.contains(QStringLiteral("cost.priceIncomplete"))
+        && costCard.contains(QStringLiteral("qsTr(\"Incomplete estimate: %1; total unknown\")"))
+        && costCard.contains(QStringLiteral("qsTr(\"Cost unknown\")")) && costCard.contains(QStringLiteral("qsTr(\"Unavailable\")")));
+    assert(!costCard.contains(QStringLiteral("costMicros")) && !costCard.contains(QStringLiteral("toFixed"))
+        && !costCard.contains(QStringLiteral("set model pricing")) && "no raw amount, no formatting, no catalog advice for a stored unknown");
 
     const QString chart = readQmlSource("pages/Overview/Overview_Objects/OverviewProviderChart.qml");
     assert(chart.contains(QStringLiteral("visible: providerRow.modelData.shareBasis !== \"incomplete\"")));
@@ -6947,6 +6956,8 @@ int main(int argc, char* argv[])
         const int controller = runProjectMemoryOutcomeControllerTests();
         return projection == 0 && controller == 0 ? 0 : 1;
     }
+    // Scoped run of the A1-min feature tests only: the same function as the full run below, which also runs it.
+    if (argc == 2 && std::string(argv[1]) == "--project-cost-only") return runProjectCostQtTests();
     bool stressConfigured = false;
     const int stressIterations = qEnvironmentVariableIntValue(
         "AI_ORCHESTRATOR_B6_STRESS_ITERATIONS", &stressConfigured);
@@ -7033,5 +7044,6 @@ int main(int argc, char* argv[])
     if (runProjectOutputApprovalControllerTests() != 0) return 1;
     if (runProjectMemoryOutcomeProjectionTests() != 0) return 1;
     if (runProjectMemoryOutcomeControllerTests() != 0) return 1;
+    if (runProjectCostQtTests() != 0) return 1;
     return 0;
 }

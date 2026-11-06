@@ -48,12 +48,13 @@ Basic.Popup {
                 id: modelRow
                 required property var modelData
                 width: ListView.view.width
-                height: hostWindow.dp(72)
+                height: Math.max(hostWindow.dp(72), modelLayout.implicitHeight + 2 * hostWindow.dp(10))
                 radius: colors.cornerRadiusSmall
                 color: colors.surfaceAlternative
                 border.width: 1
                 border.color: colors.border
                 ColumnLayout {
+                    id: modelLayout
                     anchors.fill: parent
                     anchors.margins: hostWindow.dp(10)
                     spacing: hostWindow.dp(4)
@@ -66,7 +67,8 @@ Basic.Popup {
                             // A long incomplete-estimate sentence wraps (up to two lines) inside 60% of the row instead of
                             // squeezing the model name to nothing or leaving the row.
                             Layout.maximumWidth: modelRow.width * 0.6
-                            Layout.preferredWidth: Math.min(modelCostMetrics.width, Layout.maximumWidth)
+                            // advanceWidth, not the bounding width: the text needs its full advance, or an exact amount loses its last digit.
+                            Layout.preferredWidth: Math.min(Math.ceil(modelCostMetrics.advanceWidth) + 2, Layout.maximumWidth)
                             text: modelRow.modelData.costLabel
                             color: modelRow.modelData.priceIncomplete ? colors.warning : colors.textPrimary
                             horizontalAlignment: Text.AlignRight
@@ -79,16 +81,23 @@ Basic.Popup {
                             TextMetrics { id: modelCostMetrics; font: modelCostLabel.font; text: modelCostLabel.text }
                         }
                     }
+                    // Ledger executions and memory compactions stay apart; the latency belongs to the executions only.
                     Text {
+                        objectName: "modelStatsLabel"
                         Layout.fillWidth: true
-                        text: qsTr("%1 calls  ·  %2 in / %3 out  ·  %4 ms avg")
-                              .arg(modelRow.modelData.executionCount)
-                              .arg(modelRow.modelData.inputLabel)
-                              .arg(modelRow.modelData.outputLabel)
-                              .arg(modelRow.modelData.averageLatencyMs)
+                        text: {
+                            const data = modelRow.modelData
+                            let line = qsTr("%1 executions").arg(data.executionCount)
+                            if (Number(data.compactionCount || 0) > 0)
+                                line += "  ·  " + qsTr("%1 compactions").arg(data.compactionCount)
+                            line += "  ·  " + qsTr("%1 in / %2 out").arg(data.inputLabel).arg(data.outputLabel)
+                            if (Number(data.executionCount) > 0)
+                                line += "  ·  " + qsTr("%1 ms avg").arg(data.averageLatencyMs)
+                            return line
+                        }
                         color: colors.textSecondary
                         font.pixelSize: hostWindow.dp(9)
-                        elide: Text.ElideRight
+                        wrapMode: Text.WordWrap
                     }
                 }
             }
@@ -96,7 +105,7 @@ Basic.Popup {
         Text {
             Layout.fillWidth: true
             visible: !popup.providerData.models || popup.providerData.models.length === 0
-            text: qsTr("No model executions recorded for this provider.")
+            text: qsTr("No executions or memory compactions recorded for this provider.")
             color: colors.textMuted
             horizontalAlignment: Text.AlignHCenter
         }

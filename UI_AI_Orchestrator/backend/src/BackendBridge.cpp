@@ -93,6 +93,8 @@ BackendBridge::BackendBridge(const QString& databasePathOverride,
           runtime_.followUpPlanService(), runtime_.followUpPlanReadModel(), this))
     , projectOutputApprovalController_(std::make_unique<ProjectOutputApprovalController>(
           runtime_.projectOutputApprovalService(), this))
+    , projectCostController_(std::make_unique<ProjectCostController>(
+          runtime_.projectCostService(), runtime_.providerCatalogService(), this))
     , taskController_(runtime_.taskService(), this)
     , runController_(runtime_.orchestrationService(), runtime_.artifactService(),
           runtime_.providerCatalogService(),
@@ -217,6 +219,7 @@ QObject* BackendBridge::runDrafts() noexcept { return &runDraftController_; }
 QObject* BackendBridge::credentials() noexcept { return &credentialController_; }
 QObject* BackendBridge::chats() noexcept { return &chatController_; }
 QObject* BackendBridge::executionAnalytics() noexcept { return &executionAnalyticsController_; }
+QObject* BackendBridge::projectCost() noexcept { return projectCostController_.get(); }
 QObject* BackendBridge::comparisons() noexcept { return &comparisonController_; }
 QObject* BackendBridge::agentSessions() noexcept { return &agentSessionController_; }
 QObject* BackendBridge::manifest() noexcept { return &manifestController_; }
@@ -263,6 +266,10 @@ ChatController& BackendBridge::chatController() noexcept { return chatController
 ExecutionAnalyticsController& BackendBridge::executionAnalyticsController() noexcept
 {
     return executionAnalyticsController_;
+}
+ProjectCostController& BackendBridge::projectCostController() noexcept
+{
+    return *projectCostController_;
 }
 ComparisonController& BackendBridge::comparisonController() noexcept
 {

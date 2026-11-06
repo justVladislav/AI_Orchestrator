@@ -35,6 +35,7 @@
 #include <ai/ui/RunStageModel.hpp>
 #include "../test_support/QtTestSupport.hpp"
 #include "ProjectMemoryOutcomeQmlTests.hpp"
+#include "ProjectCostQmlTests.hpp"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -1940,6 +1941,13 @@ int main(int argc, char* argv[])
         checkpoint("project-memory cost scenarios passed");
         return 0;
     }
+    // Scoped run of the A1-min project cost scenarios only: the same function as in the full run below.
+    if (argc == 2 && std::string(argv[1]) == "--project-cost-only") {
+        runProjectCostQmlTests(engine, window, projectsPage->property("colors"));
+        assert(qmlWarnings.isEmpty() && "QML runtime warnings were emitted");
+        checkpoint("project cost scenarios passed");
+        return 0;
+    }
 
     // Settings > Diagnostics shows the application version the process was given, not a placeholder.
     QObject* applicationVersionText = waitForChild(window, "applicationVersionText");
@@ -2115,6 +2123,8 @@ int main(int argc, char* argv[])
     assert(overviewSelected && "OverviewPage did not auto-select the created project");
     assert(overviewPage->property("liveProjectsModel").toList().size() == 1
            && "OverviewPage liveProjectsModel must have exactly one entry");
+    // A1-min: the real page shows the new cost card (an empty project of a readable estimate).
+    checkProjectCostOverviewPage(overviewPage);
 
     // ProvidersPage no longer initializes demo rows. Create persisted catalog
     // metadata through its real command path and observe Backend projections.
@@ -2417,6 +2427,8 @@ int main(int argc, char* argv[])
     const int runCount = projectEntry.value(QStringLiteral("runCount"), 0).toInt();
     checkpoint(("overview project runCount=" + std::to_string(runCount)).c_str());
     assert(runCount >= 1 && "liveProjectsModel must count completed run for the project");
+    // A1-min: no dialog is open now - the real page with POSITIVE stored data, its provider mapping and a real tap on Details.
+    checkProjectCostOverviewPagePositive(overviewPage, workspace.databasePath, projectId.toStdString());
 
     const QDateTime futureDate = QDateTime::currentDateTime().addDays(1);
     assert(overviewFromDatePicker->setProperty("selectedDate", futureDate));
@@ -2688,6 +2700,7 @@ int main(int argc, char* argv[])
     runOverviewCostLayoutTests(engine, window, projectsPage->property("colors"));
     runProjectMemoryCostTests(engine, window, projectsPage->property("colors"));
     runProjectMemoryOutcomeQmlTests(engine, window, projectsPage->property("colors"));
+    runProjectCostQmlTests(engine, window, projectsPage->property("colors"));
 
     // Durable Run warnings (a diagnostic artifact that could not be stored): a Run without any has no section; with
     // warnings the section appears and shows every one of them.
@@ -5263,12 +5276,13 @@ int main(int argc, char* argv[])
         assert(wording("known", "$0.0007") == QStringLiteral("$0.0007"));
         // A partial amount is an incomplete estimate, NOT promised to be a lower bound (an unknown flag can also come
         // from untrusted usage), so the wording never says "at least".
+        // A1-min (§13c): the accepted wording is "Incomplete estimate: %1; total unknown" and "Cost unknown".
         assert(wording("partial", "$0.0007")
-            == QStringLiteral("Incomplete estimate: $0.0007 recorded, total unknown"));
+            == QStringLiteral("Incomplete estimate: $0.0007; total unknown"));
         assert(wording("partial", "$0.0000")
-            == QStringLiteral("Incomplete estimate: $0.0000 recorded, total unknown"));
+            == QStringLiteral("Incomplete estimate: $0.0000; total unknown"));
         assert(!wording("partial", "$0.0007").contains(QStringLiteral("At least"), Qt::CaseInsensitive));
-        assert(wording("unknown", "") == QStringLiteral("Cost unavailable"));
+        assert(wording("unknown", "") == QStringLiteral("Cost unknown"));
         assert(!wording("unknown", "$0.0000").contains(QLatin1Char('$')));
         assert(wording("none", "") == QString::fromUtf8("\xE2\x80\x94"));
         checkpoint("M2c pricing dialog, long-context tier and price-state wording verified in real QML");

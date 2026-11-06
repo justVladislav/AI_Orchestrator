@@ -206,6 +206,8 @@ set(APPLICATION_SOURCES
     sourceFiles/application/inmemory/InMemoryModelExecutionRepository.cpp
     sourceFiles/application/agents/ModelExecutionService.cpp
     sourceFiles/application/analytics/ExecutionAnalyticsService.cpp
+    sourceFiles/application/analytics/ProjectCostComposition.cpp
+    sourceFiles/application/analytics/ProjectCostService.cpp
     sourceFiles/application/comparison/ComparisonTypes.cpp
     sourceFiles/application/inmemory/InMemoryComparisonSessionRepository.cpp
     sourceFiles/application/comparison/ComparisonService.cpp
@@ -849,6 +851,7 @@ if(AI_ORCHESTRATOR_BUILD_PERSISTENCE_TESTS)
         tests/Unit/BackendRuntimeTests.cpp
         tests/Unit/AgentToolExecutionServiceTests.cpp
         tests/Unit/ProjectMemoryCompactionAccountingSqliteTests.cpp
+        tests/Unit/ProjectCostRuntimeTests.cpp
     )
     target_compile_features(AIOrchestrator_BackendRuntime_tests PRIVATE cxx_std_20)
     target_link_libraries(AIOrchestrator_BackendRuntime_tests
@@ -1021,6 +1024,7 @@ add_executable(${TARGET_NAME}_tests
     tests/Unit/ProviderExecutionBudgetTests.cpp
     tests/Unit/CostCalculationTests.cpp
     tests/Unit/ExecutionAnalyticsServiceTests.cpp
+    tests/Unit/ProjectCostTests.cpp
     tests/Unit/ProjectOutputApprovalServiceTests.cpp
 )
 target_compile_features(${TARGET_NAME}_tests PRIVATE cxx_std_20)

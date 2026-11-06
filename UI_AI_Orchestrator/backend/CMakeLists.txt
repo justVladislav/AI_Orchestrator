@@ -24,6 +24,9 @@ qt_add_library(AIOrchestrator_Backend STATIC
     src/ChatCostProjection.cpp
     src/ExecutionAnalyticsController.cpp
     src/ProviderExecutionAnalyticsModel.cpp
+    src/ProjectCostProjection.cpp
+    src/ProjectCostProviderModel.cpp
+    src/ProjectCostController.cpp
     src/ComparisonController.cpp
     src/ComparisonCostProjection.cpp
     src/ComparisonSessionListModel.cpp
@@ -66,6 +69,9 @@ qt_add_library(AIOrchestrator_Backend STATIC
     include/ai/ui/ChatCostProjection.hpp
     include/ai/ui/ExecutionAnalyticsController.hpp
     include/ai/ui/ProviderExecutionAnalyticsModel.hpp
+    include/ai/ui/ProjectCostProjection.hpp
+    include/ai/ui/ProjectCostProviderModel.hpp
+    include/ai/ui/ProjectCostController.hpp
     include/ai/ui/ComparisonController.hpp
     include/ai/ui/ComparisonCostProjection.hpp
     include/ai/ui/ComparisonSessionListModel.hpp
@@ -109,6 +115,7 @@ add_executable(AIOrchestrator_QtAdapter_tests
     tests/ProjectOutputApprovalControllerTests.cpp
     tests/ProjectMemoryOutcomeProjectionTests.cpp
     tests/ProjectMemoryOutcomeControllerTests.cpp
+    tests/ProjectCostQtTests.cpp
 )
 
 # Keep the Core-only test runtime away from the GUI executable. A partial Qt
@@ -130,6 +137,11 @@ target_link_libraries(AIOrchestrator_QtAdapter_tests
 # than only asserting the renamed Qt property/action names.
 target_compile_definitions(AIOrchestrator_QtAdapter_tests PRIVATE
     AI_ORCHESTRATOR_QML_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../qml"
+)
+# A1-min: ProjectCostQtTests.cpp runs the real services over the scripted sources of the core test directory
+# (ProjectCostTestSupport.hpp), the same way the follow-up Qt tests use the core fixtures.
+target_include_directories(AIOrchestrator_QtAdapter_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../First_AI_Agents/First_AI_Agents/tests/Unit"
 )
 
 # Make the test directly runnable outside Qt Creator on Windows.

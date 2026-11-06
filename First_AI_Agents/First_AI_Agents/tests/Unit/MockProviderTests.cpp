@@ -57,6 +57,7 @@ int runVerificationBootstrapRetryServiceTests();
 int runProviderExecutionBudgetTests();
 int runCostCalculationTests();
 int runExecutionAnalyticsServiceTests();
+int runProjectCostTests();
 int runProjectOutputApprovalServiceTests();
 
 namespace {
@@ -115,6 +116,9 @@ int runTests(int argc, char** argv)
     if (argc == 2 && std::string(argv[1]) == "--execution-analytics-only") {
         return runExecutionAnalyticsServiceTests();
     }
+    if (argc == 2 && std::string(argv[1]) == "--project-cost-only") {
+        return runProjectCostTests();
+    }
     // This project currently uses one small executable as the test runner.
     // Each subsystem exposes a run*Tests function and the runner aggregates them.
     runMockProviderTests();
@@ -163,6 +167,7 @@ int runTests(int argc, char** argv)
     if (runProviderExecutionBudgetTests() != 0) return 1;
     if (runCostCalculationTests() != 0) return 1;
     if (runExecutionAnalyticsServiceTests() != 0) return 1;
+    if (runProjectCostTests() != 0) return 1;
     if (runProjectOutputApprovalServiceTests() != 0) return 1;
 
     std::cout << "All tests passed\n";

@@ -22,6 +22,7 @@
 #include "ai/application/planning/RunDraftPlanService.hpp"
 #include "ai/application/planning/RunDraftService.hpp"
 #include "ai/application/analytics/ExecutionAnalyticsService.hpp"
+#include "ai/application/analytics/ProjectCostService.hpp"
 #include "ai/application/providers/ICredentialStore.hpp"
 #include "ai/application/execution/OrchestrationService.hpp"
 #include "ai/application/verification/VerificationBootstrapRetryService.hpp"
@@ -296,6 +297,10 @@ public:
     /// Read-only aggregate projection over the same model-execution ledger.
     /// UI consumers use it for project/source totals and provider breakdowns.
     [[nodiscard]] ai::application::ExecutionAnalyticsService& executionAnalyticsService() noexcept;
+
+    /// A1-min: read-only project cost estimate composed from the execution ledger and the stored memory-compaction
+    /// records. Best-effort sequential reads (not an atomic snapshot); it writes nothing and reprices nothing.
+    [[nodiscard]] ai::application::ProjectCostService& projectCostService() noexcept;
 
     /// Deterministic, LLM-free project memory writer (Task B of
     /// PROJECT_MEMORY_PLAN.md). RunManager already calls this best-effort on

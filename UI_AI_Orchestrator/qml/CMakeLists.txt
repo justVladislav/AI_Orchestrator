@@ -24,6 +24,7 @@ qt_add_qml_module(UI_AI_Orchestrator_Content
         pages/Overview/OverviewPage.qml
         pages/Overview/Overview_Objects/OverviewMetricCard.qml
         pages/Overview/Overview_Objects/OverviewProviderChart.qml
+        pages/Overview/Overview_Objects/ProjectCostCard.qml
         pages/Overview/Overview_Objects/OverviewProviderDetailsPopup.qml
         pages/Overview/Overview_Objects/OverviewTaskDetailsPopup.qml
         pages/Overview/Overview_Objects/OverviewAttentionPanel.qml

@@ -12,6 +12,7 @@
 #include <ai/ui/ManifestVerificationManualHandoffController.hpp>
 #include <ai/ui/OutcomeBriefController.hpp>
 #include <ai/ui/ProjectContextController.hpp>
+#include <ai/ui/ProjectCostController.hpp>
 #include <ai/ui/ProjectController.hpp>
 #include <ai/ui/ProjectMemoryController.hpp>
 #include <ai/ui/ProjectOutputApprovalController.hpp>
@@ -57,6 +58,8 @@ class BackendBridge final : public QObject
     Q_PROPERTY(QObject* credentials READ credentials CONSTANT)
     Q_PROPERTY(QObject* chats READ chats CONSTANT)
     Q_PROPERTY(QObject* executionAnalytics READ executionAnalytics CONSTANT)
+    // A1-min: the project cost estimate (execution ledger + stored memory compactions). executionAnalytics stays as it was.
+    Q_PROPERTY(QObject* projectCost READ projectCost CONSTANT)
     Q_PROPERTY(QObject* comparisons READ comparisons CONSTANT)
     Q_PROPERTY(QObject* agentSessions READ agentSessions CONSTANT)
     Q_PROPERTY(QObject* manifest READ manifest CONSTANT)
@@ -97,6 +100,7 @@ public:
     [[nodiscard]] QObject* credentials() noexcept;
     [[nodiscard]] QObject* chats() noexcept;
     [[nodiscard]] QObject* executionAnalytics() noexcept;
+    [[nodiscard]] QObject* projectCost() noexcept;
     [[nodiscard]] QObject* comparisons() noexcept;
     [[nodiscard]] QObject* agentSessions() noexcept;
     [[nodiscard]] QObject* manifest() noexcept;
@@ -121,6 +125,7 @@ public:
     [[nodiscard]] CredentialController& credentialController() noexcept;
     [[nodiscard]] ChatController& chatController() noexcept;
     [[nodiscard]] ExecutionAnalyticsController& executionAnalyticsController() noexcept;
+    [[nodiscard]] ProjectCostController& projectCostController() noexcept;
     [[nodiscard]] ComparisonController& comparisonController() noexcept;
     [[nodiscard]] AgentSessionController& agentSessionController() noexcept;
     [[nodiscard]] ManifestController& manifestController() noexcept;
@@ -193,6 +198,9 @@ private:
     // pointer to the runtime's approval service (null without durable storage: then it is unavailable); declared after runtime_, so it
     // is destroyed - and its worker stopped and awaited - before the service goes away.
     std::unique_ptr<ProjectOutputApprovalController> projectOutputApprovalController_;
+    // A1-min: heap-owned like the controllers above (BackendBridge is stack-layout sensitive). Holds the runtime's
+    // ProjectCostService and ProviderCatalogService only; declared after runtime_, so it is destroyed before them.
+    std::unique_ptr<ProjectCostController> projectCostController_;
     TaskController taskController_;
     RunController runController_;
 };
