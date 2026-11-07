@@ -1,9 +1,12 @@
+#include "SqliteCompactionIdentityCodec.hpp"
+#include "../SqliteCompactionIntentMigration.hpp"
 #include "SqliteCompactionWriteCertainty.hpp"
 #include "../SqliteConnection.hpp"
 #include "../SqlitePrimitives.hpp"
 #include "../SqliteTransactionScope.hpp"
 
 #include "ai/application/ApplicationTypes.hpp"
+#include "ai/application/conversations/ProjectMemoryCompactionIntent.hpp"
 #include "ai/application/conversations/ProjectMemoryCompactionPersistence.hpp"
 #include "ai/application/conversations/ProjectMemoryCompactionTypes.hpp"
 
@@ -44,12 +47,9 @@ using sqlite_detail::optionalText;
 
 namespace {
 
-std::string serializeSegmentIdList(const std::vector<application::ProjectMemorySegmentId>& ids)
-{
-    nlohmann::json array = nlohmann::json::array();
-    for (const auto& id : ids) array.push_back(id);
-    return array.dump();
-}
+// The canonical serializer and the strict decoder are shared with the compaction intent (SqliteCompactionIdentityCodec.hpp).
+using sqlite_detail::deserializeSegmentIdListStrict;
+using sqlite_detail::serializeSegmentIdList;
 
 // How a stored source list is read.
 //   Lenient  the pinned behaviour of the history listing (see testCorruptCompactionRowsAreHandledAsPinned): an unreadable list reads
@@ -68,24 +68,6 @@ std::vector<application::ProjectMemorySegmentId> deserializeSegmentIdList(const 
         if (item.is_string()) result.push_back(item.get<std::string>());
     }
     return result;
-}
-
-common::Result<std::vector<application::ProjectMemorySegmentId>> deserializeSegmentIdListStrict(const std::string& json)
-{
-    using ListResult = common::Result<std::vector<application::ProjectMemorySegmentId>>;
-    const auto damaged = [] {
-        return ListResult::failure({"persistence.read_failed",
-            "The stored source segment ids of a project memory compaction record are not a JSON array of strings"});
-    };
-    const auto parsed = nlohmann::json::parse(json, nullptr, false);
-    if (parsed.is_discarded() || !parsed.is_array()) return damaged();
-    std::vector<application::ProjectMemorySegmentId> result;
-    result.reserve(parsed.size());
-    for (const auto& item : parsed) {
-        if (!item.is_string()) return damaged();
-        result.push_back(item.get<std::string>());
-    }
-    return ListResult::ok(std::move(result));
 }
 
 std::string projectMemoryCompactionStatusToString(ProjectMemoryCompactionStatus status)
@@ -156,7 +138,15 @@ common::Result<void> insertProjectMemoryCompactionRecord(
     if (sqlite3_step(statement.get()) == SQLITE_DONE) return common::Result<void>::ok();
 
     const int code = sqlite3_extended_errcode(h);
+    // B3: the guard trigger of an open intent refused a record whose identity differs from its intent. Recognised ONLY by the
+    // trigger's extended code together with its exact message; any other ABORT stays an ordinary write failure.
+    const bool intentConflict = sqlite_detail::isCompactionIntentTriggerAbort(
+        code, sqlite3_errmsg(h), sqlite_detail::kCompactionIntentConflictToken);
     if (native != nullptr) *native = sqlite_detail::tryCaptureNativeError(h);
+    if (intentConflict) {
+        return common::Result<void>::failure(error(application::kIntentIdentityConflictCode,
+            "The compaction record does not match the intent of its operation"));
+    }
     if (code == SQLITE_CONSTRAINT_PRIMARYKEY) {
         return common::Result<void>::failure(
             error("project_memory.duplicate_id", "Compaction record id already exists"));

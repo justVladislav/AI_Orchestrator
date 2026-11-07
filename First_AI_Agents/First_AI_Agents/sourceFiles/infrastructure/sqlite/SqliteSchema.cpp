@@ -1,4 +1,5 @@
 #include "SqliteSchema.hpp"
+#include "SqliteCompactionIntentMigration.hpp"
 #include "SqlitePrimitives.hpp"
 
 #include "ai/application/catalog/ProviderCatalogTypes.hpp"
@@ -4140,6 +4141,13 @@ COMMIT;
             static_cast<void>(execute(handle, "ROLLBACK;", "migration.rollback_failed"));
             return common::Result<void>::failure(*migrated.error());
         }
+    }
+
+    if (schemaVersion < 75) {
+        // B3 phase I: the compaction intent table, its indexes and the guarded triggers on the compaction records. The whole step
+        // (its own transaction, its object validation and its rollback) lives in SqliteCompactionIntentMigration.cpp.
+        const auto migrated = applyCompactionIntentMigration(handle);
+        if (!migrated.success()) return common::Result<void>::failure(*migrated.error());
     }
 
     return common::Result<void>::ok();

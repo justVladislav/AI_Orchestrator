@@ -97,6 +97,7 @@ private:
     friend class SqliteChatMemoryRepository;
     friend class SqliteProjectMemoryRepository;
     friend class SqliteProjectMemoryCompactionRepository;
+    friend class SqliteProjectMemoryCompactionIntentRepository;
     friend class SqliteModelExecutionRepository;
     friend class SqliteComparisonSessionRepository;
     friend class SqliteApplicationSettingsRepository;

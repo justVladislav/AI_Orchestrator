@@ -6,6 +6,7 @@
 #include "ai/application/conversations/IProjectMemoryRepository.hpp"
 #include "ai/common/Result.hpp"
 #include "ai/infrastructure/sqlite/SqliteDatabase.hpp"
+#include "ai/infrastructure/sqlite/conversations/SqliteProjectMemoryCompactionIntentRepository.hpp"
 
 #include <cstddef>
 #include <memory>

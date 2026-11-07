@@ -2873,7 +2873,7 @@ std::string schemaVersionIs(const fs::path& databasePath, int version)
 }
 
 // The schema version a database that opened successfully ends at.
-constexpr int kLatestSchemaVersion = 74;
+constexpr int kLatestSchemaVersion = 75;
 
 // The same probe for a single numeric value: empty when `expression` evaluates to `expected`.
 std::string sqlValueIs(const fs::path& databasePath, const std::string& expression, long long expected)
