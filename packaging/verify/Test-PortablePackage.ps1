@@ -21,14 +21,14 @@
        is stored in the database file and asks you to confirm it is listed after the restart
   Upgrade check: put a COPY of an older database (for example one of schema version 66) next to this script and pass it as
   -ExistingDb; the script installs it into the clean profile before the first start and then expects the schema version of
-  -ExpectedSchema (default 70) after the first normal close.
+  -ExpectedSchema (default 75 for version 1.0.2) after the first normal close.
 
   The report is written to package-check-report.txt (next to the package) and echoed. Exit code 0 only when there is no FAIL.
 #>
 param(
     [string]$PackageDir = '',
     [string]$ExeName = 'appUI_AI_Orchestrator.exe',
-    [int]$ExpectedSchema = 70,
+    [int]$ExpectedSchema = 75,
     [int]$StartupTimeoutSeconds = 40,
     [string]$ExistingDb = '',
     [switch]$Interactive,

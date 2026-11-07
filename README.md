@@ -6,7 +6,7 @@ Version 1.0 is primarily validated for **C++ and Qt/QML projects on Windows usin
 
 Your workspace stays under your control. A model response is a proposal, not permission to modify files.
 
-Version **1.0.1** improves window resizing and page loading, virtualizes the project-memory list, and reorganizes SQLite persistence into focused modules. See the [changelog](CHANGELOG.md) for details.
+Version **1.0.2** improves Run diagnostics, preserves incomplete cost estimates, includes stored memory compactions in project costs, and records unfinished compaction protocols for inspection after a process crash. It upgrades the database to schema **75**. See the [changelog](CHANGELOG.md) and [1.0.2 upgrade and testing guide](docs/releases/1.0.2.md).
 
 ## Features
 
@@ -15,7 +15,8 @@ Version **1.0.1** improves window resizing and page loading, virtualizes the pro
 - **Reviewable changes:** file-level proposals, diffs, recorded verification findings, approval/rejection and explicit Apply.
 - **Project readiness:** selected CMake preset checks, automatic child-process MSVC/Windows SDK environment setup, and persisted readiness that is reused while configuration inputs remain unchanged.
 - **Persistent work:** projects, Runs, stages, chats, artifacts, proposals and project memory backed by SQLite and local file stores.
-- **Usage visibility:** provider turns, token usage, estimated cost and configured execution budgets.
+- **Usage visibility:** provider-turn diagnostics, recorded token usage, cost estimates with visible price completeness, configured execution budgets, and project totals that include stored memory compactions.
+- **Compaction recovery visibility:** durable admission before memory-compaction requests, retained cancellation/failure accounting when persistence can be confirmed, and read-only details of unfinished protocols and startup recovery.
 - **Desktop tools:** provider/model management, credentials, project context, chats, experimental comparisons and Run diagnostics.
 
 ## Download and launch
@@ -112,9 +113,17 @@ To update:
 3. Extract the new version into a **new folder**, not over the old version.
 4. Start it and keep the backup until you have checked your projects and history.
 
-Database migrations run on startup. A database upgraded by a newer application is not automatically compatible with an older executable. Versions 1.0.0 and 1.0.1 both use schema **70**; this update adds no database migration.
+Database migrations run on startup. Version **1.0.2 uses schema 75**; the published 1.0.0 and 1.0.1 packages use schema 70. An intermediate source build may have a different starting version. An upgraded database is not automatically compatible with an older executable.
 
-Source builds newer than the published 1.0.1 package use schema **71** (output-folder approvals); the published 1.0.1 package is unchanged. Before such a build upgrades an existing database it takes a verified SQLite online backup, including committed content still held in the write-ahead log, into a `backups` folder next to the database, named like `orchestrator.sqlite.pre-migration-v70-to-v71.<UTC time>.sqlite`. If that copy cannot be made, the migration does not run. Backups are never deleted or rotated automatically, and a crash during a copy can leave an unfinished `.attempt` folder behind; remove such files yourself only when you are sure you no longer need them. A backup is a copy to restore deliberately, not an automatic rollback, and an older executable may not open an upgraded database. Keep making your own backup of the whole application-data folder before updating.
+Before upgrading an existing database, the application takes a verified SQLite online backup, including committed content still held in the write-ahead log, into a `backups` folder next to the database. A schema-70 database receives a name like `orchestrator.sqlite.pre-migration-v70-to-v75.<UTC time>.sqlite`. If the backup cannot be made, the migration does not run. Backups are never deleted or rotated automatically, and a crash during a copy can leave an unfinished `.attempt` folder behind; remove such files yourself only when you are sure you no longer need them. A backup is a copy to restore deliberately, not an automatic rollback. Keep making your own backup of the whole application-data folder before updating.
+
+### Reading costs and unfinished compactions
+
+The Overview **Project cost estimate** combines recorded model executions and stored memory-compaction costs. It keeps their breakdown visible. Missing prices remain incomplete or unknown; an unavailable read clears the displayed result rather than presenting an old total as current. Chat totals use recorded attempts, including earlier attempts retained after clearing session counters. Comparison and compaction history also retain the price-completeness state.
+
+These are recorded estimates, not your provider's invoice. Stored compaction amounts are not recalculated using today's catalog. The Sol seed update preserves custom prices and does not rewrite historical amounts. Reading the monetary records and coverage is best-effort; it is not one atomic database snapshot.
+
+Unfinished compaction protocols are shown separately from money. A stored open or unresolved intent does not prove that a provider received a request, that it is still running, or what it charged. Startup recovery for the owning file database inspects these records without sending another provider request or inventing a cost entry. A write with an unknown outcome remains explicitly unconfirmed. See the [release guide](docs/releases/1.0.2.md) for the update checklist and the limits of this recovery.
 
 ## Architecture
 
@@ -150,7 +159,7 @@ The role files under `First_AI_Agents/First_AI_Agents/prompts/` are functional p
 - Qt 6 with the MSVC x64 kit and Qt Quick/Quick Controls modules.
 - CMake, Ninja, Git and vcpkg.
 
-The local 1.0 build used Qt **6.11.1**, MSVC **19.51** and CMake **4.4.3**. The Windows CI workflow uses Qt **6.10.3** and its hosted MSVC toolchain. The dependency baseline is pinned in [First_AI_Agents/vcpkg.json](First_AI_Agents/vcpkg.json).
+The local 1.0.2 preparation uses Qt **6.11.1**, MSVC **19.51** and CMake **4.3.1**. The Windows CI workflow uses Qt **6.10.3** and its hosted MSVC toolchain. The dependency baseline is pinned in [First_AI_Agents/vcpkg.json](First_AI_Agents/vcpkg.json). SQLite **3.44.0 or newer** is required; the release dependencies use 3.53.1.
 
 Run the commands below in a **Visual Studio x64 developer terminal**. Automatic environment preparation inside the application is for project-verification child processes, not this source-build shell.
 
@@ -167,13 +176,13 @@ cmake --build --preset x64-release --parallel 4
 ctest --test-dir out/build/x64-release --output-on-failure
 ```
 
-The built desktop executable is `out/build/x64-release/UI_AI_Orchestrator/appUI_AI_Orchestrator.exe`. Keep its deployed runtime files beside it; copying only the EXE is not a portable distribution.
+The built desktop executable is `out/build/x64-release/UI_AI_Orchestrator/appUI_AI_Orchestrator.exe`. Keep its deployed runtime files beside it; copying only the EXE is not a portable distribution. For a deeply nested checkout, override the preset's binary directory with a short `-B` path and use that same directory with `cmake --build` and `ctest --test-dir`; MSVC can still reject overlong object paths even when Windows long paths are enabled.
 
 For Debug, substitute `x64-debug`; `ctest --preset x64-debug` is also provided. See the [Backend README](First_AI_Agents/First_AI_Agents/README.md) and [desktop README](UI_AI_Orchestrator/README.md) for subsystem work and standalone configurations. Other platform presets exist, but Windows x64 is the distributed and release-validated 1.0 target.
 
 ## Tests
 
-Ordinary tests are deterministic and do not call paid providers. The suite covers workflow/planner validation, workspace boundaries, proposal review/Apply, persistence, readiness, provider contracts and real-QML loading.
+Ordinary tests do not call paid providers. They use deterministic fakes, temporary databases, and some local loopback HTTP servers; the Windows compaction crash suite uses controlled child processes. The suite covers workflow/planner validation, workspace boundaries, proposal review/Apply, persistence, readiness, provider contracts, accounting, startup recovery, and real-QML loading.
 
 Release test executables retain their `assert()` checks; a dedicated canary detects disabled assertions. The [Windows CI workflow](.github/workflows/windows-ci.yml) builds and tests Debug and Release. Check [Actions](https://github.com/justVladislav/AI_Orchestrator/actions) for the result of the specific commit you use.
 
@@ -209,6 +218,8 @@ The manifest/parser checks are in [Test-ReleasePackaging.ps1](packaging/verify/T
 - Startup/database-loading and provider-switch responsiveness have further optimisation work.
 - Unicode and long-path fixes cover reproduced scenarios; not every legacy path conversion has been audited or changed.
 - Some multi-worker/provider recovery scenarios have automated coverage but are not independently live-accepted in every configuration.
+- A previously observed intermittent memory-history layout test failure remains under investigation. Successful runs have not established its cause or proved that it is fixed.
+- Compaction recovery covers process interruption; it does not guarantee recovery of provider billing details, delivery certainty, or durability under power loss. It does not automatically continue a truncated model response.
 
 ## Reporting issues and contributing
 

@@ -32,6 +32,10 @@ Updating to a newer version
   2. Copy %APPDATA%\AIOrchestrator\AIOrchestrator (at least orchestrator.sqlite) somewhere safe.
   3. Unzip the new version into a NEW folder (do not unzip over the old one) and start it. A newer version upgrades the database
      on its first start; keep the copy until you are sure everything is in place.
+  Version 1.0.2 supports database schema 75; the published 1.0.1 package used schema 70.
+  The application requires a verified database backup before migration. Keep your own copy
+  of the whole data folder too. An older executable may not open the upgraded database.
+  Read docs/releases/1.0.2.md in the source archive for the update/testing checklist.
 
 Problems
   BUILD-INFO\BUILD-INFO.txt tells exactly which source commit, compiler, Qt and runtime this package was built from.

@@ -14,14 +14,19 @@ and durable workflow execution.
 - Inspect-only Manifest planning, evidence-backed Planner no-op, immutable task
   DAGs, bounded scheduling, exact owned paths, and persisted task state.
 - SQLite schema/recovery and Qt-free Backend composition used by the desktop.
+- Project cost composition of recorded executions and stored compactions, with
+  price completeness separate from unfinished-protocol coverage.
+- Durable compaction admission, typed persistence certainty, cancellation usage,
+  and owner-only startup recovery that does not repeat provider requests.
 
 See the [project README](../../README.md) for the architecture overview, supported workflows,
 known limitations and release packaging.
 
 ## Persistence implementation
 
-SQLite implementations are being decomposed behind unchanged repository
-interfaces. See the [SQLite implementation boundaries](sourceFiles/infrastructure/sqlite/README.md)
+SQLite implementations live in focused repository modules. The 1.0.2 database
+uses schema 75 and requires SQLite 3.44.0 or newer. See the
+[SQLite implementation boundaries](sourceFiles/infrastructure/sqlite/README.md)
 for ownership of the shared connection, low-level SQL primitives, feature
 repositories and the checks required for structural moves.
 
@@ -34,7 +39,7 @@ lifecycle/schema split and the subsequent feature boundaries.
 Prefer the unified repository preset from the repository root:
 
 ```powershell
-cmake --fresh --preset x64-debug
+cmake --preset x64-debug
 cmake --build --preset x64-debug
 ctest --preset x64-debug
 ```
@@ -42,7 +47,9 @@ ctest --preset x64-debug
 For Backend-only work, presets are in `First_AI_Agents/CMakePresets.json`,
 including the legacy `windows-vcpkg` configuration.
 
-Ordinary tests are deterministic and network-free. Manual provider smoke tests
+Ordinary tests use deterministic fakes and temporary storage; some transport tests
+use local loopback HTTP, and Windows crash tests use controlled child processes.
+They make no paid provider calls. Manual provider smoke tests
 may make billable calls and must be launched only with explicit credentials and
 intent.
 
