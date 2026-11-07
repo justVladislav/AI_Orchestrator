@@ -1,5 +1,6 @@
 #include "ai/backend/StartupRecovery.hpp"
 
+#include "ai/application/conversations/CompactionIntentRecovery.hpp"
 #include "ai/application/comparison/ComparisonService.hpp"
 #include "ai/application/planning/FollowUpComposerProcessor.hpp"
 #include "ai/application/agents/IAgentToolAuditRepository.hpp"
@@ -157,6 +158,17 @@ StartupRecoveryOutcome runStartupRecovery(const StartupRecoveryServices& service
         // the same recoveryError channel; running out of eligible candidates to evict is not one.
         const auto retention = services.manualHandoff->enforceRetention();
         if (!retention.success()) surface(*retention.error());
+    }
+
+    // B3-II-B: the compaction intents a previous process left open become unresolved. Owner only (BackendRuntime passes the pass
+    // only to the owner of a file database, and the pass itself checks its permit first). It has no provider and no financial
+    // repository; its report and its error are its own channel and no other pass is affected by them.
+    if (services.compactionIntentRecovery != nullptr) {
+        auto report = services.compactionIntentRecovery->run();
+        if (report.status != application::CompactionIntentRecoveryStatus::Complete && report.firstError.has_value()) {
+            outcome.compactionIntentRecoveryError = *report.firstError;
+        }
+        outcome.compactionIntentRecoveryReport = std::move(report);
     }
 
     return outcome;

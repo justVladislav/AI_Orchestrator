@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ai/application/conversations/CompactionIntentRecoveryReport.hpp"
 #include "ai/application/planning/FollowUpPlanRequest.hpp"
 #include "ai/common/Result.hpp"
 
@@ -7,6 +8,7 @@
 #include <vector>
 
 namespace ai::application {
+class CompactionIntentRecovery;
 class ComparisonService;
 class FollowUpComposerProcessor;
 class IAgentToolAuditRepository;
@@ -41,6 +43,10 @@ struct StartupRecoveryServices {
     // execution rows before generic execution recovery. Narrow legacy test
     // compositions may leave it null.
     application::FollowUpComposerProcessor* followUpComposer {nullptr};
+    // B3-II-B: the owner-startup recovery of the compaction intents. Null means this pass does not take part (a narrower composition);
+    // it is NOT an owner bypass: the recovery object itself refuses a call its permit does not allow, and BackendRuntime creates one
+    // only for the owner of a file database.
+    application::CompactionIntentRecovery* compactionIntentRecovery {nullptr};
 };
 
 // The error channels BackendRuntime exposes. Each pass is non-fatal to the others: a failed
@@ -56,6 +62,10 @@ struct StartupRecoveryOutcome {
     // unexpired requests are queued by the owner only after the shared pass
     // returns and the runner's hooks are installed.
     std::vector<application::FollowUpPlanRequestId> followUpToProcess;
+    // B3-II-B: its own channel. The report is absent when the pass did not take part (that is not "complete" and not "zero rows"); the
+    // error is the first cause of a Partial or Unavailable report, unchanged, and is never merged into another channel.
+    std::optional<application::CompactionIntentRecoveryReport> compactionIntentRecoveryReport;
+    std::optional<common::Error> compactionIntentRecoveryError;
 };
 
 // THE startup recovery sequence - one function, shared by BackendRuntime and by the tests that
@@ -80,6 +90,7 @@ struct StartupRecoveryOutcome {
 //   9. ManifestVerificationContinuationPreparationService::reconcileMissingChildren
 //  10. ManifestVerificationManualHandoffService::reconcileInterruptedAttempts
 //  11. ManifestVerificationManualHandoffService::enforceRetention
+//  12. CompactionIntentRecovery::run (B3-II-B, owner only): open compaction intents -> unresolved; never writes a record or a ledger row
 // Steps 7-11 run AFTER the Runs are terminal, so they see every terminal Manifest Run, including
 // the ones step 1 just recovered. Recovery never resumes anything: no provider session is created.
 [[nodiscard]] StartupRecoveryOutcome runStartupRecovery(const StartupRecoveryServices& services);

@@ -52,6 +52,7 @@ const char* stageSlug(CompactionDiagnosticStage stage) noexcept
     case CompactionDiagnosticStage::IdentityCheck: return "identity_check";
     case CompactionDiagnosticStage::IntentWrite: return "intent_write";
     case CompactionDiagnosticStage::IntentProofRead: return "intent_proof_read";
+    case CompactionDiagnosticStage::IntentRecovery: return "intent_recovery";
     }
     return "primary_write";
 }
@@ -68,6 +69,7 @@ QString stageText(CompactionDiagnosticStage stage)
     case CompactionDiagnosticStage::IdentityCheck: return tr("Identity check");
     case CompactionDiagnosticStage::IntentWrite: return tr("Intent write");
     case CompactionDiagnosticStage::IntentProofRead: return tr("Intent verification read");
+    case CompactionDiagnosticStage::IntentRecovery: return tr("Intent recovery");
     }
     return tr("Write");
 }

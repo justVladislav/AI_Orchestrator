@@ -38,6 +38,7 @@
 #include "ai/application/verification/ManifestVerificationManualHandoffReadModelService.hpp"
 #include "ai/application/proposals/ProposalReviewService.hpp"
 #include "ai/application/conversations/ProjectMemoryService.hpp"
+#include "ai/application/conversations/CompactionIntentRecoveryReport.hpp"
 #include "ai/application/conversations/ProjectMemoryCompactionService.hpp"
 #include "ai/application/planning/OutcomeBriefReadModelService.hpp"
 #include "ai/application/planning/OutcomeBriefReconciler.hpp"
@@ -449,6 +450,15 @@ public:
     /// running/requested tool calls failed. storageAvailable() can still be
     /// true: recovery is a follow-up step on an already-open database.
     [[nodiscard]] const std::optional<ai::common::Error>& agentAuditRecoveryError() const noexcept;
+
+    /// B3-II-B: what the owner-startup recovery of the compaction intents did, read-only. Absent when the pass did not take part
+    /// (a guest, an in-memory database, a refused lock, an unavailable database): that is not "complete" and not "zero rows". There is
+    /// no way to run, repeat or schedule the recovery from outside; it ran once, inside the constructor.
+    [[nodiscard]] const std::optional<ai::application::CompactionIntentRecoveryReport>& compactionIntentRecoveryReport() const noexcept;
+
+    /// B3-II-B: the first cause of a Partial or Unavailable compaction-intent recovery, unchanged. Its own channel: it is never merged
+    /// into recoveryError() and other passes do not influence it.
+    [[nodiscard]] const std::optional<ai::common::Error>& compactionIntentRecoveryError() const noexcept;
 
     /// Audited, fail-closed agent tool execution service. Always non-null.
     /// storageAvailable() returns false when enableAgentToolExecution is

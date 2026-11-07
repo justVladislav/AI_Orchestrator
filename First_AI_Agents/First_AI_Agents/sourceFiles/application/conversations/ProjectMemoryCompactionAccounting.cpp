@@ -169,7 +169,8 @@ std::vector<CompactionDiagnostic> inFallbackPhase(const std::vector<CompactionDi
         case CompactionDiagnosticStage::FallbackProofRead:
         case CompactionDiagnosticStage::IdentityCheck:
         case CompactionDiagnosticStage::IntentWrite:
-        case CompactionDiagnosticStage::IntentProofRead: break;
+        case CompactionDiagnosticStage::IntentProofRead:
+        case CompactionDiagnosticStage::IntentRecovery: break;
         }
     }
     return moved;

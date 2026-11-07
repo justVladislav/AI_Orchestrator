@@ -148,6 +148,7 @@ set(APPLICATION_SOURCES
     sourceFiles/application/conversations/ProjectMemoryCompactionAccounting.cpp
     sourceFiles/application/conversations/ProjectMemoryCompactionIntentPolicy.cpp
     sourceFiles/application/conversations/ProjectMemoryCompactionIntentTracker.cpp
+    sourceFiles/application/conversations/CompactionIntentRecovery.cpp
     sourceFiles/application/context/ProjectContextSnapshot.cpp
     sourceFiles/application/context/ProjectContextSnapshotService.cpp
     sourceFiles/application/execution/RunInterfaceContract.cpp
@@ -743,6 +744,7 @@ if(AI_ORCHESTRATOR_BUILD_PERSISTENCE_TESTS)
           tests/Unit/SqliteCompactionIntentTests.cpp
           tests/Unit/SqliteCompactionIntentMigrationTests.cpp
           tests/Unit/CompactionIntentDispatchSqliteTests.cpp
+          tests/Unit/CompactionIntentRecoverySqliteTests.cpp
       )
     target_compile_features(AIOrchestrator_Persistence_tests PRIVATE cxx_std_20)
     # The pre-migration backup tests drive the closed fault seam of the persistence-private helper (never an exported include path).
@@ -861,6 +863,7 @@ if(AI_ORCHESTRATOR_BUILD_PERSISTENCE_TESTS)
         tests/Unit/ProjectMemoryCompactionAccountingSqliteTests.cpp
         tests/Unit/ProjectCostRuntimeTests.cpp
         tests/Unit/CompactionIntentRuntimeTests.cpp
+        tests/Unit/CompactionIntentRecoveryRuntimeTests.cpp
     )
     target_compile_features(AIOrchestrator_BackendRuntime_tests PRIVATE cxx_std_20)
     # The fail-closed intent port is a runtime-private detail header (never an exported include path).
@@ -873,6 +876,35 @@ if(AI_ORCHESTRATOR_BUILD_PERSISTENCE_TESTS)
     )
     ai_orchestrator_configure_target(AIOrchestrator_BackendRuntime_tests)
     add_test(NAME AIOrchestrator_BackendRuntime_tests COMMAND AIOrchestrator_BackendRuntime_tests)
+
+    # B3-II-B: REAL process-crash tests of the compaction intent (Windows only: Win32 CreateProcessW / Job Object / TerminateProcess). The
+    # same executable is the parent and the child. On any other platform the target and the test are NOT registered - never an empty
+    # "Passed". Private include of the persistence-private fault seam, exactly as for AIOrchestrator_Persistence_tests.
+    if(WIN32)
+        add_executable(AIOrchestrator_CompactionIntentCrash_tests
+            tests/CompactionIntentCrash/CrashMain.cpp
+            tests/CompactionIntentCrash/CrashCommon.hpp
+            tests/CompactionIntentCrash/CrashMarker.cpp
+            tests/CompactionIntentCrash/CrashProcess.hpp
+            tests/CompactionIntentCrash/CrashProcess.cpp
+            tests/CompactionIntentCrash/CrashChild.cpp
+            tests/CompactionIntentCrash/CrashParent.cpp
+        )
+        target_compile_features(AIOrchestrator_CompactionIntentCrash_tests PRIVATE cxx_std_20)
+        target_include_directories(AIOrchestrator_CompactionIntentCrash_tests PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/sourceFiles/infrastructure/sqlite
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/CompactionIntentCrash)
+        target_link_libraries(AIOrchestrator_CompactionIntentCrash_tests
+            PRIVATE
+                AIOrchestrator::BackendRuntime
+                AIOrchestrator::Persistence
+                ${AIOrchestrator_Sqlite3_Target}
+                kernel32
+        )
+        ai_orchestrator_configure_target(AIOrchestrator_CompactionIntentCrash_tests)
+        add_test(NAME AIOrchestrator_CompactionIntentCrash_tests COMMAND AIOrchestrator_CompactionIntentCrash_tests)
+        set_tests_properties(AIOrchestrator_CompactionIntentCrash_tests PROPERTIES TIMEOUT 180)
+    endif()
 
     # The folder of the temporary verification copies: its policy (length, links, overlap, privacy), its service and its SQLite
     # setting (schema step 69), on real folders and a real database. Provider-free.
@@ -1007,6 +1039,7 @@ add_executable(${TARGET_NAME}_tests
     tests/Unit/ProjectMemoryCompactionAccountingTests.cpp
     tests/Unit/CompactionIntentPolicyTests.cpp
     tests/Unit/CompactionIntentDispatchServiceTests.cpp
+    tests/Unit/CompactionIntentRecoveryTests.cpp
     tests/Unit/ProjectMemoryCompactionPersistenceServiceTests.cpp
     tests/Unit/ChangeProposalTests.cpp
     tests/Unit/RunPathClaimRegistryTests.cpp

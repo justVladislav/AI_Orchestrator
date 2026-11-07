@@ -20,6 +20,7 @@ int runSqliteCompactionWriteCertaintyTests();
 int runSqliteCompactionIntentTests();
 int runSqliteCompactionIntentMigrationTests();
 int runCompactionIntentDispatchSqliteTests();
+int runCompactionIntentRecoverySqliteTests();
 
 int main()
 {
@@ -46,6 +47,7 @@ int main()
         runSqliteCompactionIntentTests();
         runSqliteCompactionIntentMigrationTests();
         if (runCompactionIntentDispatchSqliteTests() != 0) return 1;
+        if (runCompactionIntentRecoverySqliteTests() != 0) return 1;
         std::cout << "SQLite repository tests passed\n";
         return 0;
     } catch (const std::exception& exception) {

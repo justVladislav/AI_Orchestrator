@@ -51,6 +51,8 @@ namespace ai::application {
 // The causes of the admission write, put into the phase of the intent: Rollback and PrimaryWrite -> IntentWrite, ProofRead ->
 // IntentProofRead; other stages are kept. Order and content are untouched.
 [[nodiscard]] std::vector<CompactionDiagnostic> inIntentWritePhase(const std::vector<CompactionDiagnostic>& causes);
+// B3-II-B: every cause that the intent port reports to the owner-startup recovery is named IntentRecovery.
+[[nodiscard]] std::vector<CompactionDiagnostic> inIntentRecoveryPhase(const std::vector<CompactionDiagnostic>& causes);
 // The causes reported by the pair proof read, all named IntentProofRead (a generic ProofRead of the layer below is the intent's).
 [[nodiscard]] std::vector<CompactionDiagnostic> inIntentProofPhase(const std::vector<CompactionDiagnostic>& causes);
 

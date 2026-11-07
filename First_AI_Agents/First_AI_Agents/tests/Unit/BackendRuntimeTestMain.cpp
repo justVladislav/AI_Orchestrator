@@ -6,6 +6,7 @@ int runAgentToolExecutionServiceTests();
 int runProjectMemoryCompactionAccountingSqliteTests();
 int runProjectCostRuntimeTests();
 int runCompactionIntentRuntimeTests();
+int runCompactionIntentRecoveryRuntimeTests();
 
 int main()
 {
@@ -18,6 +19,7 @@ int main()
         if (runProjectMemoryCompactionAccountingSqliteTests() != 0) return 1;
         if (runProjectCostRuntimeTests() != 0) return 1;
         if (runCompactionIntentRuntimeTests() != 0) return 1;
+        if (runCompactionIntentRecoveryRuntimeTests() != 0) return 1;
         std::cout << "BackendRuntime tests passed\n";
         return 0;
     } catch (const std::exception& exception) {

@@ -1,6 +1,7 @@
 #include "ai/backend/BackendRuntime.hpp"
 
 #include "ai/backend/StartupRecovery.hpp"
+#include "ai/application/conversations/CompactionIntentRecovery.hpp"
 #include "detail/UnavailableProjectMemoryCompactionIntentRepository.hpp"
 
 #include "ai/application/agents/AgentToolExecutionService.hpp"
@@ -69,6 +70,7 @@
 #include "ai/providers/RealProviderAgentSessionFactory.hpp"
 #endif
 
+#include <atomic>
 #include <condition_variable>
 #include <memory>
 #include <mutex>
@@ -1899,6 +1901,21 @@ struct BackendRuntime::Impl {
         // retention) is ONE function shared with the tests that prove what a restart does. It
         // runs here, before BackendRuntime returns to its caller, so the very first read already
         // reflects recovered state. Each recovery error channel keeps its exact meaning.
+        // B3-II-B: the compaction intents a previous process left open. Only the OWNER of a FILE database may recover them: the lock was
+        // actually taken (a guest and a refused lock hold none), the database opened, and the path is not ":memory:". Anything else
+        // simply does not take part - that is not an error and it never marks anything. The permit is re-checked by the recovery on
+        // every run and is valid only while this startup window is open; the object is never exported.
+        if (!ownership.guest && ownership.lock != nullptr && !ownership.lock->lockFilePath().empty() && !ownership.error.has_value()
+            && storage.database != nullptr && config.databasePath != std::filesystem::path(":memory:")) {
+            compactionIntentRecoveryWindowOpen = true;
+            compactionIntentRecovery = std::make_unique<application::CompactionIntentRecovery>(
+                *storage.projectMemoryCompactionIntentRepository,
+                application::CompactionIntentRecoveryPermit([this] {
+                    return compactionIntentRecoveryWindowOpen.load() && !ownership.guest && ownership.lock != nullptr
+                        && storage.database != nullptr;
+                }));
+        }
+
         application::ComparisonService* const comparison = &comparisonService;
         auto outcome = backend::runStartupRecovery(backend::StartupRecoveryServices {
             orchestrationService, modelExecutionService, manifestInterruptedTaskReconciler,
@@ -1906,7 +1923,11 @@ struct BackendRuntime::Impl {
             manifestWorkLedgerService, comparison,
             &manifestVerificationContinuationPreparationService,
             &manifestVerificationManualHandoffService,
-            ownership.guest ? nullptr : &followUpComposerProcessor});
+            ownership.guest ? nullptr : &followUpComposerProcessor,
+            compactionIntentRecovery.get()});
+        compactionIntentRecoveryWindowOpen = false;   // the startup window is closed: the recovery cannot be run again
+        compactionIntentRecoveryReport = std::move(outcome.compactionIntentRecoveryReport);
+        compactionIntentRecoveryError = std::move(outcome.compactionIntentRecoveryError);
         recoveryError = std::move(outcome.recoveryError);
         modelExecutionRecoveryError = std::move(outcome.modelExecutionRecoveryError);
         comparisonRecoveryError = std::move(outcome.comparisonRecoveryError);
@@ -2151,6 +2172,13 @@ struct BackendRuntime::Impl {
     std::optional<common::Error> modelExecutionRecoveryError;
     std::optional<common::Error> comparisonRecoveryError;
     std::optional<common::Error> agentAuditRecoveryError;
+    // B3-II-B: the owner-startup recovery of the compaction intents (null for a guest, an in-memory database, a refused lock or an
+    // unavailable database), the flag of its startup window and its own result channel. Declared after `storage` (it references the
+    // intent port) and never handed out.
+    std::atomic<bool> compactionIntentRecoveryWindowOpen {false};
+    std::unique_ptr<application::CompactionIntentRecovery> compactionIntentRecovery;
+    std::optional<application::CompactionIntentRecoveryReport> compactionIntentRecoveryReport;
+    std::optional<common::Error> compactionIntentRecoveryError;
 
     // PC-4C: the bounded history pass of the Outcome Brief reconciler runs on a worker thread so that it never delays the caller
     // (the UI thread). It is started explicitly, once, and stopped and joined first when the runtime goes away.
@@ -2535,6 +2563,16 @@ bool BackendRuntime::agentAuditStorageAvailable() const noexcept
     // returns "storage.unavailable", which is the fail-closed signal a tool
     // executor must treat as a hard refusal to start.
     return impl_->storage.database != nullptr;
+}
+
+const std::optional<application::CompactionIntentRecoveryReport>& BackendRuntime::compactionIntentRecoveryReport() const noexcept
+{
+    return impl_->compactionIntentRecoveryReport;
+}
+
+const std::optional<common::Error>& BackendRuntime::compactionIntentRecoveryError() const noexcept
+{
+    return impl_->compactionIntentRecoveryError;
 }
 
 const std::optional<common::Error>& BackendRuntime::agentAuditRecoveryError() const noexcept

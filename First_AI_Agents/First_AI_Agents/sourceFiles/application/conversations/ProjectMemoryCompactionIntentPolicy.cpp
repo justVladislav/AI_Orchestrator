@@ -105,9 +105,17 @@ std::vector<CompactionDiagnostic> inIntentWritePhase(const std::vector<Compactio
         case CompactionDiagnosticStage::FallbackProofRead:
         case CompactionDiagnosticStage::IdentityCheck:
         case CompactionDiagnosticStage::IntentWrite:
-        case CompactionDiagnosticStage::IntentProofRead: break;
+        case CompactionDiagnosticStage::IntentProofRead:
+        case CompactionDiagnosticStage::IntentRecovery: break;
         }
     }
+    return moved;
+}
+
+std::vector<CompactionDiagnostic> inIntentRecoveryPhase(const std::vector<CompactionDiagnostic>& causes)
+{
+    std::vector<CompactionDiagnostic> moved = causes;
+    for (auto& cause : moved) cause.stage = CompactionDiagnosticStage::IntentRecovery;
     return moved;
 }
 
