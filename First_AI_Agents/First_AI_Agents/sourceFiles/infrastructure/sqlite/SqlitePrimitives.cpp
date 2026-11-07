@@ -1,9 +1,56 @@
 #include "SqlitePrimitives.hpp"
+#include "SqliteConnectionHealth.hpp"
 
 #include <limits>
 #include <utility>
 
 namespace ai::infrastructure::sqlite_detail {
+
+namespace {
+
+// A refusal by THIS connection's quarantine: SQLITE_AUTH, and the connection is known (client data) to be quarantined. The same code
+// on a connection that is not quarantined is some other authorization error and is not renamed. Covers the refusal at prepare AND the
+// one that surfaces at sqlite3_step when a statement prepared earlier is re-prepared under the authorizer.
+std::optional<common::Error> quarantineRefusal(sqlite3* handle, std::string_view operation)
+{
+    if (handle == nullptr || sqlite3_extended_errcode(handle) != SQLITE_AUTH) return std::nullopt;
+    const ConnectionHealth* health = connectionHealthOf(handle);
+    if (health == nullptr || !health->quarantined()) return std::nullopt;
+    std::string message = "The SQLite connection is isolated (";
+    message += toString(health->reason());
+    message += health->isolationFailed() ? "; isolation incomplete" : "";
+    message += ") and refuses every statement until its owner closes the open transaction; nothing was performed: ";
+    message += operation;
+    return error("persistence.connection_unusable", std::move(message));
+}
+
+} // namespace
+
+NativeError captureNativeError(sqlite3* handle)
+{
+    NativeError native;
+    if (handle == nullptr) {
+        native.code = SQLITE_MISUSE;
+        native.extendedCode = SQLITE_MISUSE;
+        native.message = "SQLite handle is unavailable";
+        return native;
+    }
+    // Extended result codes are enabled on these connections, so sqlite3_errcode() already returns the EXTENDED value (787).
+    // The primary code is its low byte (19), whichever way the handle is configured.
+    native.extendedCode = sqlite3_extended_errcode(handle);
+    native.code = native.extendedCode & 0xFF;
+    native.message = sqlite3_errmsg(handle);
+    return native;
+}
+
+std::optional<NativeError> tryCaptureNativeError(sqlite3* handle) noexcept
+{
+    try {
+        return captureNativeError(handle);
+    } catch (...) {
+        return std::nullopt;
+    }
+}
 
 common::Error error(std::string code, std::string message)
 {
@@ -12,6 +59,7 @@ common::Error error(std::string code, std::string message)
 
 common::Error databaseError(sqlite3* handle, std::string code, std::string_view operation)
 {
+    if (auto refusal = quarantineRefusal(handle, operation)) return std::move(*refusal);
     std::string message(operation);
     message += ": ";
     message += handle != nullptr ? sqlite3_errmsg(handle) : "SQLite handle is unavailable";
@@ -26,6 +74,11 @@ common::Result<void> execute(sqlite3* handle, const char* sql, std::string code)
         return common::Result<void>::ok();
     }
 
+    // The extended code is read BEFORE sqlite3_free/anything else touches the handle.
+    if (auto refusal = quarantineRefusal(handle, "an SQL statement")) {
+        sqlite3_free(rawMessage);
+        return common::Result<void>::failure(std::move(*refusal));
+    }
     std::string message = rawMessage != nullptr ? rawMessage : sqlite3_errmsg(handle);
     sqlite3_free(rawMessage);
     return common::Result<void>::failure(error(std::move(code), std::move(message)));

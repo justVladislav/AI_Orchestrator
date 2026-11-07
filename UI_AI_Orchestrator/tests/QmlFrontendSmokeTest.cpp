@@ -34,6 +34,9 @@
 #include <ai/ui/RunListModel.hpp>
 #include <ai/ui/RunStageModel.hpp>
 #include "../test_support/QtTestSupport.hpp"
+#include "ProjectMemoryOutcomeQmlTests.hpp"
+#include "ProjectCostQmlTests.hpp"
+#include "CompactionCoverageQmlTests.hpp"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -57,6 +60,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -1231,6 +1235,605 @@ RunWorkspaceProvenanceCard {
     checkpoint("P4b: recorded workspace diagnostics card verified");
 }
 
+// C2-A R1: the long "Incomplete estimate" wording must keep the AMOUNT and the incompleteness visible in the real Overview
+// components at normal and narrow widths. Text equality is not enough: the text must not be elided or wider than its box,
+// must not spill out of its card/row, and must not overlap its neighbours.
+QRectF sceneRectOf(QObject* object)
+{
+    auto* item = qobject_cast<QQuickItem*>(object);
+    assert(item != nullptr);
+    return item->mapRectToScene(QRectF(0, 0, item->width(), item->height()));
+}
+
+// Repeater/ListView delegates are not always QObject-descendants of the component, so search the VISUAL tree.
+QObject* visualChildNamed(QObject* root, const QString& name)
+{
+    auto* item = qobject_cast<QQuickItem*>(root);
+    if (item == nullptr) return nullptr;
+    if (item->objectName() == name) return item;
+    for (QQuickItem* child : item->childItems()) {
+        if (QObject* found = visualChildNamed(child, name)) return found;
+    }
+    return nullptr;
+}
+
+// EVERY item of that name in the visual tree (a Repeater has one per row; the first match alone proves one row only).
+void visualChildrenNamed(QObject* root, const QString& name, QList<QObject*>& out)
+{
+    auto* item = qobject_cast<QQuickItem*>(root);
+    if (item == nullptr) return;
+    if (item->objectName() == name) out.append(item);
+    for (QQuickItem* child : item->childItems()) visualChildrenNamed(child, name, out);
+}
+
+bool visibleNamed(QObject* root, const QString& name)
+{
+    QObject* found = visualChildNamed(root, name);
+    assert(found != nullptr && "the named item exists");
+    return flag(found, "visible");
+}
+
+bool overlaps(QObject* first, QObject* second)
+{
+    return sceneRectOf(first).adjusted(0.5, 0.5, -0.5, -0.5).intersects(sceneRectOf(second).adjusted(0.5, 0.5, -0.5, -0.5));
+}
+
+bool inside(QObject* inner, const QRectF& outer)
+{
+    const QRectF rect = sceneRectOf(inner);
+    return rect.left() >= outer.left() - 0.5 && rect.right() <= outer.right() + 0.5
+        && rect.top() >= outer.top() - 0.5 && rect.bottom() <= outer.bottom() + 0.5;
+}
+
+// The text fits its own box: nothing elided, nothing wider/taller than the box that was given to it.
+void assertTextFits(QObject* text, const char* what)
+{
+    const double width = text->property("width").toDouble();
+    const double height = text->property("height").toDouble();
+    const bool fits = !flag(text, "truncated") && text->property("contentWidth").toDouble() <= width + 0.5
+        && text->property("contentHeight").toDouble() <= height + 0.5;
+    if (!fits) {
+        std::fprintf(stderr, "[layout] %s does not fit: width=%.1f contentWidth=%.1f height=%.1f contentHeight=%.1f truncated=%d text='%s'\n",
+            what, width, text->property("contentWidth").toDouble(), height, text->property("contentHeight").toDouble(),
+            flag(text, "truncated") ? 1 : 0, text->property("text").toString().toUtf8().constData());
+    }
+    assert(fits);
+}
+
+void runOverviewCostLayoutTests(QQmlApplicationEngine& engine, QObject* hostWindow, const QVariant& colors)
+{
+    QQmlComponent component(&engine);
+    component.setData(R"QML(
+import QtQuick
+import QtQuick.Layouts
+import UI_AI_Orchestrator
+Item {
+    id: root
+    property var hostRef
+    property var colorsRef
+    property string wording: ""
+    property string detailText: ""
+    property real kpiWidth: 280
+    property real chartWidth: 560
+    property real rosterWidth: 360
+    property var providers: []
+    property var popupData: ({ name: "", models: [] })
+    width: 700
+    height: 800
+    OverviewMetricCard {
+        objectName: "kpi"
+        x: 10; y: 10
+        width: root.kpiWidth
+        height: implicitHeight
+        hostWindow: root.hostRef; colors: root.colorsRef
+        iconText: "$"; title: "Project cost"; value: root.wording; detail: root.detailText
+        accentColor: "#d4a017"; incomplete: true
+    }
+    OverviewProviderChart {
+        id: chart
+        objectName: "chart"
+        x: 10; y: 150
+        width: root.chartWidth
+        height: implicitHeight
+        hostWindow: root.hostRef; colors: root.colorsRef
+        providerModel: root.providers
+    }
+    // The block that follows the provider panel on the dashboard: it must start below ALL of the panel's rows.
+    Rectangle {
+        objectName: "nextBlock"
+        x: 10
+        y: chart.y + chart.height + 12
+        width: root.chartWidth
+        height: 40
+        color: "#334455"
+    }
+    ManifestRosterSection {
+        objectName: "roster"
+        x: 10; y: chart.y + chart.height + 12 + 40 + 10
+        width: root.rosterWidth
+        hostWindow: root.hostRef; colors: root.colorsRef
+        controller: QtObject {
+            readonly property bool hasManifest: true
+            readonly property string routingMode: "roster"
+            readonly property bool usageAvailable: true
+            readonly property var usage: ({ priceState: "partial", costText: "$0.2507", unknownPriceExecutions: 1,
+                executions: 3, inputTokens: "1.2M", outputTokens: "88K", failed: 1, interrupted: 1, inFlight: 0 })
+            readonly property var routingMembers: [({ memberId: "worker-1", role: "implementer", label: "OpenAI GPT 5.6 Sol",
+                lead: false, participation: "assigned", usage: usage })]
+            readonly property var usageRunTotal: usage
+        }
+    }
+    OverviewProviderDetailsPopup {
+        objectName: "popup"
+        parent: root
+        x: 10; y: 10
+        hostWindow: root.hostRef; colors: root.colorsRef
+        providerData: root.popupData
+    }
+}
+)QML", QUrl(QStringLiteral("qrc:/c2a-layout/Harness.qml")));
+    if (component.isError()) {
+        for (const auto& error : component.errors()) std::fprintf(stderr, "[c2a-layout] %s\n", error.toString().toUtf8().constData());
+    }
+    assert(component.isReady());
+
+    const QString amount = QStringLiteral("$0.2507");
+    const QString incomplete = QStringLiteral("Incomplete estimate: %1 recorded, total unknown").arg(amount);
+    const QString longIncomplete = QStringLiteral("Incomplete estimate: $1234.567890 recorded, total unknown");
+    const auto providerRows = [&](const QString& label, const QString& name, bool incompleteRow) {
+        return QVariantList {QVariantMap {{"name", name}, {"executionCount", 12}, {"tokensLabel", "4.2M"}, {"costLabel", label},
+            {"priceIncomplete", incompleteRow}, {"share", 0.5}, {"shareBasis", incompleteRow ? "incomplete" : "exact"},
+            {"models", QVariantList {}}}};
+    };
+
+    QQuickWindow window;
+    window.resize(720, 820);
+    QVariantMap initial;
+    initial.insert(QStringLiteral("hostRef"), QVariant::fromValue(hostWindow));
+    initial.insert(QStringLiteral("colorsRef"), colors);
+    std::unique_ptr<QObject> owner(component.createWithInitialProperties(initial));
+    assert(owner);
+    auto* root = qobject_cast<QQuickItem*>(owner.get());
+    assert(root != nullptr);
+    root->setParentItem(window.contentItem());
+    window.show();
+    assert(ai::ui::test_support::waitForCondition("the layout harness is exposed", [&] { return window.isExposed(); }, 5s));
+
+    auto* card = visualChildNamed(root, QStringLiteral("kpi"));
+    auto* chart = visualChildNamed(root, QStringLiteral("chart"));
+    auto* popup = root->findChild<QObject*>(QStringLiteral("popup"));  // a Popup is a QObject, not an item
+    assert(card && chart && popup);
+    const auto setRoot = [&](const char* name, const QVariant& value) { assert(root->setProperty(name, value)); settle(); };
+
+    // KPI card: amount + incompleteness visible, inside the card, not over the detail line - normal and narrow widths.
+    for (const double width : {280.0, 220.0, 200.0}) {
+        for (const QString& wording : {incomplete, longIncomplete}) {
+            setRoot("kpiWidth", width);
+            setRoot("wording", wording);
+            setRoot("detailText", QStringLiteral("1 of 3 executions have an incomplete price"));
+            auto* value = visualChildNamed(card, QStringLiteral("metricValue"));
+            auto* detail = visualChildNamed(card, QStringLiteral("metricDetail"));
+            assert(value && detail);
+            const QRectF cardRect = sceneRectOf(card);
+            assert(value->property("text").toString() == wording);
+            assertTextFits(value, "KPI cost value");
+            assert(inside(value, cardRect) && inside(detail, cardRect));
+            assert(!overlaps(value, detail));
+            assert(cardRect.height() >= card->property("implicitHeight").toDouble() - 0.5);
+        }
+    }
+    checkpoint("C2-A layout: KPI card widths verified");
+    // A short exact amount keeps the one-line card unchanged.
+    setRoot("kpiWidth", 280.0);
+    setRoot("wording", amount);
+    assert(sceneRectOf(card).height() <= 108.5 && visibleNamed(card, QStringLiteral("metricValue")));
+
+    // Provider row: the cost label (amount + incompleteness) is whole, inside the row, and does not cover calls/tokens/name.
+    for (const double width : {560.0, 420.0, 330.0}) {
+        for (const QString& label : {incomplete, longIncomplete}) {
+            setRoot("chartWidth", width);
+            setRoot("providers", providerRows(label, QStringLiteral("Anthropic and friends"), true));
+            // An incomplete amount is a sentence: it has a full-width line of its own, the in-row cell is hidden.
+            assert(!visibleNamed(chart, QStringLiteral("providerCostLabel")));
+            auto* cost = visualChildNamed(chart, QStringLiteral("providerIncompleteCostLabel"));
+            auto* name = visualChildNamed(chart, QStringLiteral("providerNameLabel"));
+            auto* calls = visualChildNamed(chart, QStringLiteral("providerCallsLabel"));
+            auto* tokens = visualChildNamed(chart, QStringLiteral("providerTokensLabel"));
+            auto* note = visualChildNamed(chart, QStringLiteral("incompletePricingNote"));
+            assert(cost && name && calls && tokens && note);
+            const QRectF chartRect = sceneRectOf(chart);
+            assert(cost->property("text").toString() == label);
+            assertTextFits(cost, "provider cost label");
+            assertTextFits(calls, "provider calls label");
+            assertTextFits(tokens, "provider tokens label");
+            assert(inside(cost, chartRect) && inside(name, chartRect) && inside(calls, chartRect) && inside(tokens, chartRect));
+            assert(!overlaps(cost, calls) && !overlaps(cost, tokens) && !overlaps(cost, name));
+            assert(!overlaps(calls, tokens) && !overlaps(name, calls) && !overlaps(name, tokens));
+            assert(!overlaps(cost, note) && sceneRectOf(note).top() >= sceneRectOf(cost).bottom() - 0.5);
+        }
+    }
+    saveShot(root, QStringLiteral("c2a-overview-cost-layout-incomplete"));
+    checkpoint("C2-A layout: incomplete provider rows verified");
+
+    // Several providers: every incomplete row is taller than before (its amount has a line of its own), so the PANEL must
+    // grow with ALL of them (or scroll) - the next dashboard block may never sit on top of the last rows. Every row is
+    // counted and checked, not just the first one found.
+    const auto manyProviders = [&](int count, bool incompleteRows) {
+        QVariantList rows;
+        for (int index = 0; index < count; ++index) {
+            rows.append(QVariantMap {{"name", QStringLiteral("Provider %1").arg(index + 1)}, {"executionCount", 12 + index},
+                {"tokensLabel", "4.2M"}, {"costLabel", incompleteRows ? incomplete : QStringLiteral("$0.2507")},
+                {"priceIncomplete", incompleteRows}, {"share", 0.5}, {"shareBasis", incompleteRows ? "incomplete" : "exact"},
+                {"models", QVariantList {}}});
+        }
+        return rows;
+    };
+    for (const bool incompleteRows : {true, false}) {
+        for (const int count : {5, 8}) {
+            for (const double width : {560.0, 330.0}) {
+                setRoot("chartWidth", width);
+                setRoot("providers", manyProviders(count, incompleteRows));
+                const QString costName = incompleteRows ? QStringLiteral("providerIncompleteCostLabel") : QStringLiteral("providerCostLabel");
+                QList<QObject*> names, calls, tokens, costs, notes;
+                visualChildrenNamed(chart, QStringLiteral("providerNameLabel"), names);
+                visualChildrenNamed(chart, QStringLiteral("providerCallsLabel"), calls);
+                visualChildrenNamed(chart, QStringLiteral("providerTokensLabel"), tokens);
+                visualChildrenNamed(chart, costName, costs);
+                visualChildrenNamed(chart, QStringLiteral("incompletePricingNote"), notes);
+                assert(names.size() == count && calls.size() == count && tokens.size() == count && costs.size() == count
+                    && notes.size() == count);
+                const QRectF chartRect = sceneRectOf(chart);
+                auto* nextBlock = visualChildNamed(root, QStringLiteral("nextBlock"));
+                assert(nextBlock != nullptr);
+                const QRectF nextRect = sceneRectOf(nextBlock);
+                double lastBottom = chartRect.top();
+                for (int index = 0; index < count; ++index) {
+                    assert(flag(names[index], "visible") && flag(costs[index], "visible"));
+                    assert(costs[index]->property("text").toString() == (incompleteRows ? incomplete : QStringLiteral("$0.2507")));
+                    assertTextFits(costs[index], "provider cost label of a many-row panel");
+                    assertTextFits(calls[index], "provider calls label of a many-row panel");
+                    // Each row's own label, amount and note sit inside the panel and above the next dashboard block.
+                    for (QObject* part : {names[index], calls[index], tokens[index], costs[index]}) {
+                        if (!inside(part, chartRect)) {
+                            std::fprintf(stderr, "[layout] row %d of %d (%s, width %.0f) leaves the panel: item bottom %.1f, panel bottom %.1f\n",
+                                index + 1, count, incompleteRows ? "incomplete" : "exact", width, sceneRectOf(part).bottom(), chartRect.bottom());
+                        }
+                        assert(inside(part, chartRect));
+                        assert(!overlaps(part, nextBlock));
+                    }
+                    if (incompleteRows) {
+                        assert(flag(notes[index], "visible") && inside(notes[index], chartRect) && !overlaps(notes[index], nextBlock));
+                        lastBottom = sceneRectOf(notes[index]).bottom() > lastBottom ? sceneRectOf(notes[index]).bottom() : lastBottom;
+                    } else {
+                        lastBottom = sceneRectOf(costs[index]).bottom() > lastBottom ? sceneRectOf(costs[index]).bottom() : lastBottom;
+                    }
+                    if (index > 0) assert(sceneRectOf(costs[index]).top() >= sceneRectOf(costs[index - 1]).bottom() - 0.5);
+                }
+                if (!(chartRect.bottom() <= nextRect.top() - 0.5 && lastBottom <= chartRect.bottom() + 0.5)) {
+                    std::fprintf(stderr, "[layout] %d %s rows, width %.0f: panel bottom %.1f, next block top %.1f, last content bottom %.1f\n",
+                        count, incompleteRows ? "incomplete" : "exact", width, chartRect.bottom(), nextRect.top(), lastBottom);
+                }
+                assert(chartRect.bottom() <= nextRect.top() - 0.5 && lastBottom <= chartRect.bottom() + 0.5);
+                assert(chartRect.height() >= chart->property("implicitHeight").toDouble() - 0.5);
+            }
+        }
+    }
+    setRoot("chartWidth", 560.0);
+    setRoot("providers", manyProviders(5, true));
+    saveShot(root, QStringLiteral("c2a-overview-cost-layout-five-incomplete"));
+    // One short row keeps the panel at its previous minimum height.
+    setRoot("providers", manyProviders(1, true));
+    assert(sceneRectOf(chart).height() >= 326 - 0.5);
+    checkpoint("C2-A layout: five and eight provider rows stay inside the panel");
+    // An exact amount stays in its row cell, whole and clear of its neighbours, at the narrowest width too.
+    setRoot("chartWidth", 330.0);
+    setRoot("providers", providerRows(QStringLiteral("$1234.567890"), QStringLiteral("Anthropic and friends"), false));
+    {
+        auto* cost = visualChildNamed(chart, QStringLiteral("providerCostLabel"));
+        auto* calls = visualChildNamed(chart, QStringLiteral("providerCallsLabel"));
+        auto* tokens = visualChildNamed(chart, QStringLiteral("providerTokensLabel"));
+        auto* name = visualChildNamed(chart, QStringLiteral("providerNameLabel"));
+        assert(cost && calls && tokens && name && flag(cost, "visible"));
+        assert(!visibleNamed(chart, QStringLiteral("providerIncompleteCostLabel")));
+        assertTextFits(cost, "exact provider cost");
+        assert(!overlaps(cost, calls) && !overlaps(cost, tokens) && !overlaps(cost, name) && inside(cost, sceneRectOf(chart)));
+    }
+    saveShot(root, QStringLiteral("c2a-overview-cost-layout-exact"));
+
+    checkpoint("C2-A layout: exact provider row verified");
+    // The roster's usage lines end with the same wording and are as long as the sentence: whole, inside the section, apart.
+    for (const double width : {420.0, 300.0}) {
+        setRoot("rosterWidth", width);
+        auto* roster = visualChildNamed(root, QStringLiteral("roster"));
+        auto* line = visualChildNamed(roster, QStringLiteral("rosterUsageText"));
+        auto* total = visualChildNamed(roster, QStringLiteral("rosterUsageTotalText"));
+        assert(roster && line && total && flag(line, "visible") && flag(total, "visible"));
+        assert(line->property("text").toString().contains(QStringLiteral("incomplete estimate: $0.2507 recorded, total unknown")));
+        assertTextFits(line, "roster usage line");
+        assertTextFits(total, "roster run-total line");
+        const QRectF rosterRect = sceneRectOf(roster);
+        assert(inside(line, rosterRect) && inside(total, rosterRect) && !overlaps(line, total));
+    }
+    checkpoint("C2-A layout: roster usage lines verified");
+    // The per-model row of the provider popup: same wording, same requirement, at the popup's normal and narrow widths.
+    for (const double width : {640.0, 420.0}) {
+        window.resize(int(width) + 40, 820);
+        root->setWidth(width + 40);
+        setRoot("popupData", QVariantMap {{"name", "OpenAI"}, {"models", QVariantList {QVariantMap {{"name", "GPT 5.6 Sol"},
+            {"executionCount", 3}, {"inputLabel", "1.2M"}, {"outputLabel", "88K"}, {"costLabel", longIncomplete},
+            {"priceIncomplete", true}, {"averageLatencyMs", 1400}}}}});
+        assert(QMetaObject::invokeMethod(popup, "open"));
+        settle(60);
+        auto* popupContent = qobject_cast<QQuickItem*>(popup->property("contentItem").value<QObject*>());
+        assert(popupContent != nullptr);
+        auto* cost = visualChildNamed(popupContent, QStringLiteral("modelCostLabel"));
+        auto* name = visualChildNamed(popupContent, QStringLiteral("modelNameLabel"));
+        assert(cost && name);
+        assert(cost->property("text").toString() == longIncomplete);
+        assertTextFits(cost, "popup model cost label");
+        assert(!overlaps(cost, name));
+        const QRectF popupRect = sceneRectOf(popupContent);
+        assert(inside(cost, popupRect) && inside(name, popupRect));
+        assert(QMetaObject::invokeMethod(popup, "close"));
+        settle(60);
+    }
+    checkpoint("C2-A: the Overview cost wording keeps the amount and the incomplete mark visible");
+}
+
+
+// C2-B/S1: the REAL ProjectMemoryPanel shows the STORED cost of every compaction record - whatever its status - with the amount and
+// the incompleteness whole (wrapped, never cut, inside the panel, clear of neighbours), reads the history through ONE snapshot per
+// refresh, shows an unreadable history as unavailable (no old rows) and drops exactly its own error on recovery.
+void runProjectMemoryCostTests(QQmlApplicationEngine& engine, QObject* hostWindow, const QVariant& colors)
+{
+    QQmlComponent component(&engine);
+    component.setData(R"QML(
+import QtQuick
+import QtQuick.Layouts
+import UI_AI_Orchestrator
+Item {
+    id: root
+    property var hostRef
+    property var colorsRef
+    property real panelWidth: 560
+    // bindings (not literals) so that backend is in place before projectId triggers the first refresh
+    property string projectIdValue: "project-s1"
+    property var backendObject: ({ projectMemory: fakeMemory })
+    property var snapshot: ({ state: "available", rows: [], errorCode: "", errorMessage: "" })
+    property bool failNext: false
+    property string failCode: "persistence.read_failed"
+    property string failMessage: "history unreadable"
+    property int snapshotCalls: 0
+    property int legacyHistoryCalls: 0
+    width: 700
+    height: 1400
+    function emitError(code, message) { fakeMemory.errorOccurred(code, message) }
+    QtObject {
+        id: fakeMemory
+        property bool compacting: false
+        property string compactingProjectId: ""
+        signal segmentsChanged(string projectId)
+        signal compactionHistoryChanged(string projectId)
+        signal compactionOutcomeReported(string projectId, var outcome)
+        signal errorOccurred(string code, string message)
+        function segments(projectId) { return [] }
+        function providerChoices() { return [] }
+        function stopCompaction() {}
+        function compact(projectId, providerId, modelId) { return false }
+        function compactionHistory(projectId) { root.legacyHistoryCalls++; return [] }
+        function compactionHistorySnapshot(projectId) {
+            root.snapshotCalls++
+            if (root.failNext) {
+                root.failNext = false
+                fakeMemory.errorOccurred(root.failCode, root.failMessage)
+                return { state: "unavailable", rows: [], errorCode: root.failCode, errorMessage: root.failMessage }
+            }
+            return root.snapshot
+        }
+    }
+    ProjectMemoryPanel {
+        id: panelItem
+        objectName: "projectMemoryPanel"
+        x: 10; y: 10
+        width: root.panelWidth
+        height: implicitHeight
+        hostWindow: root.hostRef; colors: root.colorsRef
+        backend: root.backendObject
+        projectId: root.projectIdValue
+    }
+    Rectangle {
+        objectName: "nextBlock"
+        x: 10
+        y: panelItem.y + panelItem.height + 12
+        width: root.panelWidth
+        height: 40
+        color: "#334455"
+    }
+}
+)QML", QUrl(QStringLiteral("qrc:/s1-memory/Harness.qml")));
+    if (component.isError()) {
+        for (const auto& error : component.errors()) std::fprintf(stderr, "[s1-memory] %s\n", error.toString().toUtf8().constData());
+    }
+    assert(component.isReady());
+
+    QQuickWindow window;
+    window.resize(720, 1420);
+    QVariantMap initial;
+    initial.insert(QStringLiteral("hostRef"), QVariant::fromValue(hostWindow));
+    initial.insert(QStringLiteral("colorsRef"), colors);
+    std::unique_ptr<QObject> owner(component.createWithInitialProperties(initial));
+    assert(owner);
+    auto* root = qobject_cast<QQuickItem*>(owner.get());
+    assert(root != nullptr);
+    root->setParentItem(window.contentItem());
+    window.show();
+    assert(ai::ui::test_support::waitForCondition("the memory harness is exposed", [&] { return window.isExposed(); }, 5s));
+    auto* panel = visualChildNamed(root, QStringLiteral("projectMemoryPanel"));
+    auto* nextBlock = visualChildNamed(root, QStringLiteral("nextBlock"));
+    assert(panel && nextBlock);
+    const auto setRoot = [&](const char* name, const QVariant& value) { assert(root->setProperty(name, value)); settle(); };
+    const auto refresh = [&] { assert(QMetaObject::invokeMethod(panel, "refreshHistory")); settle(); };
+
+    struct Kind { const char* state; const char* amount; const char* status; const char* wording; bool incomplete; const char* usage; };
+    const Kind kinds[] = {
+        {"partial", "$0.2507", "completed", "Incomplete estimate: $0.2507 recorded, total unknown", true, "1000 in / 200 out tok"},
+        {"known", "$0.0000", "completed", "$0.0000", false, "40 in / 15 out tok"},
+        {"unknown", "", "completed", "Cost unknown (price incomplete)", true, "100 in / 10 out tok"},
+        {"known", "$0.1200", "failed", "$0.1200", false, "40 in / 15 out tok"},
+        {"partial", "$1234.567890", "failed", "Incomplete estimate: $1234.567890 recorded, total unknown", true, "40 in / 15 out tok"},
+        {"none", "", "cancelled", "No cost recorded", false, ""},
+        {"unknown", "", "failed", "Cost unknown (price incomplete)", true, ""},
+        {"partial", "$0.0330", "cancelled", "Incomplete estimate: $0.0330 recorded, total unknown", true, ""}};
+    const auto rowsFor = [&](int count) {
+        QVariantList rows;
+        for (int index = 0; index < count; ++index) {
+            const Kind& kind = kinds[index % 8];
+            const bool paid = std::strlen(kind.usage) > 0;
+            rows.append(QVariantMap {{"recordId", QStringLiteral("r%1").arg(index)}, {"status", kind.status},
+                {"modelId", QStringLiteral("model-%1").arg(index)}, {"createdAt", QStringLiteral("2026-11-05 12:%1").arg(10 + index)},
+                {"errorMessage", std::strcmp(kind.status, "completed") == 0 ? "" : "Provider returned an empty compacted summary"},
+                {"inputTokens", paid ? 40 : 0}, {"outputTokens", paid ? 15 : 0},
+                {"sourceSegmentIds", QStringList {QStringLiteral("a"), QStringLiteral("b")}},
+                {"priceState", kind.state}, {"costText", kind.amount}, {"priceIncomplete", kind.incomplete}});
+        }
+        return rows;
+    };
+    const auto setHistory = [&](const QVariantList& rows) {
+        setRoot("snapshot", QVariantMap {{"state", "available"}, {"rows", rows}, {"errorCode", ""}, {"errorMessage", ""}});
+        refresh();
+    };
+
+    // Several records at a narrow and a normal width: EVERY cost line is whole, inside the panel, clear of its neighbours and of the
+    // block that follows - the panel grows with the rows.
+    for (const int count : {5, 8}) {
+        for (const double width : {330.0, 560.0}) {
+            setRoot("panelWidth", width);
+            setHistory(rowsFor(count));
+            QList<QObject*> costLines, usageLines;
+            visualChildrenNamed(panel, QStringLiteral("compactionCostLine"), costLines);
+            visualChildrenNamed(panel, QStringLiteral("compactionUsageLine"), usageLines);
+            assert(costLines.size() == count && "every record shows its cost line");
+            const QRectF panelRect = sceneRectOf(panel);
+            for (int index = 0; index < count; ++index) {
+                const Kind& kind = kinds[index % 8];
+                QObject* line = nullptr;
+                for (QObject* candidate : costLines) {
+                    // the delegates are created in model order; match by wording AND position so a stale line cannot pass
+                    if (candidate->property("text").toString() == QString::fromLatin1(kind.wording)) { line = candidate; break; }
+                }
+                assert(line != nullptr && flag(line, "visible"));
+                assertTextFits(line, "compaction cost line");
+                assert(inside(line, panelRect) && !overlaps(line, nextBlock));
+                const QString text = line->property("text").toString();
+                assert(!text.contains(QStringLiteral("At least")));
+                if (kind.incomplete && std::strlen(kind.amount) > 0) {
+                    assert(text.contains(QString::fromLatin1(kind.amount)) && text.contains(QStringLiteral("total unknown")));
+                }
+            }
+            for (QObject* usage : usageLines) {
+                if (!flag(usage, "visible")) continue;
+                assertTextFits(usage, "compaction usage line");
+                assert(inside(usage, panelRect) && !overlaps(usage, nextBlock));
+                for (QObject* cost : costLines) assert(!overlaps(usage, cost));
+            }
+            for (int a = 0; a < costLines.size(); ++a) {
+                for (int b = a + 1; b < costLines.size(); ++b) assert(!overlaps(costLines[a], costLines[b]));
+            }
+            assert(panelRect.bottom() <= sceneRectOf(nextBlock).top() - 0.5);
+            assert(!visibleNamed(panel, QStringLiteral("projectMemoryHistoryUnavailable")));
+        }
+    }
+    saveShot(root, QStringLiteral("s1-project-memory-cost-history"));
+    checkpoint("S1: compaction history cost lines verified");
+
+    // ONE read per refresh, through the snapshot only.
+    setRoot("panelWidth", 560.0);
+    setHistory(rowsFor(3));
+    const int callsBefore = root->property("snapshotCalls").toInt();
+    refresh();
+    assert(root->property("snapshotCalls").toInt() == callsBefore + 1 && root->property("legacyHistoryCalls").toInt() == 0);
+
+    // An unreadable history is shown as unavailable instead of "no compactions"; the earlier rows are gone.
+    assert(root->setProperty("failNext", true));
+    refresh();
+    assert(visibleNamed(panel, QStringLiteral("projectMemoryHistoryUnavailable")));
+    QList<QObject*> costLines;
+    visualChildrenNamed(panel, QStringLiteral("compactionCostLine"), costLines);
+    assert(costLines.isEmpty() && "no row of an earlier success survives a failed read");
+    assert(panel->property("historyErrorText").toString() == QStringLiteral("history unreadable"));
+    assert(visibleNamed(panel, QStringLiteral("projectMemoryHistoryError")));
+    assert(panel->property("errorText").toString().isEmpty() && "the history error is not the segments/compact error line");
+    assert(root->property("snapshotCalls").toInt() == callsBefore + 2);
+    saveShot(root, QStringLiteral("s1-project-memory-history-unavailable"));
+
+    // Recovery: the rows come back, the unavailable mark goes, and the history error leaves the shared error line.
+    refresh();
+    assert(!visibleNamed(panel, QStringLiteral("projectMemoryHistoryUnavailable")));
+    costLines.clear();
+    visualChildrenNamed(panel, QStringLiteral("compactionCostLine"), costLines);
+    assert(costLines.size() == 3);
+    assert(panel->property("historyErrorText").toString().isEmpty());
+    assert(!visibleNamed(panel, QStringLiteral("projectMemoryHistoryError")));
+    assert(panel->property("errorText").toString().isEmpty());
+
+    // An UNRELATED error (e.g. the segments read) is not cleared just because the history was read again.
+    assert(QMetaObject::invokeMethod(root, "emitError", Q_ARG(QVariant, QVariant(QStringLiteral("project_memory.other"))),
+        Q_ARG(QVariant, QVariant(QStringLiteral("segments boom")))));
+    settle();
+    refresh();
+    assert(panel->property("errorText").toString() == QStringLiteral("segments boom"));
+
+    // OWNERSHIP is the operation, not the text: a segments/compact error with the SAME message (and the same code) as a history
+    // failure stays through history-failure -> history-recovery; the history error itself is gone and the rows are back.
+    for (const bool sameCode : {true, false}) {
+        const QString code = sameCode ? QStringLiteral("persistence.read_failed") : QStringLiteral("project_memory.other");
+        assert(QMetaObject::invokeMethod(root, "emitError", Q_ARG(QVariant, QVariant(code)),
+            Q_ARG(QVariant, QVariant(QStringLiteral("The same storage message")))));
+        settle();
+        assert(panel->property("errorText").toString() == QStringLiteral("The same storage message"));
+        setRoot("failMessage", QStringLiteral("The same storage message"));
+        assert(root->setProperty("failNext", true));
+        refresh();
+        assert(visibleNamed(panel, QStringLiteral("projectMemoryHistoryUnavailable")));
+        assert(panel->property("historyErrorText").toString() == QStringLiteral("The same storage message"));
+        assert(panel->property("errorText").toString() == QStringLiteral("The same storage message"));
+        refresh();   // recovery
+        assert(!visibleNamed(panel, QStringLiteral("projectMemoryHistoryUnavailable")));
+        assert(panel->property("historyErrorText").toString().isEmpty());
+        assert(panel->property("errorText").toString() == QStringLiteral("The same storage message")
+            && "the unrelated error survives the history recovery");
+        costLines.clear();
+        visualChildrenNamed(panel, QStringLiteral("compactionCostLine"), costLines);
+        assert(costLines.size() == 3 && "the rows are back");
+        setRoot("failMessage", QStringLiteral("history unreadable"));
+    }
+
+    // A failed history of one project does not leave its own error behind when the project is cleared or replaced.
+    assert(root->setProperty("failNext", true));
+    refresh();
+    assert(panel->property("historyErrorText").toString() == QStringLiteral("history unreadable"));
+    setRoot("projectIdValue", QStringLiteral(""));
+    assert(panel->property("historyErrorText").toString().isEmpty());
+    assert(!visibleNamed(panel, QStringLiteral("projectMemoryHistoryError")));
+    assert(!visibleNamed(panel, QStringLiteral("projectMemoryHistoryUnavailable")));
+    assert(root->setProperty("failNext", true));
+    setRoot("projectIdValue", QStringLiteral("project-s1"));
+    settle();
+    assert(panel->property("historyErrorText").toString() == QStringLiteral("history unreadable"));
+    setRoot("projectIdValue", QStringLiteral("project-other"));
+    settle();
+    assert(panel->property("historyErrorText").toString().isEmpty() && "another project does not inherit the old history error");
+    assert(!visibleNamed(panel, QStringLiteral("projectMemoryHistoryUnavailable")));
+
+    // A real, available, EMPTY history is not "unavailable".
+    setHistory({});
+    assert(!visibleNamed(panel, QStringLiteral("projectMemoryHistoryUnavailable")));
+    costLines.clear();
+    visualChildrenNamed(panel, QStringLiteral("compactionCostLine"), costLines);
+    assert(costLines.isEmpty());
+    checkpoint("S1: the compaction history cost, unavailable state and recovery verified");
+}
+
 } // namespace
 
 int main(int argc, char* argv[])
@@ -1327,6 +1930,24 @@ int main(int argc, char* argv[])
         runOutputFoldersHarnessTests(engine, window, projectsPage, qmlWarnings);
         assert(qmlWarnings.isEmpty() && "QML runtime warnings were emitted");
         checkpoint("output-folders scenarios passed");
+        return 0;
+    }
+
+    // Scoped run of the project-memory cost/history scenarios only: the same function and the same real colors as in the full run
+    // below, started before Run Details. It does not replace the full run and weakens no assertion of it.
+    if (argc == 2 && std::string(argv[1]) == "--project-memory-cost-only") {
+        runProjectMemoryCostTests(engine, window, projectsPage->property("colors"));
+        runProjectMemoryOutcomeQmlTests(engine, window, projectsPage->property("colors"));
+        assert(qmlWarnings.isEmpty() && "QML runtime warnings were emitted");
+        checkpoint("project-memory cost scenarios passed");
+        return 0;
+    }
+    // Scoped run of the A1-min project cost scenarios only: the same function as in the full run below.
+    if (argc == 2 && std::string(argv[1]) == "--project-cost-only") {
+        runProjectCostQmlTests(engine, window, projectsPage->property("colors"));
+        runCompactionCoverageQmlTests(engine, window, projectsPage->property("colors"));
+        assert(qmlWarnings.isEmpty() && "QML runtime warnings were emitted");
+        checkpoint("project cost scenarios passed");
         return 0;
     }
 
@@ -1504,6 +2125,8 @@ int main(int argc, char* argv[])
     assert(overviewSelected && "OverviewPage did not auto-select the created project");
     assert(overviewPage->property("liveProjectsModel").toList().size() == 1
            && "OverviewPage liveProjectsModel must have exactly one entry");
+    // A1-min: the real page shows the new cost card (an empty project of a readable estimate).
+    checkProjectCostOverviewPage(overviewPage);
 
     // ProvidersPage no longer initializes demo rows. Create persisted catalog
     // metadata through its real command path and observe Backend projections.
@@ -1806,6 +2429,10 @@ int main(int argc, char* argv[])
     const int runCount = projectEntry.value(QStringLiteral("runCount"), 0).toInt();
     checkpoint(("overview project runCount=" + std::to_string(runCount)).c_str());
     assert(runCount >= 1 && "liveProjectsModel must count completed run for the project");
+    // A1-min: no dialog is open now - the real page with POSITIVE stored data, its provider mapping and a real tap on Details.
+    checkProjectCostOverviewPagePositive(overviewPage, workspace.databasePath, projectId.toStdString());
+    // B3-III: the same live page with an Open compaction protocol seeded after the startup, and a real memory panel over the same bridge.
+    checkCompactionCoverageOverviewPage(engine, window, projectsPage->property("colors"), overviewPage, workspace.databasePath, projectId.toStdString());
 
     const QDateTime futureDate = QDateTime::currentDateTime().addDays(1);
     assert(overviewFromDatePicker->setProperty("selectedDate", futureDate));
@@ -1925,10 +2552,22 @@ int main(int argc, char* argv[])
             return runData.value(QStringLiteral("runId")).toString() == secondRunId
                 && runData.value(QStringLiteral("task")).toString() == longTask;
         }) && "RunDetailsPanel did not receive the selected Run snapshot");
+    // Sizes at three moments (before the expansion, right after it, after the layout has settled): the next check needs a margin
+    // of MORE than 24 px, which only exists once the expanded context has been laid out completely.
+    const auto detailSizes = [&](const char* moment) {
+        checkpoint((std::string("run details sizes ") + moment
+            + ": window=" + std::to_string(window->property("width").toDouble())
+            + "x" + std::to_string(window->property("height").toDouble())
+            + " flickableHeight=" + std::to_string(runDetailsFlickable->property("height").toDouble())
+            + " contentHeight=" + std::to_string(runDetailsFlickable->property("contentHeight").toDouble())
+            + " maximumY=" + std::to_string(runDetailsPanel->property("detailMaximumY").toDouble())).c_str());
+    };
+    detailSizes("before expansion");
     assert(runDetailsPanel->setProperty("contextExpanded", true));
     assert(waitForProperty(runDetailsPanel, "contextExpanded",
         [](const QVariant& value) { return value.toBool(); })
         && "RunDetailsPanel reset contextExpanded after selecting the Run");
+    detailSizes("right after expansion");
     // AG-16.2 grew this binary (more ai::application includes/seeding code
     // later in main()) enough to push process/QML-engine startup weight up,
     // which made this pre-existing layout-settle wait marginal against the
@@ -1944,6 +2583,13 @@ int main(int argc, char* argv[])
         + " height=" + std::to_string(runDetailsFlickable->property("height").toDouble())
         + " maximumY=" + std::to_string(runDetailsPanel->property("detailMaximumY").toDouble())).c_str());
     assert(detailsOverflow && "Expanded Run context did not produce scrollable detail content");
+    detailSizes("after the first overflow");
+    // Any overflow (628 > 622) already satisfies the wait above, but the scroll test below needs detailMaximumY > 24: wait for
+    // exactly that, with the same 15 s budget. The assertion that follows is unchanged.
+    const bool detailMaximumReached = waitForProperty(runDetailsPanel, "detailMaximumY",
+        [](const QVariant& value) { return value.toDouble() > 24.0; }, 15s);
+    detailSizes("after waiting for detailMaximumY > 24");
+    assert(detailMaximumReached && "Expanded Run context never produced detailMaximumY > 24");
     const double detailMaximumY =
         runDetailsPanel->property("detailMaximumY").toDouble();
     assert(detailMaximumY > 24.0);
@@ -2055,6 +2701,11 @@ int main(int argc, char* argv[])
     assert(workspaceProvenanceSummary->property("text").toString().contains(
         QStringLiteral("exact fingerprint"), Qt::CaseInsensitive));
     runRecordedWorkspaceCardTests(engine, window, projectsPage->property("colors"));
+    runOverviewCostLayoutTests(engine, window, projectsPage->property("colors"));
+    runProjectMemoryCostTests(engine, window, projectsPage->property("colors"));
+    runProjectMemoryOutcomeQmlTests(engine, window, projectsPage->property("colors"));
+    runProjectCostQmlTests(engine, window, projectsPage->property("colors"));
+    runCompactionCoverageQmlTests(engine, window, projectsPage->property("colors"));
 
     // Durable Run warnings (a diagnostic artifact that could not be stored): a Run without any has no section; with
     // warnings the section appears and shows every one of them.
@@ -4628,9 +5279,15 @@ int main(int argc, char* argv[])
             return result.toString();
         };
         assert(wording("known", "$0.0007") == QStringLiteral("$0.0007"));
-        assert(wording("partial", "$0.0007") == QStringLiteral("At least $0.0007"));
-        assert(wording("partial", "$0.0000") == QStringLiteral("At least $0.0000"));
-        assert(wording("unknown", "") == QStringLiteral("Cost unavailable"));
+        // A partial amount is an incomplete estimate, NOT promised to be a lower bound (an unknown flag can also come
+        // from untrusted usage), so the wording never says "at least".
+        // A1-min (§13c): the accepted wording is "Incomplete estimate: %1; total unknown" and "Cost unknown".
+        assert(wording("partial", "$0.0007")
+            == QStringLiteral("Incomplete estimate: $0.0007; total unknown"));
+        assert(wording("partial", "$0.0000")
+            == QStringLiteral("Incomplete estimate: $0.0000; total unknown"));
+        assert(!wording("partial", "$0.0007").contains(QStringLiteral("At least"), Qt::CaseInsensitive));
+        assert(wording("unknown", "") == QStringLiteral("Cost unknown"));
         assert(!wording("unknown", "$0.0000").contains(QLatin1Char('$')));
         assert(wording("none", "") == QString::fromUtf8("\xE2\x80\x94"));
         checkpoint("M2c pricing dialog, long-context tier and price-state wording verified in real QML");
@@ -4806,6 +5463,132 @@ int main(int argc, char* argv[])
 
         assert(QMetaObject::invokeMethod(chatsPage, "refreshConversations"));
         assert(QMetaObject::invokeMethod(chatsPage, "selectConversation", Q_ARG(QVariant, QVariant(conversationId))));
+
+        // C2-A: the Chat panel shows the RECORDED cost of the conversation - the Backend's model-execution ledger -
+        // through the real QML, the real production bridge and a real SQLite ledger. QML only words the Backend state.
+        {
+            QObject* recordedCostText = waitForChild(window, "chatRecordedCost");
+            QObject* recordedCostNote = waitForChild(window, "chatRecordedCostNote");
+            QObject* legacyEstimateText = waitForChild(window, "chatLegacyEstimate");
+            assert(recordedCostText && recordedCostNote && legacyEstimateText);
+            const auto recordedMap = [&] { return chatsPage->property("currentRecordedCost").toMap(); };
+            const auto shown = [&] { return recordedCostText->property("text").toString(); };
+            const auto refreshChat = [&] {
+                assert(QMetaObject::invokeMethod(chatsPage, "refreshMessages", Q_ARG(QVariant, QVariant(conversationId))));
+            };
+
+            // No execution row yet: the production composition really asks the ledger (an unwired controller would say
+            // "unavailable"), and an empty ledger is "no records" - never a free "$0.00".
+            assert(recordedMap().value(QStringLiteral("state")).toString() == QStringLiteral("none"));
+            assert(recordedMap().value(QStringLiteral("conversationId")).toString() == conversationId);
+            assert(shown() == QStringLiteral("No execution cost records") && !shown().contains(QLatin1Char('$')));
+            assert(recordedCostNote->property("text").toString()
+                == QStringLiteral("Includes recorded attempts; clearing usage counters does not remove these records."));
+
+            // A positive OLD conversation counter and no ledger rows: it is only a labelled legacy estimate and is never
+            // shown as the recorded cost.
+            {
+                auto stored = storedChats.findConversation(conversationId.toStdString());
+                assert(stored.success() && stored.value().has_value());
+                auto legacy = *stored.value();
+                legacy.estimatedCostMicros = 5'000;
+                assert(storedChats.updateConversation(legacy).success());
+            }
+            assert(QMetaObject::invokeMethod(chatsPage, "refreshConversations"));
+            assert(ai::ui::test_support::waitForCondition("the legacy estimate is labelled", [&] {
+                return legacyEstimateText->property("text").toString()
+                    == QStringLiteral("$0.0050 (old counter, not exact)");
+            }, 5s));
+            assert(shown() == QStringLiteral("No execution cost records")
+                && "The old counter must never become the recorded cost");
+
+            // Real ledger rows, written through a second connection exactly as the Backend writes them.
+            ai::infrastructure::SqliteModelExecutionRepository storedExecutions(workshopDatabase.value());
+            const auto seedExecution = [&](const char* id, std::uint32_t position, std::uint64_t cost, bool known) {
+                ai::application::ModelExecution execution;
+                execution.id = id;
+                execution.source = ai::application::ModelExecutionSource::Chat;
+                execution.sourceId = conversationId.toStdString();
+                execution.projectId = workshopProjectId.toStdString();
+                execution.providerId = workshopProviderId.toStdString();
+                execution.modelId = workshopModelId.toStdString();
+                execution.role = "assistant";
+                execution.position = position;
+                execution.status = ai::application::ModelExecutionStatus::Completed;
+                execution.inputTokens = 1'000;
+                execution.outputTokens = 100;
+                execution.costMicros = cost;
+                execution.costPriceKnown = known;
+                execution.createdAt = std::chrono::system_clock::now();
+                assert(storedExecutions.insertExecution(execution).success());
+            };
+            seedExecution("c2a-known", 0, 700, true);
+            refreshChat();
+            assert(recordedMap().value(QStringLiteral("state")).toString() == QStringLiteral("known"));
+            assert(shown() == QStringLiteral("$0.0007"));
+
+            seedExecution("c2a-unknown", 1, 250'000, false);
+            refreshChat();
+            assert(recordedMap().value(QStringLiteral("state")).toString() == QStringLiteral("partial"));
+            assert(recordedMap().value(QStringLiteral("executionCount")).toULongLong() == 2
+                && recordedMap().value(QStringLiteral("unknownPriceExecutionCount")).toULongLong() == 1);
+            assert(shown() == QStringLiteral("Incomplete estimate: $0.2507 recorded, total unknown"));
+            assert(!shown().contains(QStringLiteral("At least"), Qt::CaseInsensitive));
+            const QVariantList metrics = chatsPage->property("currentModelMetrics").toList();
+            assert(metrics.size() == 1
+                && metrics.front().toMap().value(QStringLiteral("executionCount")).toULongLong() == 2
+                && metrics.front().toMap().value(QStringLiteral("costState")).toString() == QStringLiteral("partial"));
+            {   // R1: the per-model line carries the same long wording and must show it whole (wrapped, not cut off).
+                settle();
+                QObject* usageLine = visualChildNamed(chatsPage, QStringLiteral("chatModelUsageLine"));
+                assert(usageLine != nullptr && "the Chat panel shows the per-model usage line");
+                assert(usageLine->property("text").toString().contains(
+                    QStringLiteral("incomplete estimate: $0.2507 recorded")));
+                assertTextFits(usageLine, "Chat per-model usage line");
+            }
+
+            // Clearing the usage counters resets the OLD fields only; every recorded attempt stays.
+            assert(backend.chatController().clearUsage(conversationId));
+            assert(ai::ui::test_support::waitForCondition("the counters are cleared", [&] {
+                return chatsPage->property("currentSessionData").toMap()
+                    .value(QStringLiteral("legacyEstimateMicros")).toULongLong() == 0;
+            }, 5s));
+            refreshChat();
+            assert(recordedMap().value(QStringLiteral("executionCount")).toULongLong() == 2
+                && shown() == QStringLiteral("Incomplete estimate: $0.2507 recorded, total unknown")
+                && "Clearing usage must not remove the recorded cost");
+
+            // The other states are worded, never invented: unknown has no amount, an unreadable ledger says so.
+            const auto showState = [&](const char* state, const char* text) {
+                assert(chatsPage->setProperty("currentRecordedCost", QVariantMap {
+                    {QStringLiteral("state"), QString::fromLatin1(state)},
+                    {QStringLiteral("costText"), QString::fromLatin1(text)}}));
+            };
+            showState("unknown", "");
+            assert(shown() == QStringLiteral("Cost unavailable") && !shown().contains(QLatin1Char('$')));
+            showState("unavailable", "");
+            assert(shown() == QStringLiteral("Cost unavailable (the execution records could not be read)")
+                && !shown().contains(QLatin1Char('$')));
+            showState("known", "$0.0000");
+            assert(shown() == QStringLiteral("$0.0000") && "A KNOWN zero is a priced, free result");
+            refreshChat();   // back to the real ledger projection
+
+            // The Comparison summary words the same four states from the Backend's summary map.
+            QObject* comparisonPageForCost = waitForChild(window, "comparisonPage");
+            QObject* comparisonTotal = waitForChild(window, "comparisonTotalCost");
+            assert(comparisonPageForCost && comparisonTotal);
+            const auto summaryShows = [&](const char* state, const char* text) {
+                assert(comparisonPageForCost->setProperty("summaryData", QVariantMap {
+                    {QStringLiteral("costState"), QString::fromLatin1(state)},
+                    {QStringLiteral("totalCostText"), QString::fromLatin1(text)}}));
+                return comparisonTotal->property("text").toString();
+            };
+            assert(summaryShows("known", "$0.000003") == QStringLiteral("$0.000003"));
+            assert(summaryShows("partial", "$0.000012")
+                == QStringLiteral("Incomplete estimate: $0.000012 recorded, total unknown"));
+            assert(summaryShows("unknown", "") == QStringLiteral("Cost unavailable"));
+            assert(summaryShows("none", "") == QString::fromUtf8("\xE2\x80\x94"));
+        }
 
         // PC-3E: previewing still sends nothing. The separate attach action first shows the Backend quote; closing
         // that dialog is the only action that arms the exact fingerprint for the NEXT message. This smoke test

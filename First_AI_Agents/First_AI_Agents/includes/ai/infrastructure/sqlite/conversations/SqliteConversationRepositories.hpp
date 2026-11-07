@@ -6,6 +6,7 @@
 #include "ai/application/conversations/IProjectMemoryRepository.hpp"
 #include "ai/common/Result.hpp"
 #include "ai/infrastructure/sqlite/SqliteDatabase.hpp"
+#include "ai/infrastructure/sqlite/conversations/SqliteProjectMemoryCompactionIntentRepository.hpp"
 
 #include <cstddef>
 #include <memory>
@@ -75,8 +76,18 @@ public:
         const application::ProjectMemoryCompactionRecord& record,
         application::ProjectMemorySegment resultSegment) override;
 
+    // C2-B/S2b: the same writes, with the proof of what they left behind. The two methods above are a thin view of these.
+    application::CompactionPersistOutcome insertCompactionRecordObserved(
+        const application::ProjectMemoryCompactionRecord& record) override;
+    application::CompactionPersistOutcome commitSuccessfulCompactionObserved(
+        const application::ProjectMemoryCompactionRecord& record,
+        application::ProjectMemorySegment resultSegment) override;
+
     [[nodiscard]] common::Result<std::vector<application::ProjectMemoryCompactionRecord>>
     listCompactionRecords(const application::ProjectId& projectId) const override;
+
+    [[nodiscard]] common::Result<std::optional<application::ProjectMemoryCompactionRecord>> findCompactionRecord(
+        const application::ProjectMemoryCompactionId& id) const override;
 
 private:
     std::shared_ptr<SqliteDatabase> database_;

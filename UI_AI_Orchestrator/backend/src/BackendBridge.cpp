@@ -79,9 +79,10 @@ BackendBridge::BackendBridge(const QString& databasePathOverride,
           runtime_.proposalReviewService(), runtime_.manifestApplyVerificationGate(), this))
     , projectContextController_(std::make_unique<ProjectContextController>(
           runtime_.projectContextSnapshotService(), this))
-    , chatController_(runtime_.chatService(), runtime_.providerCatalogService(), *projectContextController_, this)
+    , chatController_(runtime_.chatService(), runtime_.providerCatalogService(), *projectContextController_,
+          &runtime_.executionAnalyticsService(), this)
     , projectMemoryController_(runtime_.projectMemoryService(),
-          runtime_.projectMemoryCompactionService(), runtime_.providerCatalogService(), this)
+          runtime_.projectMemoryCompactionService(), runtime_.providerCatalogService(), runtime_.compactionIntentReadModel(), this)
     , projectController_(runtime_.projectService(), this)
     , projectVerificationSetupController_(
           std::make_unique<ProjectVerificationSetupController>(this))
@@ -92,6 +93,10 @@ BackendBridge::BackendBridge(const QString& databasePathOverride,
           runtime_.followUpPlanService(), runtime_.followUpPlanReadModel(), this))
     , projectOutputApprovalController_(std::make_unique<ProjectOutputApprovalController>(
           runtime_.projectOutputApprovalService(), this))
+    , projectCostController_(std::make_unique<ProjectCostController>(
+          runtime_.projectCostService(), runtime_.providerCatalogService(), this))
+    , compactionIntentRecoveryController_(std::make_unique<CompactionIntentRecoveryController>(
+          runtime_.compactionIntentRecoveryReport(), runtime_.compactionIntentRecoveryError(), this))
     , taskController_(runtime_.taskService(), this)
     , runController_(runtime_.orchestrationService(), runtime_.artifactService(),
           runtime_.providerCatalogService(),
@@ -216,6 +221,8 @@ QObject* BackendBridge::runDrafts() noexcept { return &runDraftController_; }
 QObject* BackendBridge::credentials() noexcept { return &credentialController_; }
 QObject* BackendBridge::chats() noexcept { return &chatController_; }
 QObject* BackendBridge::executionAnalytics() noexcept { return &executionAnalyticsController_; }
+QObject* BackendBridge::projectCost() noexcept { return projectCostController_.get(); }
+QObject* BackendBridge::compactionRecovery() noexcept { return compactionIntentRecoveryController_.get(); }
 QObject* BackendBridge::comparisons() noexcept { return &comparisonController_; }
 QObject* BackendBridge::agentSessions() noexcept { return &agentSessionController_; }
 QObject* BackendBridge::manifest() noexcept { return &manifestController_; }
@@ -262,6 +269,10 @@ ChatController& BackendBridge::chatController() noexcept { return chatController
 ExecutionAnalyticsController& BackendBridge::executionAnalyticsController() noexcept
 {
     return executionAnalyticsController_;
+}
+ProjectCostController& BackendBridge::projectCostController() noexcept
+{
+    return *projectCostController_;
 }
 ComparisonController& BackendBridge::comparisonController() noexcept
 {

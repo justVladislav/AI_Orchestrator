@@ -1785,9 +1785,9 @@ void testTheProductionOwnerTakesAVerifiedCopyBeforeUpgrading()
             require(guest.storageAvailable(), "A guest opens the file");
             require(filesIn(backups).size() == 1, "...and creates no copy");
         }
-        require(scalarOf(workspace.databasePath, "PRAGMA user_version;", SQLITE_OPEN_READWRITE) == 72, "The database is upgraded");
+        require(scalarOf(workspace.databasePath, "PRAGMA user_version;", SQLITE_OPEN_READWRITE) == 75, "The database is upgraded");
     }
-    {   // the real previous release: version 70 -> 72, the copy stays version 70 with the old data and without the new table
+    {   // the real previous release: version 70 -> 75, the copy stays version 70 with the old data and without the new table
         TemporaryPersistenceWorkspace workspace;
         makeVersion70Database(workspace.databasePath, 2);
         const fs::path backups = workspace.databasePath.parent_path() / "backups";
@@ -1802,7 +1802,7 @@ void testTheProductionOwnerTakesAVerifiedCopyBeforeUpgrading()
                         SQLITE_OPEN_READONLY) == 0,
                 "...and without the new table");
         }
-        require(scalarOf(workspace.databasePath, "PRAGMA user_version;", SQLITE_OPEN_READWRITE) == 72, "The working database is ");
+        require(scalarOf(workspace.databasePath, "PRAGMA user_version;", SQLITE_OPEN_READWRITE) == 75, "The working database is ");
         require(scalarOf(workspace.databasePath, "SELECT count(*) FROM sqlite_master WHERE name = 'project_output_approvals';",
                     SQLITE_OPEN_READWRITE) == 1,
             "...with the new table");

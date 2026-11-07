@@ -74,6 +74,12 @@ common::Result<std::shared_ptr<SqliteDatabase>> SqliteDatabase::open(
 
     sqlite3_extended_result_codes(impl->handle, 1);
     sqlite3_busy_timeout(impl->handle, 5000);
+    // S2b: let the shared primitives recognise a refusal that comes from THIS connection's quarantine. Client data belongs to the
+    // connection (no registry) and nothing is isolated until a repository enters the quarantine.
+    if (!impl->health.attach(impl->handle)) {
+        return common::Result<std::shared_ptr<SqliteDatabase>>::failure(
+            error("persistence.open_failed", "Could not attach the connection health state"));
+    }
 
     // Before ANYTHING changes the file - the journal mode, a pragma that writes, the first migration statement - decide whether an
     // existing database is about to be upgraded and, if so, keep a verified copy of it. Only the composition root that owns the file

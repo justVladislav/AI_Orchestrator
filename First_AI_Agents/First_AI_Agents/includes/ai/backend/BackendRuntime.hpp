@@ -22,6 +22,7 @@
 #include "ai/application/planning/RunDraftPlanService.hpp"
 #include "ai/application/planning/RunDraftService.hpp"
 #include "ai/application/analytics/ExecutionAnalyticsService.hpp"
+#include "ai/application/analytics/ProjectCostService.hpp"
 #include "ai/application/providers/ICredentialStore.hpp"
 #include "ai/application/execution/OrchestrationService.hpp"
 #include "ai/application/verification/VerificationBootstrapRetryService.hpp"
@@ -37,6 +38,8 @@
 #include "ai/application/verification/ManifestVerificationManualHandoffReadModelService.hpp"
 #include "ai/application/proposals/ProposalReviewService.hpp"
 #include "ai/application/conversations/ProjectMemoryService.hpp"
+#include "ai/application/conversations/CompactionIntentReadModelService.hpp"
+#include "ai/application/conversations/CompactionIntentRecoveryReport.hpp"
 #include "ai/application/conversations/ProjectMemoryCompactionService.hpp"
 #include "ai/application/planning/OutcomeBriefReadModelService.hpp"
 #include "ai/application/planning/OutcomeBriefReconciler.hpp"
@@ -297,6 +300,14 @@ public:
     /// UI consumers use it for project/source totals and provider breakdowns.
     [[nodiscard]] ai::application::ExecutionAnalyticsService& executionAnalyticsService() noexcept;
 
+    /// A1-min: read-only project cost estimate composed from the execution ledger and the stored memory-compaction
+    /// records. Best-effort sequential reads (not an atomic snapshot); it writes nothing and reprices nothing.
+    [[nodiscard]] ai::application::ProjectCostService& projectCostService() noexcept;
+
+    /// B3-III: the read-only reader of the compaction intents of a project (counts and rows from one strict read) for the project
+    /// memory history. It cannot write, mark, close or recover.
+    [[nodiscard]] const ai::application::CompactionIntentReadModelService& compactionIntentReadModel() const noexcept;
+
     /// Deterministic, LLM-free project memory writer (Task B of
     /// PROJECT_MEMORY_PLAN.md). RunManager already calls this best-effort on
     /// every run that reaches RunStatus::Completed; exposed here mainly for
@@ -444,6 +455,15 @@ public:
     /// running/requested tool calls failed. storageAvailable() can still be
     /// true: recovery is a follow-up step on an already-open database.
     [[nodiscard]] const std::optional<ai::common::Error>& agentAuditRecoveryError() const noexcept;
+
+    /// B3-II-B: what the owner-startup recovery of the compaction intents did, read-only. Absent when the pass did not take part
+    /// (a guest, an in-memory database, a refused lock, an unavailable database): that is not "complete" and not "zero rows". There is
+    /// no way to run, repeat or schedule the recovery from outside; it ran once, inside the constructor.
+    [[nodiscard]] const std::optional<ai::application::CompactionIntentRecoveryReport>& compactionIntentRecoveryReport() const noexcept;
+
+    /// B3-II-B: the first cause of a Partial or Unavailable compaction-intent recovery, unchanged. Its own channel: it is never merged
+    /// into recoveryError() and other passes do not influence it.
+    [[nodiscard]] const std::optional<ai::common::Error>& compactionIntentRecoveryError() const noexcept;
 
     /// Audited, fail-closed agent tool execution service. Always non-null.
     /// storageAvailable() returns false when enableAgentToolExecution is

@@ -2,6 +2,9 @@
 # BackendBridge and drives ProjectsPage/RunsPage exactly like the UI does.
 qt_add_executable(AIOrchestrator_QmlFrontend_tests
     QmlFrontendSmokeTest.cpp
+    ProjectMemoryOutcomeQmlTests.cpp
+    ProjectCostQmlTests.cpp
+    CompactionCoverageQmlTests.cpp
 )
 
 # Own output directory, isolated from appUI_AI_Orchestrator's deployment root,
@@ -10,6 +13,12 @@ qt_add_executable(AIOrchestrator_QmlFrontend_tests
 set_target_properties(AIOrchestrator_QmlFrontend_tests PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/qml-frontend-tests"
 )
+
+# A1-min: ProjectCostQmlTests.cpp drives the REAL controller over the scripted sources of the core test directory.
+target_include_directories(AIOrchestrator_QmlFrontend_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../First_AI_Agents/First_AI_Agents/tests/Unit"
+)
+target_compile_features(AIOrchestrator_QmlFrontend_tests PRIVATE cxx_std_20)
 
 target_link_libraries(AIOrchestrator_QmlFrontend_tests
     PRIVATE

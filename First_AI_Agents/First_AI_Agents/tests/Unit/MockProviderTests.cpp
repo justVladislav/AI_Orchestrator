@@ -26,6 +26,11 @@ int runWorkflowRoutingAndProductionTests();
 int runChatContextAssemblerTests();
 int runRunContextAssemblerTests();
 int runProjectMemoryServiceTests();
+int runProjectMemoryCompactionAccountingTests();
+int runCompactionIntentPolicyTests();
+int runCompactionIntentDispatchServiceTests();
+int runCompactionIntentRecoveryTests();
+int runProjectMemoryCompactionPersistenceServiceTests();
 int runChangeProposalTests();
 int runRunPathClaimRegistryTests();
 int runAgentToolTurnLoopRunnerTests();
@@ -55,6 +60,8 @@ int runVerificationBootstrapRetryServiceTests();
 int runProviderExecutionBudgetTests();
 int runCostCalculationTests();
 int runExecutionAnalyticsServiceTests();
+int runProjectCostTests();
+int runCompactionCoverageTests();
 int runProjectOutputApprovalServiceTests();
 
 namespace {
@@ -103,11 +110,22 @@ int runTests(int argc, char** argv)
     if (argc == 2 && std::string(argv[1]) == "--provider-budget-only") {
         return runProviderExecutionBudgetTests();
     }
+    if (argc == 2 && std::string(argv[1]) == "--project-memory-compaction-accounting-only") {
+        if (runProjectMemoryCompactionAccountingTests() != 0) return 1;
+        if (runCompactionIntentPolicyTests() != 0) return 1;
+        if (runCompactionIntentDispatchServiceTests() != 0) return 1;
+        if (runCompactionIntentRecoveryTests() != 0) return 1;
+        return runProjectMemoryCompactionPersistenceServiceTests();
+    }
     if (argc == 2 && std::string(argv[1]) == "--cost-calculation-only") {
         return runCostCalculationTests();
     }
     if (argc == 2 && std::string(argv[1]) == "--execution-analytics-only") {
         return runExecutionAnalyticsServiceTests();
+    }
+    if (argc == 2 && std::string(argv[1]) == "--project-cost-only") {
+        if (runProjectCostTests() != 0) return 1;
+        return runCompactionCoverageTests();
     }
     // This project currently uses one small executable as the test runner.
     // Each subsystem exposes a run*Tests function and the runner aggregates them.
@@ -126,6 +144,11 @@ int runTests(int argc, char** argv)
     runChatContextAssemblerTests();
     runRunContextAssemblerTests();
     runProjectMemoryServiceTests();
+    if (runProjectMemoryCompactionAccountingTests() != 0) return 1;
+    if (runCompactionIntentPolicyTests() != 0) return 1;
+    if (runCompactionIntentDispatchServiceTests() != 0) return 1;
+    if (runCompactionIntentRecoveryTests() != 0) return 1;
+    if (runProjectMemoryCompactionPersistenceServiceTests() != 0) return 1;
     runChangeProposalTests();
     runRunPathClaimRegistryTests();
     runAgentToolTurnLoopRunnerTests();
@@ -155,6 +178,8 @@ int runTests(int argc, char** argv)
     if (runProviderExecutionBudgetTests() != 0) return 1;
     if (runCostCalculationTests() != 0) return 1;
     if (runExecutionAnalyticsServiceTests() != 0) return 1;
+    if (runProjectCostTests() != 0) return 1;
+    if (runCompactionCoverageTests() != 0) return 1;
     if (runProjectOutputApprovalServiceTests() != 0) return 1;
 
     std::cout << "All tests passed\n";

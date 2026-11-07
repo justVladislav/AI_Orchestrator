@@ -119,8 +119,8 @@ void ProviderExecutionAnalyticsModel::replace(std::vector<ProviderExecutionAnaly
 }
 
 // Relative shares of different providers are only meaningful between EXACT amounts. A Partial
-// amount is a lower bound and an Unknown one is no amount at all, so as soon as one row is not
-// Known no cost share is shown for any row (nothing is normalised between lower bounds). With
+// amount is an incomplete estimate and an Unknown one is no amount at all, so as soon as one row is not
+// Known no cost share is shown for any row (nothing is normalised between incomplete estimates). With
 // every row Known the largest provider is 1; if every known cost is zero the chart falls back to
 // token volume, which is exact data.
 void ProviderExecutionAnalyticsModel::recomputeShares()

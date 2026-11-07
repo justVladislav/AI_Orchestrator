@@ -9,6 +9,7 @@
 #include "ai/application/agents/ModelExecutionService.hpp"
 #include "ai/infrastructure/SqliteRepositories.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <filesystem>
@@ -1222,6 +1223,151 @@ void testAnExecutionLogFailureAfterTheAnswerKeepsTheAnswerButLeavesTheLogUnfinis
         "The conversation must keep working");
 }
 
+// C2-A: the cost Chat shows is the model-execution LEDGER of the conversation (ExecutionAnalyticsService over
+// ModelExecutionSource::Chat), not the resettable conversation counters or the overwritable message rows. A retry that
+// overwrites the visible assistant row leaves BOTH attempts recorded, clearing usage counters never removes a record,
+// an unpriced attempt keeps the total incomplete, and all of it survives a restart.
+void testChatCostLedgerKeepsEveryAttemptAndSurvivesClearUsageAndRestart()
+{
+    ChatWorkspace workspace;
+    ConversationId conversationId;
+    ProviderId providerId = "provider-ledger";
+    // 100,000 input (50,000 of it cache read) + 1,000 output.
+    const auto usage = usageOf(100'000, 1'000, 0, 50'000);
+    // Model 1 prices every used category: 50,000*2 + 50,000*0.2 + 1,000*10 = 120,000 micro-USD, known.
+    // Model 2 has NO cache-read price: 50,000*2 + 1,000*10 = 110,000 recorded, price unknown.
+    constexpr std::uint64_t kKnownAttempt = 120'000;
+    constexpr std::uint64_t kUnknownAttempt = 110'000;
+
+    {
+        const auto opened = SqliteDatabase::open(workspace.database);
+        requireChat(opened.success(), "Could not open the ledger database");
+        SqliteProjectRepository projects(opened.value());
+        SqliteWorkspaceStateRepository workspaceState(opened.value());
+        SqliteProviderRepository providers(opened.value());
+        SqliteModelRepository models(opened.value());
+        SqliteChatRepository chats(opened.value());
+        SqliteModelExecutionRepository executionRepository(opened.value());
+        ModelExecutionService executions(executionRepository);
+        ExecutionAnalyticsService analytics(executionRepository, models);
+
+        const auto now = std::chrono::system_clock::now();
+        Provider provider {providerId, "OpenAI", "openai", "https://api.openai.com", true, std::nullopt, now, now};
+        requireChat(providers.insert(provider).success(), "Could not insert the ledger provider");
+        const auto makeModel = [&](const char* id, std::uint64_t cacheRead) {
+            Model model;
+            model.id = id;
+            model.providerId = provider.id;
+            model.apiModelId = id;
+            model.displayName = id;
+            model.contextWindowTokens = 400'000;
+            model.maxOutputTokens = 4096;
+            model.inputPriceMicrosPerMillionTokens = 2'000'000;
+            model.outputPriceMicrosPerMillionTokens = 10'000'000;
+            model.cacheWritePriceMicrosPerMillionTokens = 2'500'000;
+            model.cacheReadPriceMicrosPerMillionTokens = cacheRead;
+            model.createdAt = now;
+            model.updatedAt = now;
+            requireChat(models.insert(model).success(), "Could not insert a ledger model");
+            return model;
+        };
+        const Model priced = makeModel("model-priced", 200'000);
+        const Model unpriced = makeModel("model-unpriced", 0);
+
+        ScriptedUsageClient client;
+        client.usage = usage;
+        SingleClientFactory clients(client);
+        ChatService service(chats, projects, workspaceState, providers, models, clients, &executions);
+        const auto conversation = service.createConversation({std::nullopt, provider.id, priced.id, "Ledger chat"});
+        requireChat(conversation.success(), "Could not create the ledger conversation");
+        conversationId = conversation.value().id;
+
+        // A conversation without any attempt has NO cost records: state none, not a free zero.
+        const auto empty = analytics.sourceSnapshot(ModelExecutionSource::Chat, conversationId);
+        requireChat(empty.success() && empty.value().totals.executionCount == 0
+                && empty.value().totals.priceState() == ExecutionPriceState::None,
+            "An untouched conversation must have no cost records");
+
+        const auto turn = service.prepareTurn(conversationId, "Count this");
+        requireChat(turn.success(), "Could not prepare the first ledger turn");
+        const auto assistantId = turn.value().assistantMessage.id;
+        const auto first = service.generate(assistantId, std::stop_token {});
+        requireChat(first.success() && first.value().costMicros == kKnownAttempt, "The first attempt must cost 120,000");
+
+        // Retry overwrites the SAME assistant row (its own cost is now only the new attempt) ...
+        const auto retried = service.retry(assistantId, std::stop_token {});
+        requireChat(retried.success() && retried.value().costMicros == kKnownAttempt,
+            "The retried row carries only its own attempt");
+        const auto messages = service.listMessages(conversationId);
+        requireChat(messages.success()
+                && std::count_if(messages.value().begin(), messages.value().end(),
+                       [](const ChatMessage& message) { return message.role == ChatRole::Assistant; }) == 1,
+            "A retry must not create a second visible assistant row");
+        // ... but BOTH recorded attempts are in the ledger, each counted once, with a known total.
+        const auto afterRetry = analytics.sourceSnapshot(ModelExecutionSource::Chat, conversationId);
+        requireChat(afterRetry.success() && afterRetry.value().totals.executionCount == 2
+                && afterRetry.value().totals.costMicros == 2 * kKnownAttempt
+                && afterRetry.value().totals.priceState() == ExecutionPriceState::Known
+                && afterRetry.value().totals.inputTokens == 200'000,
+            "Both attempts must be recorded once each and priced as known");
+
+        // Clearing usage zeroes the OLD counters only; the ledger is not touched.
+        const auto conversationBefore = service.listConversations();
+        requireChat(conversationBefore.success()
+                && conversationBefore.value().front().estimatedCostMicros == 2 * kKnownAttempt,
+            "setup: the old counter accumulated both attempts");
+        const auto cleared = service.clearUsage(conversationId);
+        requireChat(cleared.success() && cleared.value().estimatedCostMicros == 0
+                && cleared.value().inputTokens == 0 && cleared.value().outputTokens == 0,
+            "clearUsage must zero the resettable counters");
+        const auto afterClear = analytics.sourceSnapshot(ModelExecutionSource::Chat, conversationId);
+        requireChat(afterClear.success() && afterClear.value().totals.executionCount == 2
+                && afterClear.value().totals.costMicros == 2 * kKnownAttempt
+                && afterClear.value().totals.priceState() == ExecutionPriceState::Known,
+            "clearUsage must not remove a recorded cost");
+
+        // An attempt whose price is incomplete keeps the whole total incomplete (sticky), next to known ones.
+        requireChat(service.setSelection(conversationId, provider.id, unpriced.id).success(),
+            "Could not switch to the unpriced model");
+        const auto second = service.prepareTurn(conversationId, "And again");
+        requireChat(second.success()
+                && service.generate(second.value().assistantMessage.id, std::stop_token {}).success(),
+            "The unpriced attempt must complete");
+        const auto mixed = analytics.sourceSnapshot(ModelExecutionSource::Chat, conversationId);
+        requireChat(mixed.success() && mixed.value().totals.executionCount == 3
+                && mixed.value().totals.unknownPriceExecutionCount == 1
+                && mixed.value().totals.priceState() == ExecutionPriceState::Partial
+                && mixed.value().totals.costMicros == 2 * kKnownAttempt + kUnknownAttempt,
+            "One unpriced attempt must make the total incomplete without hiding the known ones");
+        // The per-model aggregates come from the same sample and add up to it.
+        std::uint64_t modelExecutions = 0;
+        std::uint64_t modelCost = 0;
+        for (const auto& providerAggregate : mixed.value().providers) {
+            for (const auto& modelAggregate : providerAggregate.models) {
+                modelExecutions += modelAggregate.totals.executionCount;
+                modelCost += modelAggregate.totals.costMicros;
+            }
+        }
+        requireChat(mixed.value().providers.size() == 1 && mixed.value().providers.front().models.size() == 2
+                && modelExecutions == 3 && modelCost == mixed.value().totals.costMicros,
+            "The per-model aggregates must partition the same executions");
+    }
+
+    {   // A restart: the ledger is durable, so the same total and the same incompleteness come back.
+        const auto reopened = SqliteDatabase::open(workspace.database);
+        requireChat(reopened.success(), "Could not reopen the ledger database");
+        SqliteModelRepository models(reopened.value());
+        SqliteModelExecutionRepository executionRepository(reopened.value());
+        ExecutionAnalyticsService analytics(executionRepository, models);
+        const auto restarted = analytics.sourceSnapshot(ModelExecutionSource::Chat, conversationId);
+        requireChat(restarted.success() && restarted.value().totals.executionCount == 3
+                && restarted.value().totals.unknownPriceExecutionCount == 1
+                && restarted.value().totals.priceState() == ExecutionPriceState::Partial
+                && restarted.value().totals.costMicros == 2 * kKnownAttempt + kUnknownAttempt,
+            "The recorded cost and its incompleteness must survive a restart");
+    }
+}
+
 } // namespace
 
 int runChatServicePricingTests()
@@ -1239,5 +1385,6 @@ int runChatServicePricingTests()
     testEveryFailureBeforeTheProviderLeavesAReadableErrorRowThatCanBeRetried();
     testAFailureAfterThePaidAnswerNeverLosesTheAnswerOrLeavesTheRowGenerating();
     testAnExecutionLogFailureAfterTheAnswerKeepsTheAnswerButLeavesTheLogUnfinished();
+    testChatCostLedgerKeepsEveryAttemptAndSurvivesClearUsageAndRestart();
     return 0;
 }

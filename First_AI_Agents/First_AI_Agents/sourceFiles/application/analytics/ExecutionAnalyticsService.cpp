@@ -11,7 +11,7 @@ namespace {
 
 struct EffectiveCost {
     std::uint64_t costMicros {0};
-    // False when costMicros is only what could be priced (a lower bound), or when no amount can
+    // False when costMicros is only what was recorded as priced (an incomplete estimate), or when no amount can
     // be established at all.
     bool priceKnown {true};
 };
@@ -21,7 +21,7 @@ struct EffectiveCost {
 // The row's stored (costMicros, costPriceKnown) pair is the durable pricing result recorded when
 // the execution finished, and it is AUTHORITATIVE: a later catalog edit must not rewrite history.
 //   1. costMicros > 0              the stored amount with the stored price state.
-//   2. costPriceKnown == false     the stored lower bound - including ZERO - never revalued: an
+//   2. costPriceKnown == false     the stored incomplete amount - including ZERO - never revalued: an
 //                                  unpriced execution is not free, and the catalog may differ now.
 //   3. cost 0, price known, no usage   an exact zero (the row never reached a provider).
 // Only a row that carries real usage yet no durable amount (a historical row from before costs

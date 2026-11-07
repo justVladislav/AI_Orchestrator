@@ -34,8 +34,10 @@ enum class ManifestUsagePriceState {
     None,     // no execution at all
     Known,    // every execution was fully priced
     // A model price was unset for some usage category (or some execution). costMicros holds
-    // the part that was priced, so it is a lower bound: either some executions were fully
-    // priced, or the amount is positive even though every execution was incompletely priced.
+    // the part that was recorded as priced - an incomplete estimate, not an exact total and not
+    // a promised lower bound (an unknown flag can also come from untrusted usage): either some
+    // executions were fully priced, or the amount is positive even though every execution was
+    // incompletely priced.
     Partial,
     // Every execution was incompletely priced AND nothing could be priced (costMicros == 0):
     // there is no amount at all - the cost is NOT zero, it is unknown.

@@ -24,6 +24,8 @@ qt_add_qml_module(UI_AI_Orchestrator_Content
         pages/Overview/OverviewPage.qml
         pages/Overview/Overview_Objects/OverviewMetricCard.qml
         pages/Overview/Overview_Objects/OverviewProviderChart.qml
+        pages/Overview/Overview_Objects/ProjectCostCard.qml
+        pages/Overview/Overview_Objects/CompactionCoverageBlock.qml
         pages/Overview/Overview_Objects/OverviewProviderDetailsPopup.qml
         pages/Overview/Overview_Objects/OverviewTaskDetailsPopup.qml
         pages/Overview/Overview_Objects/OverviewAttentionPanel.qml
@@ -41,6 +43,9 @@ qt_add_qml_module(UI_AI_Orchestrator_Content
         pages/Projects/Projects_Objets/ProjectListPanel.qml
         pages/Projects/Projects_Objets/ProjectTasksPanel.qml
         pages/Projects/Projects_Objets/ProjectMemoryPanel.qml
+        pages/Projects/Projects_Objets/ProjectMemoryOperationOutcome.qml
+        pages/Projects/Projects_Objets/ProjectMemoryUnfinishedProtocols.qml
+        pages/Projects/Projects_Objets/ProjectMemoryStartupRecovery.qml
         pages/Projects/Projects_Objets/ProjectSetupPanel.qml
         pages/Projects/Projects_Objets/ProjectOutputFoldersSection.qml
         pages/Chats/ChatsPage.qml

@@ -41,6 +41,13 @@ Item {
     readonly property var filteredTasksSnapshot: tasksSnapshot.filter(function(task) {
         return page.dateInAppliedRange(task.updatedAt)
     })
+    // The state of the one cost result (idle / available / unavailable). Tokens, the card, the chart and the provider details all
+    // follow it: no second source (the Run statistics) stands in for a result that is empty or could not be read.
+    readonly property string costLoadState: page.backend.projectCost.loadState
+    readonly property real costTokens: Number(page.backend.projectCost.inputTokens) + Number(page.backend.projectCost.outputTokens)
+    // Why the chart draws no bar when the estimate itself is complete enough (rows without any price data).
+    readonly property string providerSharesNote: page.backend.projectCost.shareBasis === "unavailable"
+        ? qsTr("Provider shares are unavailable because some rows have no price data") : ""
     readonly property bool dateRangeActive: page.validDate(page.appliedFromDate)
                                              || page.validDate(page.appliedToDate)
     readonly property string dateRangeLabel: {
@@ -338,38 +345,45 @@ Item {
     // formatted there): this function only chooses the localized phrase. It never reads or formats a
     // raw amount, and an unknown price is never shown as "$0".
     //   known   - the plain amount
-    //   partial - a lower bound: "At least <amount>"
-    //   unknown - no amount at all: "Cost unavailable"
-    //   none    - no data (no executions)
+    //   partial - an incomplete estimate: the amount that could be priced, with the total unknown (it is not promised
+    //             to be a lower bound, and a computed legacy amount is not called "recorded")
+    //   unknown - no amount at all: "Cost unknown" (NOT "unavailable": that word is for a failed read)
+    //   none    - no price data
     function costWording(priceState, costText) {
         if (priceState === "known")
             return costText
         if (priceState === "partial")
-            return qsTr("At least %1").arg(costText)
+            return qsTr("Incomplete estimate: %1; total unknown").arg(costText)
         if (priceState === "unknown")
-            return qsTr("Cost unavailable")
+            return qsTr("Cost unknown")
         return "—"
+    }
+
+    // Provider and model rows: a row whose records carry no price data is said so (it is neither empty nor a zero cost).
+    function rowCostWording(priceState, costText) {
+        return priceState === "none" ? qsTr("No price data") : page.costWording(priceState, costText)
     }
 
     function refreshAnalytics() {
         if (!page.selectedProjectId) {
-            page.backend.executionAnalytics.clear()
+            page.backend.projectCost.clear()
             return
         }
         if (!page.dateRangeActive) {
-            page.backend.executionAnalytics.refreshProject(page.selectedProjectId)
+            page.backend.projectCost.refreshProject(page.selectedProjectId)
             return
         }
         const from = page.validDate(page.appliedFromDate)
                 ? page.startOfDay(page.appliedFromDate) : new Date(0)
         const to = page.validDate(page.appliedToDate)
                 ? page.nextDayStart(page.appliedToDate) : new Date(253402300799999)
-        page.backend.executionAnalytics.refreshProjectRange(page.selectedProjectId, from, to)
+        page.backend.projectCost.refreshProjectRange(page.selectedProjectId, from, to)
     }
 
     // Everything price-related comes from the Qt layer: the wording (priceState + costText), the
     // incomplete flag and the chart share. The share is only a number between EXACT amounts - with a
-    // partial/unknown provider shareBasis is "incomplete" and the chart shows no bar.
+    // partial/unknown provider shareBasis is "incomplete" and the chart shows no bar. Ledger executions and memory
+    // compactions are carried apart (executionCount is ledger rows only; compactionCount is the stored compactions).
     function rebuildProviderAnalyticsSnapshot() {
         const raw = []
         for (let i = 0; i < analyticsProvidersMirror.count; ++i) {
@@ -383,22 +397,24 @@ Item {
                 const model = sourceModels[modelIndex]
                 modelRows.push({
                     name: model.modelName,
-                    executionCount: Number(model.executionCount),
+                    executionCount: Number(model.ledgerExecutionCount),
+                    compactionCount: Number(model.compactionRecordCount),
                     inputLabel: page.formatTokens(Number(model.inputTokens)),
                     outputLabel: page.formatTokens(Number(model.outputTokens)),
-                    costLabel: page.costWording(model.priceState, model.costText),
+                    costLabel: page.rowCostWording(model.priceState, model.costText),
                     priceIncomplete: Boolean(model.priceIncomplete),
-                    averageLatencyMs: Number(model.averageLatencyMs)
+                    averageLatencyMs: Number(model.ledgerAverageLatencyMs)
                 })
             }
             raw.push({
                 name: item.providerName,
                 tokensLabel: page.formatTokens(tokens),
-                costLabel: page.costWording(item.priceState, item.costText),
+                costLabel: page.rowCostWording(item.priceState, item.costText),
                 priceIncomplete: item.priceIncomplete,
                 share: Number(item.costShare),
                 shareBasis: item.shareBasis,
-                executionCount: Number(item.executionCount),
+                executionCount: Number(item.ledgerExecutionCount),
+                compactionCount: Number(item.compactionRecordCount),
                 models: modelRows
             })
         }
@@ -454,9 +470,22 @@ Item {
         }
     }
 
+    // The provider details hold a snapshot of one row: any new result, refusal, scope change or hiding of the page closes
+    // and empties it. The user opens it again from a fresh row.
+    function resetProviderDetails() {
+        providerDetailsPopup.close()
+        providerDetailsPopup.providerData = ({ name: "", models: [] })
+    }
+
     Connections {
-        target: page.backend.executionAnalytics
-        function onSummaryChanged() { Qt.callLater(page.rebuildProviderAnalyticsSnapshot) }
+        target: page.backend.projectCost
+        function onSummaryChanged() {
+            page.resetProviderDetails()
+            // The rows of a result that could not be read are gone at once (not after the deferred rebuild).
+            if (page.backend.projectCost.loadState !== "available")
+                page.providerAnalyticsSnapshot = []
+            Qt.callLater(page.rebuildProviderAnalyticsSnapshot)
+        }
     }
 
     Connections {
@@ -592,7 +621,7 @@ Item {
 
     Repeater {
         id: analyticsProvidersMirror
-        model: page.backend.executionAnalytics.providers
+        model: page.backend.projectCost.providers
         onCountChanged: page.rebuildProviderAnalyticsSnapshot()
         delegate: Item {
             required property string providerId
@@ -604,17 +633,23 @@ Item {
             required property bool priceIncomplete
             required property real costShare
             required property string shareBasis
-            required property var executionCount
+            required property var ledgerExecutionCount
+            required property var compactionRecordCount
             required property var models
             Component.onCompleted: page.rebuildProviderAnalyticsSnapshot()
         }
     }
 
-    onSelectedProjectIdChanged: refreshAnalytics()
+    onSelectedProjectIdChanged: {
+        page.resetProviderDetails()
+        refreshAnalytics()
+    }
 
     // Ensure all runs are visible whenever the Overview page comes into view,
     // in case RunsPage had filtered the model to a specific project earlier.
     onVisibleChanged: {
+        if (!visible)
+            page.resetProviderDetails()
         if (visible) {
             page.backend.runs.refresh("")
             page.refreshAnalytics()
@@ -867,49 +902,32 @@ Item {
                     accentColor: page.colors.success
                 }
 
-                // Cost: the Backend's price state (known / partial / unknown / none) and its
-                // pre-formatted amount; QML only words them. An unknown price is never "$0".
-                OverviewMetricCard {
-                    objectName: "projectCostCard"
+                // Cost estimate: the execution ledger AND the stored memory compactions (ProjectCostController). The Backend's
+                // load state, price state, pre-formatted amount and counters; QML only words them. An unknown price is never
+                // "$0" and an unreadable cost is never an old sum.
+                ProjectCostCard {
                     Layout.fillWidth: true
                     hostWindow: page.hostWindow; colors: page.colors
-                    iconText: "$"; title: qsTr("Project cost")
-                    value: page.costWording(page.backend.executionAnalytics.priceState,
-                                            page.backend.executionAnalytics.costText)
-                    detail: page.backend.executionAnalytics.priceState === "none"
-                            ? qsTr("No model executions yet")
-                            : page.backend.executionAnalytics.priceState === "known"
-                              ? qsTr("Across %1 model executions")
-                                .arg(page.backend.executionAnalytics.executionCount)
-                              : page.backend.executionAnalytics.priceState === "partial"
-                                ? qsTr("%1 of %2 executions have an incomplete price")
-                                  .arg(page.backend.executionAnalytics.unknownPriceExecutionCount)
-                                  .arg(page.backend.executionAnalytics.executionCount)
-                                : qsTr("%1 executions · set model pricing")
-                                  .arg(page.backend.executionAnalytics.executionCount)
-                    accentColor: page.colors.warning
-                    incomplete: page.backend.executionAnalytics.priceIncomplete
+                    cost: page.backend.projectCost
                 }
 
+                // Tokens of BOTH sources, from the same result as the cost: an empty result is 0 / "No token data yet", an
+                // unreadable one is a dash and says so (never the Run statistics), no project is a dash.
                 OverviewMetricCard {
+                    objectName: "tokensMetricCard"
                     Layout.fillWidth: true
                     hostWindow: page.hostWindow; colors: page.colors
-                    iconText: "T"; title: qsTr("Tokens")
-                    value: page.backend.executionAnalytics.executionCount > 0
-                           ? page.formatTokens(Number(page.backend.executionAnalytics.inputTokens)
-                                               + Number(page.backend.executionAnalytics.outputTokens))
-                           : page.selectedProject
-                             ? page.formatTokens(page.selectedProject.totalTokens)
-                             : "0"
-                    detail: page.backend.executionAnalytics.executionCount > 0
-                            ? qsTr("%1 in · %2 out")
-                              .arg(page.formatTokens(page.backend.executionAnalytics.inputTokens))
-                              .arg(page.formatTokens(page.backend.executionAnalytics.outputTokens))
-                            : page.selectedProject && page.selectedProject.totalTokens > 0
-                              ? qsTr("%1 in · %2 out")
-                                .arg(page.formatTokens(page.selectedProject.totalInputTokens))
-                                .arg(page.formatTokens(page.selectedProject.totalOutputTokens))
-                              : qsTr("No token data yet")
+                    iconText: "T"; title: qsTr("Recorded tokens")
+                    value: page.costLoadState === "available" ? page.formatTokens(page.costTokens) : "—"
+                    detail: page.costLoadState === "unavailable"
+                            ? qsTr("Token usage could not be read")
+                            : page.costLoadState !== "available"
+                              ? qsTr("No project selected")
+                              : page.costTokens > 0
+                                ? qsTr("%1 in · %2 out")
+                                  .arg(page.formatTokens(page.backend.projectCost.inputTokens))
+                                  .arg(page.formatTokens(page.backend.projectCost.outputTokens))
+                                : qsTr("No token data yet")
                     accentColor: page.colors.information
                 }
             }
@@ -929,7 +947,12 @@ Item {
                     hostWindow: page.hostWindow
                     colors: page.colors
                     providerModel: page.providerAnalyticsSnapshot
+                    sharesNote: page.providerSharesNote
+                    loadState: page.costLoadState
                     onProviderRequested: providerData => {
+                        // Details are opened only from a row of a readable result; they are closed and emptied by every new result.
+                        if (page.costLoadState !== "available")
+                            return
                         providerDetailsPopup.providerData = providerData
                         providerDetailsPopup.open()
                     }
@@ -982,6 +1005,7 @@ Item {
 
     OverviewProviderDetailsPopup {
         id: providerDetailsPopup
+        objectName: "providerDetailsPopup"
         hostWindow: page.hostWindow
         colors: page.colors
         x: Math.max(0, (page.width - width) / 2)

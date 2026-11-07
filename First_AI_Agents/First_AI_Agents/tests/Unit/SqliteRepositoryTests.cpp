@@ -1,6 +1,7 @@
 #include "RunRepositoryContractTests.hpp"
 
 #include "ai/application/artifacts/ArtifactService.hpp"
+#include "ai/application/budget/CostCalculation.hpp"
 #include "ai/application/conversations/ChatProjectContext.hpp"
 #include "ai/application/settings/ApplicationSettingsService.hpp"
 #include "ai/application/catalog/ExecutionProfileService.hpp"
@@ -2872,7 +2873,7 @@ std::string schemaVersionIs(const fs::path& databasePath, int version)
 }
 
 // The schema version a database that opened successfully ends at.
-constexpr int kLatestSchemaVersion = 72;
+constexpr int kLatestSchemaVersion = 75;
 
 // The same probe for a single numeric value: empty when `expression` evaluates to `expected`.
 std::string sqlValueIs(const fs::path& databasePath, const std::string& expression, long long expected)
@@ -3491,6 +3492,213 @@ void testModelLongContextPricingPersistsAndMigratesV58ToV59()
     }
 }
 
+// Every stored field of a catalog row that step 73 may or may not touch, as one comparable text.
+std::string describeCatalogRow(const Model& model)
+{
+    const auto& tier = model.longContextPricing;
+    return model.apiModelId + "|" + model.displayName + "|ctx=" + std::to_string(model.contextWindowTokens)
+        + "|max=" + std::to_string(model.maxOutputTokens)
+        + "|in=" + std::to_string(model.inputPriceMicrosPerMillionTokens)
+        + "|out=" + std::to_string(model.outputPriceMicrosPerMillionTokens)
+        + "|cw=" + std::to_string(model.cacheWritePriceMicrosPerMillionTokens)
+        + "|cr=" + std::to_string(model.cacheReadPriceMicrosPerMillionTokens)
+        + "|cw1h=" + std::to_string(model.cacheWriteOneHourPriceMicrosPerMillionTokens)
+        + "|enabled=" + std::to_string(model.enabled) + "|default=" + std::to_string(model.isDefault)
+        + "|tier=" + std::to_string(tier.thresholdInputTokens) + "/" + std::to_string(tier.inputPriceMicrosPerMillionTokens)
+        + "/" + std::to_string(tier.outputPriceMicrosPerMillionTokens)
+        + "/" + std::to_string(tier.cacheWritePriceMicrosPerMillionTokens)
+        + "/" + std::to_string(tier.cacheReadPriceMicrosPerMillionTokens)
+        + "/" + std::to_string(tier.cacheWriteOneHourPriceMicrosPerMillionTokens)
+        + "|updated=" + std::to_string(std::chrono::duration_cast<std::chrono::microseconds>(
+                                           model.updatedAt.time_since_epoch()).count());
+}
+
+// C1, schema step 73: an OpenAI "gpt-5.6-sol" row that is still EXACTLY the old reference seed (1.5 / 7.5 USD per 1M tokens, no
+// cache prices, no long-context tier) receives the official Standard rates and tier; every other row - customised, partially
+// filled, already current, never priced, another provider or model - is byte-for-byte unchanged, and so is every stored
+// execution and Run (their cost and "price known" flag are history, never recomputed).
+void testV73SolCatalogPricingChangesOnlyTheExactOldSeedAndKeepsHistory()
+{
+    const auto now = std::chrono::system_clock::now();
+    const LongContextPricing solTier {272'000, 8'000'000, 30'000'000, 10'000'000, 800'000};
+    const LongContextPricing otherTier {272'000, 5'000'000, 22'000'000, 0, 0};
+    struct Spec {
+        const char* id;
+        const char* kind;
+        const char* api;
+        std::uint64_t context;
+        std::uint64_t input;
+        std::uint64_t output;
+        std::uint64_t cacheWrite;
+        std::uint64_t cacheRead;
+        LongContextPricing tier;
+        bool enabled;
+    };
+    const std::vector<Spec> specs {
+        {"m-seed", "openai", "gpt-5.6-sol", 400'000, 1'500'000, 7'500'000, 0, 0, {}, false},
+        {"m-small", "openai", "gpt-5.6-sol", 200'000, 1'500'000, 7'500'000, 0, 0, {}, true},
+        {"m-cache-read", "openai", "gpt-5.6-sol", 400'000, 1'500'000, 7'500'000, 0, 100'000, {}, true},
+        {"m-cache-write", "openai", "gpt-5.6-sol", 400'000, 1'500'000, 7'500'000, 1, 0, {}, true},
+        {"m-custom-input", "openai", "gpt-5.6-sol", 400'000, 1'600'000, 7'500'000, 0, 0, {}, true},
+        {"m-custom-output", "openai", "gpt-5.6-sol", 400'000, 1'500'000, 8'000'000, 0, 0, {}, true},
+        {"m-unpriced", "openai", "gpt-5.6-sol", 400'000, 0, 0, 0, 0, {}, true},
+        {"m-current", "openai", "gpt-5.6-sol", 400'000, 4'000'000, 20'000'000, 5'000'000, 400'000, solTier, true},
+        {"m-other-tier", "openai", "gpt-5.6-sol", 400'000, 1'500'000, 7'500'000, 0, 0, otherTier, true},
+        {"m-one-hour", "openai", "gpt-5.6-sol", 400'000, 1'500'000, 7'500'000, 0, 0, {}, true},
+        {"m-anthropic", "anthropic", "gpt-5.6-sol", 400'000, 1'500'000, 7'500'000, 0, 0, {}, true},
+        {"m-terra", "openai", "gpt-5.6-terra", 400'000, 1'500'000, 7'500'000, 0, 0, {}, true},
+    };
+
+    TemporaryPersistenceWorkspace workspace;
+    {
+        const auto opened = SqliteDatabase::open(workspace.databasePath);
+        require(opened.success(), "Could not create the step-73 fixture");
+        SqliteProjectRepository projects(opened.value());
+        SqliteProviderRepository providers(opened.value());
+        SqliteModelRepository models(opened.value());
+        SqliteRunRepository runs(opened.value());
+        SqliteModelExecutionRepository executions(opened.value());
+        for (const Spec& spec : specs) {
+            Provider provider {std::string("prov-") + spec.id, std::string("Provider ") + spec.id, spec.kind,
+                "https://example.invalid", true, std::nullopt, now, now};
+            require(providers.insert(provider).success(), "Could not seed a step-73 provider");
+            Model model {spec.id, provider.id, spec.api, "GPT-5.6 Sol (mine)", spec.context, 128'000, spec.input,
+                spec.output, spec.cacheWrite, spec.cacheRead, spec.enabled, false, now, now, spec.tier};
+            require(models.insert(model).success(), "Could not seed a step-73 model");
+        }
+        // The history that must survive: a priced-incompletely execution of the old seed row, and its Run.
+        Project project {"p73", "Step 73 project", "", workspace.projectRoot, ProjectStatus::Active, now, now};
+        require(projects.insert(project).success(), "Could not seed the step-73 project");
+        Run run;
+        run.id = "run-73";
+        run.projectId = project.id;
+        run.title = "Recorded before the price fix";
+        run.task = "history";
+        run.workflowId = kExecutionManifestWorkflowId;
+        run.usage.inputTokens = 170'000;
+        run.usage.outputTokens = 10'000;
+        run.usage.cacheCreationInputTokens = 20'000;
+        run.usage.cacheReadInputTokens = 50'000;
+        run.createdAt = now;
+        require(runs.insertRun(run).success(), "Could not seed the step-73 Run");
+        ModelExecution execution;
+        execution.id = "exec-73";
+        execution.source = ModelExecutionSource::Run;
+        execution.sourceId = run.id;
+        execution.projectId = project.id;
+        execution.providerId = "prov-m-seed";
+        execution.modelId = "m-seed";
+        execution.role = "worker";
+        execution.status = ModelExecutionStatus::Completed;
+        execution.inputTokens = 170'000;
+        execution.outputTokens = 10'000;
+        execution.cacheCreationInputTokens = 20'000;
+        execution.cacheReadInputTokens = 50'000;
+        execution.costMicros = 2'538'000;
+        execution.costPriceKnown = false;
+        execution.createdAt = now;
+        execution.startedAt = now;
+        execution.finishedAt = now;
+        require(executions.insertExecution(execution).success(), "Could not seed the step-73 execution");
+    }
+    // OpenAI does not use the one-hour field, but a row that carries a value there is not the old seed.
+    require(rawSql(workspace.databasePath,
+                "UPDATE models SET cache_write_one_hour_price_micros_per_million_tokens = 1 WHERE id = 'm-one-hour';")
+                .empty(),
+        "Could not set the one-hour fixture value");
+
+    const auto snapshot = [&]() {
+        const auto opened = SqliteDatabase::open(workspace.databasePath);
+        require(opened.success(), "Could not open the step-73 database");
+        SqliteModelRepository models(opened.value());
+        SqliteRunRepository runs(opened.value());
+        SqliteModelExecutionRepository executions(opened.value());
+        std::vector<std::string> rows;
+        for (const Spec& spec : specs) {
+            const auto found = models.findById(spec.id);
+            require(found.success() && found.value().has_value(), "A step-73 model row is unreadable");
+            rows.push_back(describeCatalogRow(*found.value()));
+        }
+        const auto execution = executions.findExecution("exec-73");
+        const auto run = runs.findRun("run-73");
+        require(execution.success() && execution.value().has_value() && run.success() && run.value().has_value(),
+            "The step-73 history is unreadable");
+        const ModelExecution& stored = *execution.value();
+        rows.push_back("exec|" + std::to_string(stored.costMicros) + "|" + std::to_string(stored.costPriceKnown) + "|"
+            + std::to_string(stored.inputTokens) + "|" + std::to_string(stored.outputTokens) + "|"
+            + std::to_string(stored.cacheCreationInputTokens) + "|" + std::to_string(stored.cacheReadInputTokens));
+        const auto& usage = run.value()->usage;
+        rows.push_back("run|" + std::to_string(usage.inputTokens) + "|" + std::to_string(usage.outputTokens) + "|"
+            + std::to_string(usage.cacheCreationInputTokens) + "|" + std::to_string(usage.cacheReadInputTokens));
+        return rows;
+    };
+    const auto indexOf = [&](const char* id) {
+        for (std::size_t index = 0; index < specs.size(); ++index) {
+            if (std::string(specs[index].id) == id) return index;
+        }
+        throw std::runtime_error("unknown fixture id");
+    };
+
+    const auto before = snapshot();
+    require(rawSql(workspace.databasePath, "PRAGMA user_version = 72;").empty(), "Could not rewind to v72");
+    const auto after = snapshot();   // opening runs step 73
+    require(schemaVersionIs(workspace.databasePath, kLatestSchemaVersion).empty(), "Step 73 must record its version");
+
+    // The exact old seed gets the official set; the display name, window, max output, enabled flag and timestamp stay.
+    {
+        const auto& row = after[indexOf("m-seed")];
+        require(row == "gpt-5.6-sol|GPT-5.6 Sol (mine)|ctx=400000|max=128000|in=4000000|out=20000000|cw=5000000|cr=400000"
+                       "|cw1h=0|enabled=0|default=0|tier=272000/8000000/30000000/10000000/800000/0|"
+                       + before[indexOf("m-seed")].substr(before[indexOf("m-seed")].find("updated=")),
+            ("The old Sol seed did not receive the official set: " + row).c_str());
+    }
+    // A window that cannot reach the tier gets the flat rates only (a tier at or above the window is invalid).
+    {
+        const auto& row = after[indexOf("m-small")];
+        require(row.find("|in=4000000|out=20000000|cw=5000000|cr=400000|") != std::string::npos
+                && row.find("|tier=0/0/0/0/0/0|") != std::string::npos && row.find("ctx=200000") != std::string::npos,
+            ("A seed row with a small window must get flat rates and no tier: " + row).c_str());
+    }
+    // Everything else is untouched, field by field.
+    for (const char* id : {"m-cache-read", "m-cache-write", "m-custom-input", "m-custom-output", "m-unpriced",
+             "m-current", "m-other-tier", "m-one-hour", "m-anthropic", "m-terra"}) {
+        require(after[indexOf(id)] == before[indexOf(id)], (std::string("Step 73 changed a row it must not touch: ") + id).c_str());
+    }
+    // History is not recomputed: the stored amount, its "price unknown" flag, the tokens and the Run are the same.
+    require(after[specs.size()] == before[specs.size()] && after[specs.size() + 1] == before[specs.size() + 1],
+        "Step 73 changed a stored execution or Run");
+    require(after[specs.size()].find("exec|2538000|0|") == 0, "The stored cost and flag must still be the recorded ones");
+
+    // The migrated row prices real usage exactly and as known (the set is what the observable money rests on).
+    {
+        const auto opened = SqliteDatabase::open(workspace.databasePath);
+        SqliteModelRepository models(opened.value());
+        const Model migrated = *models.findById("m-seed").value();
+        ai::models::TokenUsage usage;
+        usage.inputTokens = 170'000;
+        usage.outputTokens = 10'000;
+        usage.cacheCreationInputTokens = 20'000;
+        usage.cacheReadInputTokens = 50'000;
+        const auto cost = computeSingleResponseCostMicros(migrated, usage);
+        require(cost.priceKnown && cost.costMicros == 720'000, "The migrated Sol row must price the reference usage at 720000");
+    }
+
+    // Repeating the step changes nothing, and a user edit made after it is never taken back.
+    require(rawSql(workspace.databasePath, "PRAGMA user_version = 72;").empty(), "Could not rewind again");
+    require(snapshot() == after, "Repeating step 73 over a migrated database changed something");
+    {
+        const auto opened = SqliteDatabase::open(workspace.databasePath);
+        SqliteModelRepository models(opened.value());
+        Model edited = *models.findById("m-seed").value();
+        edited.inputPriceMicrosPerMillionTokens = 4'500'000;
+        require(models.update(edited).success(), "Could not store a user edit");
+    }
+    const auto edited = snapshot();
+    require(rawSql(workspace.databasePath, "PRAGMA user_version = 72;").empty(), "Could not rewind a third time");
+    require(snapshot() == edited && edited[indexOf("m-seed")].find("|in=4500000|") != std::string::npos,
+        "A user price edit made after step 73 was rewritten");
+}
+
 void testV64ToV65CacheDurationMigrationAndRoundTrip()
 {
     TemporaryPersistenceWorkspace workspace;
@@ -3737,6 +3945,7 @@ int runSqliteRepositoryTests()
     testV67ToV68RunWarningsMigrationIsAdditiveAndRepeatable();
     testModelLongContextPricingPersistsAndMigratesV58ToV59();
     testV64ToV65CacheDurationMigrationAndRoundTrip();
+    testV73SolCatalogPricingChangesOnlyTheExactOldSeedAndKeepsHistory();
     testModelLongContextInvariantIsEnforcedByTheMigrationAndEveryRead();
     return 0;
 }

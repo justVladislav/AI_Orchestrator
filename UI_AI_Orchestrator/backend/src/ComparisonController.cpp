@@ -1,5 +1,7 @@
 #include "ai/ui/ComparisonController.hpp"
 
+#include "ai/ui/ComparisonCostProjection.hpp"
+
 #include <QDateTime>
 #include <QLocale>
 #include <QMetaObject>
@@ -14,12 +16,6 @@ QDateTime toDateTime(std::chrono::system_clock::time_point value)
     const auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
         value.time_since_epoch());
     return QDateTime::fromMSecsSinceEpoch(milliseconds.count(), Qt::UTC);
-}
-
-QString costText(std::uint64_t micros)
-{
-    return QStringLiteral("$%1").arg(QLocale::c().toString(
-        static_cast<double>(micros) / 1'000'000.0, 'f', 6));
 }
 
 QString labelFor(const ai::application::ComparisonSessionReadModel& projection,
@@ -95,7 +91,7 @@ QVariantMap ComparisonController::summaryData() const
     }
     const QString recommendedId = summary.recommendedExecutionId.has_value()
         ? QString::fromStdString(*summary.recommendedExecutionId) : QString();
-    return {
+    QVariantMap result {
         {QStringLiteral("recommendedResultId"), recommendedId},
         {QStringLiteral("recommendedLabel"), summary.recommendedExecutionId.has_value()
             ? labelFor(projection, *summary.recommendedExecutionId) : QString()},
@@ -104,7 +100,6 @@ QVariantMap ComparisonController::summaryData() const
         {QStringLiteral("consensusPoints"), QVariantList {}},
         {QStringLiteral("differencePoints"), QVariantList {}},
         {QStringLiteral("warnings"), QVariantList {}},
-        {QStringLiteral("totalCostText"), costText(summary.costMicros)},
         {QStringLiteral("totalTokensText"),
             QLocale().toString(summary.inputTokens + summary.outputTokens)},
         {QStringLiteral("selectedResultIds"), selectedIds},
@@ -117,6 +112,9 @@ QVariantMap ComparisonController::summaryData() const
         {QStringLiteral("synthesisStatus"), projection.session.synthesisExecutionId.has_value()
             ? QStringLiteral("queued") : QStringLiteral("idle")}
     };
+    // totalCostText + costState + counts: the Backend's completeness over exactly the results the amount was summed from.
+    result.insert(comparisonSummaryCostFields(summary));
+    return result;
 }
 
 QVariantList ComparisonController::modelChoices() const

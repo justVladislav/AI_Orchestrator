@@ -145,6 +145,12 @@ set(APPLICATION_SOURCES
     sourceFiles/application/context/RunContextAssembler.cpp
     sourceFiles/application/conversations/ProjectMemoryService.cpp
     sourceFiles/application/conversations/ProjectMemoryCompactionService.cpp
+    sourceFiles/application/conversations/ProjectMemoryCompactionAccounting.cpp
+    sourceFiles/application/conversations/ProjectMemoryCompactionIntentPolicy.cpp
+    sourceFiles/application/conversations/ProjectMemoryCompactionIntentTracker.cpp
+    sourceFiles/application/conversations/CompactionIntentRecovery.cpp
+    sourceFiles/application/conversations/CompactionCoveragePolicy.cpp
+    sourceFiles/application/conversations/CompactionIntentReadModelService.cpp
     sourceFiles/application/context/ProjectContextSnapshot.cpp
     sourceFiles/application/context/ProjectContextSnapshotService.cpp
     sourceFiles/application/execution/RunInterfaceContract.cpp
@@ -205,6 +211,8 @@ set(APPLICATION_SOURCES
     sourceFiles/application/inmemory/InMemoryModelExecutionRepository.cpp
     sourceFiles/application/agents/ModelExecutionService.cpp
     sourceFiles/application/analytics/ExecutionAnalyticsService.cpp
+    sourceFiles/application/analytics/ProjectCostComposition.cpp
+    sourceFiles/application/analytics/ProjectCostService.cpp
     sourceFiles/application/comparison/ComparisonTypes.cpp
     sourceFiles/application/inmemory/InMemoryComparisonSessionRepository.cpp
     sourceFiles/application/comparison/ComparisonService.cpp
@@ -622,7 +630,10 @@ if(WIN32)
 
     set(AIOrchestrator_Sqlite3_Target unofficial::sqlite3::sqlite3)
 else()
-    find_package(SQLite3 REQUIRED)
+    # 3.44.0 is the minimum: the connection health uses sqlite3_set_clientdata, which does not exist before it. (On Windows the
+    # vcpkg package is not pinned to one version; SqliteConnectionHealth.hpp has a static_assert on SQLITE_VERSION_NUMBER that
+    # stops any platform's build against an older header with an explicit message.)
+    find_package(SQLite3 3.44.0 REQUIRED)
 
     # CMake's FindSQLite3 has been transitioning its imported-target name from
     # the deprecated SQLite::SQLite3 to SQLite3::SQLite3; prefer the new name
@@ -645,6 +656,8 @@ add_library(AIOrchestrator_Persistence STATIC
     sourceFiles/infrastructure/sqlite/SqliteSchema.cpp
     sourceFiles/infrastructure/sqlite/SqlitePreMigrationBackup.cpp
     sourceFiles/infrastructure/sqlite/SqlitePrimitives.cpp
+    sourceFiles/infrastructure/sqlite/SqliteConnectionHealth.cpp
+    sourceFiles/infrastructure/sqlite/SqliteTransactionScope.cpp
     sourceFiles/infrastructure/sqlite/catalog/SqliteExecutionProfileRepository.cpp
     sourceFiles/infrastructure/sqlite/catalog/SqliteModelRepository.cpp
     sourceFiles/infrastructure/sqlite/catalog/SqliteProfileMapping.cpp
@@ -653,6 +666,10 @@ add_library(AIOrchestrator_Persistence STATIC
     sourceFiles/infrastructure/sqlite/conversations/SqliteChatRepository.cpp
     sourceFiles/infrastructure/sqlite/conversations/SqliteProjectMemoryRepository.cpp
     sourceFiles/infrastructure/sqlite/conversations/SqliteProjectMemoryCompactionRepository.cpp
+    sourceFiles/infrastructure/sqlite/conversations/SqliteCompactionWriteCertainty.cpp
+    sourceFiles/infrastructure/sqlite/conversations/SqliteCompactionIdentityCodec.cpp
+    sourceFiles/infrastructure/sqlite/conversations/SqliteProjectMemoryCompactionIntentRepository.cpp
+    sourceFiles/infrastructure/sqlite/SqliteCompactionIntentMigration.cpp
     sourceFiles/infrastructure/sqlite/execution/SqliteArtifactRepository.cpp
     sourceFiles/infrastructure/sqlite/execution/SqliteRunWarningRepository.cpp
     sourceFiles/infrastructure/sqlite/execution/SqliteManifestTaskExecutionRepository.cpp
@@ -725,6 +742,11 @@ if(AI_ORCHESTRATOR_BUILD_PERSISTENCE_TESTS)
           tests/Unit/VerificationEnvironmentSnapshotRepositoryTests.cpp
           tests/Unit/VerificationBootstrapRepositoryTests.cpp
           tests/Unit/SqlitePreMigrationBackupTests.cpp
+          tests/Unit/SqliteCompactionWriteCertaintyTests.cpp
+          tests/Unit/SqliteCompactionIntentTests.cpp
+          tests/Unit/SqliteCompactionIntentMigrationTests.cpp
+          tests/Unit/CompactionIntentDispatchSqliteTests.cpp
+          tests/Unit/CompactionIntentRecoverySqliteTests.cpp
       )
     target_compile_features(AIOrchestrator_Persistence_tests PRIVATE cxx_std_20)
     # The pre-migration backup tests drive the closed fault seam of the persistence-private helper (never an exported include path).
@@ -840,8 +862,15 @@ if(AI_ORCHESTRATOR_BUILD_PERSISTENCE_TESTS)
         tests/Unit/BackendRuntimeTestMain.cpp
         tests/Unit/BackendRuntimeTests.cpp
         tests/Unit/AgentToolExecutionServiceTests.cpp
+        tests/Unit/ProjectMemoryCompactionAccountingSqliteTests.cpp
+        tests/Unit/ProjectCostRuntimeTests.cpp
+        tests/Unit/CompactionIntentRuntimeTests.cpp
+        tests/Unit/CompactionIntentRecoveryRuntimeTests.cpp
+        tests/Unit/CompactionCoverageRuntimeTests.cpp
     )
     target_compile_features(AIOrchestrator_BackendRuntime_tests PRIVATE cxx_std_20)
+    # The fail-closed intent port is a runtime-private detail header (never an exported include path).
+    target_include_directories(AIOrchestrator_BackendRuntime_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/sourceFiles/backend)
     target_link_libraries(AIOrchestrator_BackendRuntime_tests
         PRIVATE
             AIOrchestrator::BackendRuntime
@@ -850,6 +879,35 @@ if(AI_ORCHESTRATOR_BUILD_PERSISTENCE_TESTS)
     )
     ai_orchestrator_configure_target(AIOrchestrator_BackendRuntime_tests)
     add_test(NAME AIOrchestrator_BackendRuntime_tests COMMAND AIOrchestrator_BackendRuntime_tests)
+
+    # B3-II-B: REAL process-crash tests of the compaction intent (Windows only: Win32 CreateProcessW / Job Object / TerminateProcess). The
+    # same executable is the parent and the child. On any other platform the target and the test are NOT registered - never an empty
+    # "Passed". Private include of the persistence-private fault seam, exactly as for AIOrchestrator_Persistence_tests.
+    if(WIN32)
+        add_executable(AIOrchestrator_CompactionIntentCrash_tests
+            tests/CompactionIntentCrash/CrashMain.cpp
+            tests/CompactionIntentCrash/CrashCommon.hpp
+            tests/CompactionIntentCrash/CrashMarker.cpp
+            tests/CompactionIntentCrash/CrashProcess.hpp
+            tests/CompactionIntentCrash/CrashProcess.cpp
+            tests/CompactionIntentCrash/CrashChild.cpp
+            tests/CompactionIntentCrash/CrashParent.cpp
+        )
+        target_compile_features(AIOrchestrator_CompactionIntentCrash_tests PRIVATE cxx_std_20)
+        target_include_directories(AIOrchestrator_CompactionIntentCrash_tests PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/sourceFiles/infrastructure/sqlite
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/CompactionIntentCrash)
+        target_link_libraries(AIOrchestrator_CompactionIntentCrash_tests
+            PRIVATE
+                AIOrchestrator::BackendRuntime
+                AIOrchestrator::Persistence
+                ${AIOrchestrator_Sqlite3_Target}
+                kernel32
+        )
+        ai_orchestrator_configure_target(AIOrchestrator_CompactionIntentCrash_tests)
+        add_test(NAME AIOrchestrator_CompactionIntentCrash_tests COMMAND AIOrchestrator_CompactionIntentCrash_tests)
+        set_tests_properties(AIOrchestrator_CompactionIntentCrash_tests PROPERTIES TIMEOUT 180)
+    endif()
 
     # The folder of the temporary verification copies: its policy (length, links, overlap, privacy), its service and its SQLite
     # setting (schema step 69), on real folders and a real database. Provider-free.
@@ -981,6 +1039,11 @@ add_executable(${TARGET_NAME}_tests
     tests/Unit/RunContextAssemblerTests.cpp
     tests/Unit/ComparisonServiceTests.cpp
     tests/Unit/ProjectMemoryServiceTests.cpp
+    tests/Unit/ProjectMemoryCompactionAccountingTests.cpp
+    tests/Unit/CompactionIntentPolicyTests.cpp
+    tests/Unit/CompactionIntentDispatchServiceTests.cpp
+    tests/Unit/CompactionIntentRecoveryTests.cpp
+    tests/Unit/ProjectMemoryCompactionPersistenceServiceTests.cpp
     tests/Unit/ChangeProposalTests.cpp
     tests/Unit/RunPathClaimRegistryTests.cpp
     tests/Unit/AgentToolTurnLoopRunnerTests.cpp
@@ -1010,6 +1073,8 @@ add_executable(${TARGET_NAME}_tests
     tests/Unit/ProviderExecutionBudgetTests.cpp
     tests/Unit/CostCalculationTests.cpp
     tests/Unit/ExecutionAnalyticsServiceTests.cpp
+    tests/Unit/ProjectCostTests.cpp
+    tests/Unit/CompactionCoverageTests.cpp
     tests/Unit/ProjectOutputApprovalServiceTests.cpp
 )
 target_compile_features(${TARGET_NAME}_tests PRIVATE cxx_std_20)

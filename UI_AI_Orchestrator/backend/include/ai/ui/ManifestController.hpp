@@ -85,7 +85,7 @@ class ManifestController final : public QObject
     // carry the exact-partition flag, the Run total and the unattributed rows (diagnostic
     // debt, never dropped). QML only renders: it never sums, prices or classifies. A usage
     // map's `priceState` ("none" | "known" | "partial" | "unknown") says whether `costText`
-    // is a precise total, a lower bound or not available - an unknown price is never zero.
+    // is a precise total, an incomplete estimate or not available - an unknown price is never zero.
     Q_PROPERTY(bool usageAvailable READ usageAvailable NOTIFY stateChanged)
     Q_PROPERTY(bool usagePartitionExact READ usagePartitionExact NOTIFY stateChanged)
     Q_PROPERTY(QVariantMap usageRunTotal READ usageRunTotal NOTIFY stateChanged)

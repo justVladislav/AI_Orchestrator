@@ -1,6 +1,7 @@
 #include <ai/ui/ChatController.hpp>
 
 #include <ai/ui/ProjectContextController.hpp>
+#include <ai/ui/ChatCostProjection.hpp>
 
 #include <ai/application/planning/RunDraftPlanService.hpp>
 
@@ -33,7 +34,11 @@ QVariantMap conversationMap(const ai::application::ChatConversation& value)
             {"projectId", value.projectId.has_value() ? QString::fromStdString(*value.projectId) : QString {}},
             {"inputTokens", QVariant::fromValue<qulonglong>(value.inputTokens)},
             {"outputTokens", QVariant::fromValue<qulonglong>(value.outputTokens)},
-            {"estimatedCost", QStringLiteral("$%1").arg(value.estimatedCostMicros / 1'000'000.0, 0, 'f', 4)},
+            // The OLD resettable conversation counter, kept only as an explicitly labelled legacy estimate: it carries no
+            // price-known flag, is zeroed by clearUsage and cannot be matched to the execution ledger, so it is never an
+            // exact cost and never added to the recorded cost (recordedCost()).
+            {"legacyEstimateMicros", QVariant::fromValue<qulonglong>(value.estimatedCostMicros)},
+            {"legacyEstimate", QStringLiteral("$%1").arg(value.estimatedCostMicros / 1'000'000.0, 0, 'f', 4)},
             {"lastResponseTime", value.lastLatencyMs > 0 ? QObject::tr("%1 ms").arg(value.lastLatencyMs) : QString {}}};
 }
 
@@ -57,8 +62,9 @@ QVariantMap messageMap(const ai::application::ChatMessage& value)
 }
 
 ChatController::ChatController(ai::application::ChatService& service,
-    ai::application::ProviderCatalogService& catalog, ProjectContextController& projectContext, QObject* parent)
-    : QObject(parent), service_(service), catalog_(catalog), projectContext_(projectContext)
+    ai::application::ProviderCatalogService& catalog, ProjectContextController& projectContext,
+    ai::application::ExecutionAnalyticsService* analytics, QObject* parent)
+    : QObject(parent), service_(service), catalog_(catalog), projectContext_(projectContext), analytics_(analytics)
 {
 }
 
@@ -121,31 +127,43 @@ QVariantList ChatController::projectChoices()
     return rows;
 }
 
+// The recorded cost of a conversation is the model-execution LEDGER: one row per provider attempt (a retry that overwrote
+// the visible assistant row left both attempts recorded). The ledger is independent of the resettable conversation
+// counters, so clearUsage() never changes it. The projection (ChatCostProjection) only formats what the Backend
+// aggregated; an unreadable or missing ledger is "unavailable" - never a guessed exact amount - and is reported.
+// ONE read of the ledger feeds both the header (cost) and the per-model rows (models), so they describe the same sample and a
+// refresh costs one read. A failure of that read is reported once (errorOccurred) and shows no amount and no rows. The two
+// single-purpose methods below are views of this same method: each performs - and reports - its own read, nothing is cached
+// between calls and no method relies on another one to surface its failure.
+QVariantMap ChatController::recordedUsage(const QString& conversationId)
+{
+    if (conversationId.isEmpty()) {
+        return {{QStringLiteral("cost"), chatRecordedCostMap(conversationId,
+                    ai::common::Result<ai::application::ExecutionAnalyticsSnapshot>::ok({}))},
+            {QStringLiteral("models"), QVariantList {}}};
+    }
+    if (analytics_ == nullptr) {
+        const ai::common::Error missing {"chat.cost_ledger_unavailable",
+            "The execution ledger is not available to Chat, so its recorded cost cannot be shown."};
+        report(missing);
+        return {{QStringLiteral("cost"), chatRecordedCostUnavailable(conversationId, missing)},
+            {QStringLiteral("models"), QVariantList {}}};
+    }
+    const auto snapshot = analytics_->sourceSnapshot(
+        ai::application::ModelExecutionSource::Chat, conversationId.toStdString());
+    if (!snapshot.success()) report(*snapshot.error());
+    return {{QStringLiteral("cost"), chatRecordedCostMap(conversationId, snapshot)},
+        {QStringLiteral("models"), snapshot.success() ? chatModelMetricRows(snapshot.value(), catalog_) : QVariantList {}}};
+}
+
+QVariantMap ChatController::recordedCost(const QString& conversationId)
+{
+    return recordedUsage(conversationId).value(QStringLiteral("cost")).toMap();
+}
+
 QVariantList ChatController::modelMetrics(const QString& conversationId)
 {
-    struct Totals { qulonglong input=0, output=0, cost=0, latency=0, responses=0; std::string providerId; };
-    const auto messagesResult = service_.listMessages(conversationId.toStdString());
-    if (!messagesResult.success()) { report(*messagesResult.error()); return {}; }
-    std::map<std::string, Totals> totals;
-    for (const auto& message : messagesResult.value()) {
-        if (message.modelId.empty() || message.role != ai::application::ChatRole::Assistant) continue;
-        auto& value = totals[message.modelId]; value.providerId = message.providerId;
-        value.input += message.inputTokens; value.output += message.outputTokens;
-        value.cost += message.costMicros; value.latency += message.latencyMs; ++value.responses;
-    }
-    QVariantList rows;
-    for (const auto& [modelId, value] : totals) {
-        const auto model = catalog_.findModel(modelId); const auto provider = catalog_.findProvider(value.providerId);
-        rows.push_back(QVariantMap {
-            {"providerId", QString::fromStdString(value.providerId)}, {"modelId", QString::fromStdString(modelId)},
-            {"providerName", provider.success() && provider.value() ? QString::fromStdString(provider.value()->name) : tr("Unknown provider")},
-            {"modelName", model.success() && model.value() ? QString::fromStdString(model.value()->displayName) : tr("Unknown model")},
-            {"inputTokens", value.input}, {"outputTokens", value.output}, {"totalTokens", value.input + value.output},
-            {"estimatedCost", QStringLiteral("$%1").arg(value.cost / 1'000'000.0, 0, 'f', 4)},
-            {"averageLatency", value.responses ? tr("%1 ms").arg(value.latency / value.responses) : QString {}},
-            {"responseCount", value.responses}});
-    }
-    return rows;
+    return recordedUsage(conversationId).value(QStringLiteral("models")).toList();
 }
 
 QString ChatController::createConversation(const QString& providerId, const QString& modelId)

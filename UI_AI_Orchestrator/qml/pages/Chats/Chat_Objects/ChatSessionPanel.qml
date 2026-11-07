@@ -16,8 +16,33 @@ Rectangle {
 
     // sessionData: { providerName, modelName, connectionState, connectionLabel,
     //                messageCount, inputTokens, outputTokens, totalTokens,
-    //                estimatedCost, contextSummary, lastResponseTime }
+    //                recordedCost, legacyEstimateMicros, legacyEstimate, contextSummary, lastResponseTime }
+    // recordedCost is the Backend’s ledger projection { state: none|known|partial|unknown|unavailable, costText,
+    // executionCount, unknownPriceExecutionCount, errorMessage }; the panel only words it.
     property var sessionData: null
+
+    // Wording of the Backend recorded-cost state. Nothing is summed or classified here, and a cost that is not
+    // known is never shown as a free "$0".
+    function costWording(cost) {
+        if (!cost)
+            return qsTr("Cost unavailable")
+        switch (cost.state) {
+        case "known": return cost.costText
+        case "partial": return qsTr("Incomplete estimate: %1 recorded, total unknown").arg(cost.costText)
+        case "unknown": return qsTr("Cost unavailable")
+        case "unavailable": return qsTr("Cost unavailable (the execution records could not be read)")
+        default: return qsTr("No execution cost records")
+        }
+    }
+
+    // The same wording for one model row of the usage list (state names differ: costState).
+    function modelCostWording(row) {
+        switch (row.costState) {
+        case "known": return row.costText
+        case "partial": return qsTr("incomplete estimate: %1 recorded").arg(row.costText)
+        default: return qsTr("cost unavailable")
+        }
+    }
     property bool showCloseButton: false
     // PC-1D: backend.projectContext and the conversation's project id (empty without a project).
     property var projectContext: null
@@ -205,16 +230,45 @@ Rectangle {
                         }
 
                         Text {
-                            text: qsTr("Estimated cost")
+                            text: qsTr("Recorded cost")
                             color: panel.colors.textMuted
                             font.pixelSize: panel.hostWindow.dp(10)
                         }
                         Text {
+                            objectName: "chatRecordedCost"
                             Layout.fillWidth: true
                             horizontalAlignment: Text.AlignRight
-                            text: panel.sessionData ? panel.sessionData.estimatedCost : "$0.00"
+                            wrapMode: Text.WordWrap
+                            text: panel.sessionData ? panel.costWording(panel.sessionData.recordedCost) : "\u2014"
                             color: panel.colors.textPrimary
                             font.pixelSize: panel.hostWindow.dp(11.5)
+                        }
+                        Text {
+                            objectName: "chatRecordedCostNote"
+                            Layout.columnSpan: 2
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            text: qsTr("Includes recorded attempts; clearing usage counters does not remove these records.")
+                            color: panel.colors.textMuted
+                            font.pixelSize: panel.hostWindow.dp(9.5)
+                        }
+                        Text {
+                            objectName: "chatLegacyEstimateLabel"
+                            visible: panel.sessionData !== null && Number(panel.sessionData.legacyEstimateMicros) > 0
+                            text: qsTr("Legacy estimate")
+                            color: panel.colors.textMuted
+                            font.pixelSize: panel.hostWindow.dp(10)
+                        }
+                        Text {
+                            objectName: "chatLegacyEstimate"
+                            visible: panel.sessionData !== null && Number(panel.sessionData.legacyEstimateMicros) > 0
+                            Layout.fillWidth: true
+                            horizontalAlignment: Text.AlignRight
+                            wrapMode: Text.WordWrap
+                            text: panel.sessionData
+                                  ? qsTr("%1 (old counter, not exact)").arg(panel.sessionData.legacyEstimate) : ""
+                            color: panel.colors.textSecondary
+                            font.pixelSize: panel.hostWindow.dp(10.5)
                         }
                     }
                 }
@@ -256,12 +310,15 @@ Rectangle {
                                 font.weight: Font.DemiBold
                             }
                             Text {
+                                objectName: "chatModelUsageLine"
                                 Layout.fillWidth: true
-                                text: qsTr("%1 responses · %2 tokens · %3 · avg %4")
-                                    .arg(modelUsageDelegate.modelData.responseCount).arg(modelUsageDelegate.modelData.totalTokens)
-                                    .arg(modelUsageDelegate.modelData.estimatedCost).arg(modelUsageDelegate.modelData.averageLatency)
+                                text: qsTr("%1 recorded attempts · %2 tokens · %3 · avg %4")
+                                    .arg(modelUsageDelegate.modelData.executionCount).arg(modelUsageDelegate.modelData.totalTokens)
+                                    .arg(panel.modelCostWording(modelUsageDelegate.modelData)).arg(modelUsageDelegate.modelData.averageLatency)
                                 color: panel.colors.textMuted
-                                elide: Text.ElideRight
+                                // The line carries the cost wording ("Incomplete estimate: ... total unknown"): it wraps (the
+                                // card grows with it) instead of being cut off at the right edge.
+                                wrapMode: Text.WordWrap
                                 font.pixelSize: panel.hostWindow.dp(9.5)
                             }
                         }

@@ -27,8 +27,28 @@ ColumnLayout {
 
     property var segmentsSnapshot: []
     property var historySnapshot: []
+    // "available" or "unavailable" (the compaction records could not be read) - from the SAME single read as the rows.
+    property string historyState: "available"
+    // The error of the history read, kept apart from errorText (segments / compact errors). Ownership comes from WHICH
+    // operation was running when the backend reported it (historyReadActive), never from comparing message text, so an
+    // unrelated error with the same code or message is never taken for it and never cleared by a history recovery.
+    property string historyErrorText: ""
+    property bool historyReadActive: false
+    // B3-III: the unfinished compaction protocols (Open / Unresolved) of THIS project - the "intents" section of the SAME history
+    // snapshot, or null. Its own read error is inside it; it never goes through historyErrorText, errorText or the operation outcome.
+    property var intentSection: null
+    // B3-III: the startup recovery report of the whole database (a map), or null for a backend without it. Not tied to projectId.
+    readonly property var recoveryReport: (panel.backend && panel.backend.compactionRecovery) ? panel.backend.compactionRecovery.report : null
+    // The segments read has its own error slot, owned the same way (segmentsReadActive), so a segments failure, a history
+    // failure and an operation failure never overwrite or clear one another - also when their code and message are equal.
+    property string segmentsErrorText: ""
+    property bool segmentsReadActive: false
+    // The result of the last ACCEPTED compaction of THIS project (the map of compactionOutcomeReported), or null. Ephemeral: it
+    // is not a history row, not a project total, and never carried to another project.
+    property var operationOutcome: null
     property var providerChoicesSnapshot: []
     property int selectedChoiceIndex: -1
+    // The other synchronous actions (busy refusal, provider list, ...). The failure of a compaction itself is operationOutcome.
     property string errorText: ""
     // The Flickable that scrolls this panel (ProjectDetailsPanel's). With it the segment list creates delegates
     // only for the part that is on screen plus a margin; without it every delegate is created, as a Repeater would.
@@ -42,13 +62,55 @@ ColumnLayout {
     spacing: hostWindow.dp(8)
 
     function refreshSegments() {
-        panel.segmentsSnapshot = panel.projectId.length > 0
-                ? panel.backend.projectMemory.segments(panel.projectId) : []
+        // Only this read's own error is cleared here. A failed read returns no rows, so no stale row survives it.
+        panel.segmentsErrorText = ""
+        if (panel.projectId.length === 0) {
+            panel.segmentsSnapshot = []
+            return
+        }
+        panel.segmentsReadActive = true
+        try {
+            panel.segmentsSnapshot = panel.backend.projectMemory.segments(panel.projectId)
+        } finally {
+            panel.segmentsReadActive = false
+        }
     }
 
     function refreshHistory() {
-        panel.historySnapshot = panel.projectId.length > 0
-                ? panel.backend.projectMemory.compactionHistory(panel.projectId) : []
+        if (panel.projectId.length === 0) {
+            panel.historySnapshot = []
+            panel.historyState = "available"
+            panel.historyErrorText = ""
+            panel.intentSection = null
+            return
+        }
+        // ONE read per refresh: the state and the rows below come from the same snapshot. A failed read replaces the list
+        // (no earlier rows survive) and is shown as unavailable instead of as "no compactions". The backend reports the
+        // failure through errorOccurred synchronously inside this call; it is the history's own error only because of that.
+        panel.historyErrorText = ""
+        panel.historyReadActive = true
+        let snapshot
+        try {
+            snapshot = panel.backend.projectMemory.compactionHistorySnapshot(panel.projectId)
+        } finally {
+            panel.historyReadActive = false
+        }
+        panel.historyState = snapshot.state
+        panel.historySnapshot = snapshot.rows
+        panel.intentSection = snapshot.intents !== undefined ? snapshot.intents : null
+        if (snapshot.state === "unavailable" && panel.historyErrorText.length === 0)
+            panel.historyErrorText = snapshot.errorMessage
+    }
+
+    // Wording of a record's STORED cost (the Backend classified it; nothing is summed or looked up here). A cost that is
+    // not known is never shown as a free "$0".
+    function costWording(row) {
+        switch (row.priceState) {
+        case "known": return row.costText
+        case "partial": return qsTr("Incomplete estimate: %1 recorded, total unknown").arg(row.costText)
+        case "unknown": return qsTr("Cost unknown (price incomplete)")
+        default: return qsTr("No cost recorded")
+        }
     }
 
     function refreshProviderChoices() {
@@ -68,10 +130,24 @@ ColumnLayout {
         if (panel.selectedChoiceIndex < 0 || panel.selectedChoiceIndex >= panel.providerChoicesSnapshot.length)
             return
         const choice = panel.providerChoicesSnapshot[panel.selectedChoiceIndex]
-        panel.backend.projectMemory.compact(panel.projectId, choice.providerId, choice.modelId)
+        // The previous result is dropped only when the call was ACCEPTED: a refusal (busy) must not erase an unsaved estimate.
+        if (panel.backend.projectMemory.compact(panel.projectId, choice.providerId, choice.modelId))
+            panel.operationOutcome = null
     }
 
-    onProjectIdChanged: panel.refreshAll()
+    // Another project (or none) shows nothing of the previous one: its result and every error slot are dropped BEFORE the reads.
+    function resetForProject() {
+        panel.operationOutcome = null
+        panel.errorText = ""
+        panel.segmentsErrorText = ""
+        panel.historyErrorText = ""
+        panel.intentSection = null
+    }
+
+    onProjectIdChanged: {
+        panel.resetForProject()
+        panel.refreshAll()
+    }
     // Defer the first synchronous backend read until the object tree has
     // fully constructed, matching ChatsPage's Qt.callLater(initializeBackendData).
     Component.onCompleted: Qt.callLater(panel.refreshAll)
@@ -86,8 +162,19 @@ ColumnLayout {
             if (changedProjectId === panel.projectId)
                 panel.refreshHistory()
         }
+        // The terminal result of an accepted compaction: shown only for the project it was accepted for AND that is selected now.
+        function onCompactionOutcomeReported(reportedProjectId, outcome) {
+            if (panel.projectId.length > 0 && reportedProjectId === panel.projectId)
+                panel.operationOutcome = outcome
+        }
+        // Ownership is the operation that was running when the backend reported, never the text or the code.
         function onErrorOccurred(code, message) {
-            panel.errorText = message
+            if (panel.historyReadActive)
+                panel.historyErrorText = message
+            else if (panel.segmentsReadActive)
+                panel.segmentsErrorText = message
+            else
+                panel.errorText = message
         }
     }
 
@@ -132,6 +219,14 @@ ColumnLayout {
         }
     }
 
+    // B3-III: the database-wide startup recovery report (read-only, all projects); never cleared by a change of project.
+    ProjectMemoryStartupRecovery {
+        Layout.fillWidth: true
+        hostWindow: panel.hostWindow
+        colors: panel.colors
+        report: panel.recoveryReport
+    }
+
     Text {
         Layout.fillWidth: true
         visible: panel.errorText.length > 0
@@ -142,8 +237,29 @@ ColumnLayout {
     }
 
     Text {
+        objectName: "projectMemorySegmentsError"
         Layout.fillWidth: true
-        visible: panel.segmentsSnapshot.length === 0
+        visible: panel.segmentsErrorText.length > 0
+        text: panel.segmentsErrorText
+        color: panel.colors.error
+        wrapMode: Text.WordWrap
+        font.pixelSize: panel.hostWindow.dp(10)
+    }
+
+    Text {
+        objectName: "projectMemoryHistoryError"
+        Layout.fillWidth: true
+        visible: panel.historyErrorText.length > 0
+        text: panel.historyErrorText
+        color: panel.colors.error
+        wrapMode: Text.WordWrap
+        font.pixelSize: panel.hostWindow.dp(10)
+    }
+
+    Text {
+        Layout.fillWidth: true
+        // A segments read that FAILED is not "no segments yet": its own error is shown instead.
+        visible: panel.segmentsSnapshot.length === 0 && panel.segmentsErrorText.length === 0
         text: qsTr("No memory segments yet. Segments are written automatically after a Run completes.")
         color: panel.colors.textMuted
         wrapMode: Text.WordWrap
@@ -327,6 +443,31 @@ ColumnLayout {
         }
     }
 
+    ProjectMemoryOperationOutcome {
+        Layout.fillWidth: true
+        hostWindow: panel.hostWindow
+        colors: panel.colors
+        outcome: panel.operationOutcome
+    }
+
+    Text {
+        objectName: "projectMemoryHistoryUnavailable"
+        Layout.fillWidth: true
+        visible: panel.historyState === "unavailable"
+        text: qsTr("Compaction history is unavailable: the records could not be read.")
+        color: panel.colors.error
+        wrapMode: Text.WordWrap
+        font.pixelSize: panel.hostWindow.dp(10)
+    }
+
+    // B3-III: unfinished protocols, apart from the records below; no amount, no price state.
+    ProjectMemoryUnfinishedProtocols {
+        Layout.fillWidth: true
+        hostWindow: panel.hostWindow
+        colors: panel.colors
+        snapshot: panel.intentSection
+    }
+
     Text {
         Layout.fillWidth: true
         Layout.topMargin: panel.hostWindow.dp(4)
@@ -403,15 +544,28 @@ ColumnLayout {
                     font.pixelSize: panel.hostWindow.dp(9)
                 }
                 Text {
+                    objectName: "compactionUsageLine"
                     Layout.fillWidth: true
                     visible: historyRow.modelData.status === "completed"
-                    text: qsTr("%1 in / %2 out tok · %3 · from %4 segment(s)")
+                             || historyRow.modelData.inputTokens > 0 || historyRow.modelData.outputTokens > 0
+                    text: qsTr("%1 in / %2 out tok · from %3 segment(s)")
                         .arg(historyRow.modelData.inputTokens)
                         .arg(historyRow.modelData.outputTokens)
-                        .arg(historyRow.modelData.estimatedCost)
                         .arg(historyRow.modelData.sourceSegmentIds.length)
                     color: panel.colors.textMuted
+                    wrapMode: Text.WordWrap
                     font.pixelSize: panel.hostWindow.dp(8.5)
+                }
+                // The stored cost of the record, whatever its status: a Failed or Cancelled record keeps what it was paid
+                // for. An incomplete estimate is a sentence, so it wraps and the row grows with it.
+                Text {
+                    objectName: "compactionCostLine"
+                    Layout.fillWidth: true
+                    text: panel.costWording(historyRow.modelData)
+                    color: historyRow.modelData.priceIncomplete ? panel.colors.warning : panel.colors.textMuted
+                    wrapMode: Text.WordWrap
+                    font.pixelSize: panel.hostWindow.dp(8.5)
+                    font.italic: historyRow.modelData.priceIncomplete
                 }
             }
         }

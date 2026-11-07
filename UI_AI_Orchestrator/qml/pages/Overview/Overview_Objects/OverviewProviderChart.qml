@@ -11,9 +11,16 @@ Rectangle {
     // Pass an empty array when provider cost data is not yet available;
     // the component shows an honest empty state instead of fabricated numbers.
     required property var providerModel
+    // Why no bar is drawn when the rows are not comparable for a reason other than an incomplete price (empty = nothing to say).
+    property string sharesNote: ""
+    // The load state of the cost result the rows come from: an empty list means "nothing recorded" only when it is "available".
+    property string loadState: "available"
     signal providerRequested(var providerData)
 
-    implicitHeight: hostWindow.dp(326)
+    // 326dp is the MINIMUM (the empty state and a few short rows). Every incomplete row also carries its own amount line,
+    // so the panel follows the height of ALL rows; the dashboard block that follows is laid out after the content
+    // instead of on top of the last providers.
+    implicitHeight: Math.max(hostWindow.dp(326), body.implicitHeight + 2 * hostWindow.dp(16))
     radius: colors.cornerRadiusMedium
     color: colors.surfaceAlternative
     border.width: 1
@@ -26,6 +33,7 @@ Rectangle {
     }
 
     ColumnLayout {
+        id: body
         anchors.fill: parent
         anchors.margins: chart.hostWindow.dp(16)
         spacing: chart.hostWindow.dp(12)
@@ -48,10 +56,11 @@ Rectangle {
                 }
                 Text {
                     Layout.fillWidth: true
-                    text: qsTr("Recorded model executions · cost and token usage")
+                    objectName: "providerChartSubtitle"
+                    text: qsTr("Recorded executions and memory compactions · cost and token usage")
                     color: chart.colors.textMuted
                     font.pixelSize: chart.hostWindow.dp(10)
-                    elide: Text.ElideRight
+                    wrapMode: Text.WordWrap
                 }
             }
         }
@@ -80,15 +89,23 @@ Rectangle {
                 font.weight: Font.Thin
             }
             Text {
+                objectName: "providerChartEmptyTitle"
                 Layout.alignment: Qt.AlignHCenter
-                text: qsTr("Cost breakdown not available yet")
-                color: chart.colors.textSecondary
+                text: chart.loadState === "unavailable" ? qsTr("Cost breakdown unavailable")
+                                                         : qsTr("Cost breakdown not available yet")
+                color: chart.loadState === "unavailable" ? chart.colors.warning : chart.colors.textSecondary
                 font.pixelSize: chart.hostWindow.dp(12)
                 font.weight: Font.Medium
             }
             Text {
+                objectName: "providerChartEmptyBody"
                 Layout.alignment: Qt.AlignHCenter
-                text: qsTr("Provider cost and token aggregation will appear\nafter the first model execution.")
+                Layout.fillWidth: true
+                text: chart.loadState === "unavailable"
+                      ? qsTr("The project cost could not be read, so no provider breakdown is shown.")
+                      : chart.loadState === "available"
+                        ? qsTr("Provider cost and token aggregation will appear\nafter the first recorded execution or memory compaction.")
+                        : qsTr("Select a project to see its cost by provider.")
                 color: chart.colors.textMuted
                 font.pixelSize: chart.hostWindow.dp(9)
                 horizontalAlignment: Text.AlignHCenter
@@ -140,43 +157,78 @@ Rectangle {
                         spacing: chart.hostWindow.dp(8)
 
                         Text {
+                            objectName: "providerNameLabel"
                             Layout.fillWidth: true
                             text: providerRow.modelData.name
                             color: chart.colors.textSecondary
                             font.pixelSize: chart.hostWindow.dp(11)
                             elide: Text.ElideRight
                         }
+                        // Ledger rows only. Memory compactions are counted next to it, never inside it.
                         Text {
-                            text: qsTr("%1 calls").arg(providerRow.modelData.executionCount)
+                            objectName: "providerCallsLabel"
+                            Layout.minimumWidth: implicitWidth
+                            text: qsTr("%1 executions").arg(providerRow.modelData.executionCount)
                             color: chart.colors.textMuted
                             font.pixelSize: chart.hostWindow.dp(9)
                         }
                         Text {
+                            objectName: "providerTokensLabel"
+                            Layout.minimumWidth: implicitWidth
                             text: qsTr("%1 tokens").arg(providerRow.modelData.tokensLabel)
                             color: chart.colors.textMuted
                             font.pixelSize: chart.hostWindow.dp(9)
                         }
+                        // An EXACT amount is short and sits in the row. An incomplete one is a sentence: it gets a
+                        // full-width line of its own below (see providerIncompleteCostLabel), never a 112dp cell it
+                        // would be cut in or spill out of.
                         Text {
                             objectName: "providerCostLabel"
+                            visible: !providerRow.modelData.priceIncomplete
                             Layout.preferredWidth: chart.hostWindow.dp(112)
                             text: providerRow.modelData.costLabel
-                            // An incomplete amount (a lower bound or unavailable) is drawn apart from
-                            // an exact one: warning colour and italic.
-                            color: providerRow.modelData.priceIncomplete
-                                   ? chart.colors.warning : chart.colors.textPrimary
+                            color: chart.colors.textPrimary
                             horizontalAlignment: Text.AlignRight
                             font.pixelSize: chart.hostWindow.dp(11)
                             font.weight: Font.Medium
-                            font.italic: providerRow.modelData.priceIncomplete
                         }
+                    }
+
+                    // Memory compactions of this provider, on a line of their own so the first row keeps its width for the name,
+                    // the tokens and the amount at every panel width.
+                    Text {
+                        objectName: "providerCompactionsLabel"
+                        visible: Number(providerRow.modelData.compactionCount || 0) > 0
+                        Layout.fillWidth: true
+                        text: qsTr("%1 memory compactions").arg(providerRow.modelData.compactionCount)
+                        color: chart.colors.textMuted
+                        font.pixelSize: chart.hostWindow.dp(9)
+                        wrapMode: Text.WordWrap
+                    }
+
+                    // The incomplete amount (an incomplete estimate or unavailable) is drawn apart from an exact one:
+                    // warning colour and italic, wrapped over the whole row so the recorded amount AND the "total
+                    // unknown" mark both stay visible.
+                    Text {
+                        objectName: "providerIncompleteCostLabel"
+                        visible: providerRow.modelData.priceIncomplete
+                        Layout.fillWidth: true
+                        text: providerRow.modelData.costLabel
+                        color: chart.colors.warning
+                        horizontalAlignment: Text.AlignRight
+                        wrapMode: Text.WordWrap
+                        font.pixelSize: chart.hostWindow.dp(11)
+                        font.weight: Font.Medium
+                        font.italic: true
                     }
 
                     // The share bar compares providers by EXACT amounts only. With any partial or
                     // unknown provider the Backend reports shareBasis "incomplete": no bar is drawn
-                    // (lower bounds are never normalised against each other) and a neutral note
+                    // (incomplete estimates are never normalised against each other) and a neutral note
                     // takes its place.
                     Rectangle {
                         visible: providerRow.modelData.shareBasis !== "incomplete"
+                                 && providerRow.modelData.shareBasis !== "unavailable"
                         Layout.fillWidth: true
                         Layout.preferredHeight: chart.hostWindow.dp(7)
                         radius: height / 2
@@ -200,6 +252,18 @@ Rectangle {
                     }
                 }
             }
+        }
+
+        // Rows that are not comparable because some of them have no price data at all (not an incomplete price).
+        Text {
+            objectName: "providerSharesNote"
+            Layout.fillWidth: true
+            visible: chart.sharesNote.length > 0 && chart.providerModel.length > 0
+            text: chart.sharesNote
+            color: chart.colors.textMuted
+            font.pixelSize: chart.hostWindow.dp(9)
+            font.italic: true
+            wrapMode: Text.WordWrap
         }
 
         // Push provider rows toward the top; no-op when the empty state fills height.

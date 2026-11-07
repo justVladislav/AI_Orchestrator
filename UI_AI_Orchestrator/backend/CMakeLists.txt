@@ -21,9 +21,14 @@ qt_add_library(AIOrchestrator_Backend STATIC
     src/RunDraftListModel.cpp
     src/CredentialController.cpp
     src/ChatController.cpp
+    src/ChatCostProjection.cpp
     src/ExecutionAnalyticsController.cpp
     src/ProviderExecutionAnalyticsModel.cpp
+    src/ProjectCostProjection.cpp
+    src/ProjectCostProviderModel.cpp
+    src/ProjectCostController.cpp
     src/ComparisonController.cpp
+    src/ComparisonCostProjection.cpp
     src/ComparisonSessionListModel.cpp
     src/ComparisonResultListModel.cpp
     src/AgentSessionController.cpp
@@ -35,6 +40,10 @@ qt_add_library(AIOrchestrator_Backend STATIC
     src/OutcomeBriefController.cpp
     src/SettingsController.cpp
     src/ProjectMemoryController.cpp
+    src/ProjectMemoryOutcomeProjection.cpp
+    src/CompactionCoverageProjection.cpp
+    src/CompactionIntentRecoveryProjection.cpp
+    src/CompactionIntentRecoveryController.cpp
     src/ProjectContextController.cpp
     src/PromptWorkshopController.cpp
     src/FollowUpPlanController.cpp
@@ -60,9 +69,14 @@ qt_add_library(AIOrchestrator_Backend STATIC
     include/ai/ui/RunDraftListModel.hpp
     include/ai/ui/CredentialController.hpp
     include/ai/ui/ChatController.hpp
+    include/ai/ui/ChatCostProjection.hpp
     include/ai/ui/ExecutionAnalyticsController.hpp
     include/ai/ui/ProviderExecutionAnalyticsModel.hpp
+    include/ai/ui/ProjectCostProjection.hpp
+    include/ai/ui/ProjectCostProviderModel.hpp
+    include/ai/ui/ProjectCostController.hpp
     include/ai/ui/ComparisonController.hpp
+    include/ai/ui/ComparisonCostProjection.hpp
     include/ai/ui/ComparisonSessionListModel.hpp
     include/ai/ui/ComparisonResultListModel.hpp
     include/ai/ui/AgentSessionController.hpp
@@ -74,6 +88,10 @@ qt_add_library(AIOrchestrator_Backend STATIC
     include/ai/ui/ManifestVerificationManualHandoffController.hpp
     include/ai/ui/SettingsController.hpp
     include/ai/ui/ProjectMemoryController.hpp
+    include/ai/ui/ProjectMemoryOutcomeProjection.hpp
+    include/ai/ui/CompactionCoverageProjection.hpp
+    include/ai/ui/CompactionIntentRecoveryProjection.hpp
+    include/ai/ui/CompactionIntentRecoveryController.hpp
     include/ai/ui/ProjectContextController.hpp
     include/ai/ui/PromptWorkshopController.hpp
     include/ai/ui/FollowUpPlanController.hpp
@@ -101,6 +119,10 @@ target_link_libraries(AIOrchestrator_Backend
 add_executable(AIOrchestrator_QtAdapter_tests
     tests/QtAdapterTests.cpp
     tests/ProjectOutputApprovalControllerTests.cpp
+    tests/ProjectMemoryOutcomeProjectionTests.cpp
+    tests/ProjectMemoryOutcomeControllerTests.cpp
+    tests/ProjectCostQtTests.cpp
+    tests/CompactionCoverageQtTests.cpp
 )
 
 # Keep the Core-only test runtime away from the GUI executable. A partial Qt
@@ -122,6 +144,11 @@ target_link_libraries(AIOrchestrator_QtAdapter_tests
 # than only asserting the renamed Qt property/action names.
 target_compile_definitions(AIOrchestrator_QtAdapter_tests PRIVATE
     AI_ORCHESTRATOR_QML_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../qml"
+)
+# A1-min: ProjectCostQtTests.cpp runs the real services over the scripted sources of the core test directory
+# (ProjectCostTestSupport.hpp), the same way the follow-up Qt tests use the core fixtures.
+target_include_directories(AIOrchestrator_QtAdapter_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../First_AI_Agents/First_AI_Agents/tests/Unit"
 )
 
 # Make the test directly runnable outside Qt Creator on Windows.

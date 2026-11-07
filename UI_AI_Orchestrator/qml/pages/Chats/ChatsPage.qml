@@ -51,6 +51,9 @@ Item {
     property string selectedProjectId: ""
     property string selectedProjectName: ""
     property var currentModelMetrics: []
+    // The Backend recorded cost of the selected conversation (state + amount text over the model-execution ledger).
+    // null until it was read; the page never sums money or classifies completeness itself.
+    property var currentRecordedCost: null
 
     property bool isLoadingMessages: false
     property string generatingConversationId: ""
@@ -81,9 +84,11 @@ Item {
         if (selectedConversationId.length === 0)
             return null
 
+        // No fabricated cost: a conversation the store has not described yet shows the recorded-cost state the
+        // Backend gave (or "unavailable"), never a free zero amount.
         const stats = sessionStore[selectedConversationId] || {
             inputTokens: 0, outputTokens: 0, totalTokens: 0,
-            estimatedCost: "$0.00", contextSummary: "", lastResponseTime: ""
+            legacyEstimateMicros: 0, legacyEstimate: "", contextSummary: "", lastResponseTime: ""
         }
 
         return {
@@ -95,7 +100,9 @@ Item {
             inputTokens: stats.inputTokens,
             outputTokens: stats.outputTokens,
             totalTokens: stats.totalTokens,
-            estimatedCost: stats.estimatedCost,
+            recordedCost: currentRecordedCost,
+            legacyEstimateMicros: stats.legacyEstimateMicros,
+            legacyEstimate: stats.legacyEstimate,
             contextSummary: stats.contextSummary,
             lastResponseTime: stats.lastResponseTime,
             projectName: selectedProjectName,
@@ -172,6 +179,7 @@ Item {
             selectedProjectId = ""
             selectedProjectName = qsTr("No project context")
             currentModelMetrics = []
+            currentRecordedCost = null
             messagesModel.clear()
             isLoadingMessages = false
             sessionRevision += 1
@@ -553,7 +561,8 @@ Item {
                 inputTokens: Number(row.inputTokens),
                 outputTokens: Number(row.outputTokens),
                 totalTokens: Number(row.inputTokens) + Number(row.outputTokens),
-                estimatedCost: row.estimatedCost,
+                legacyEstimateMicros: Number(row.legacyEstimateMicros),
+                legacyEstimate: row.legacyEstimate,
                 contextSummary: row.projectId
                                 ? qsTr("Project Context Snapshot is opt-in per message. Preview it, review tokens and cost, then attach it explicitly.")
                                 : qsTr("No project context attached"),
@@ -575,7 +584,10 @@ Item {
         replaceModel(messagesModel, rows)
         messagesStore[conversationId] = rows
         isLoadingMessages = false
-        currentModelMetrics = backend.chats.modelMetrics(conversationId)
+        // One backend read feeds both the header cost and the per-model rows (they always describe the same sample).
+        const usage = backend.chats.recordedUsage(conversationId)
+        currentModelMetrics = usage.models
+        currentRecordedCost = usage.cost
         sessionRevision += 1
     }
 
