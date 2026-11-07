@@ -2,6 +2,14 @@
 
 ## 1.0.2 - 2026-11-08
 
+### Workspace and verification
+
+- Add per-project output-folder Preview, Approve, Revoke and recheck actions. New Manifest Runs, project context and follow-up planning respect approved exclusions; already-started work retains its recorded scope.
+- Show recorded workspace exclusions, scope drift and post-capture provenance diagnostics in Run Details. Approvals do not sandbox external build tools and are not yet consumed by the execution-profile path.
+- Preserve the user's CMake presets and confirm the Ninja generator from configuration/cache evidence; refuse unsupported or unconfirmed generators instead of silently choosing another one.
+- Decode baseline paths as UTF-8 and report the offending file in baseline-limit diagnostics. Contain C++ Run-execution exceptions while preserving finalization, usage, cancellation priority and valid UTF-8 diagnostics; abort/assert/SEH failures are outside this boundary.
+- Normalize supported Planner deferred-read conflicts and align repair feedback while retaining ownership and verification gates.
+
 ### Run and provider diagnostics
 
 - Preserve bounded provider-turn metadata and make a lost turn-record write visible in Worker/Planner diagnostics and Manifest/Profile reports.
@@ -26,6 +34,10 @@
 - The complete product stack passed 64 Debug and 64 Release tests locally and in each repository's PR CI before release preparation. The release verification attachment records the checks performed on the exact 1.0.2 tree.
 - An intermittent memory-history layout test failure remains unresolved. No claim is made that these successful runs establish long-term stability, provider billing/delivery accuracy, power-loss recovery, or a clean-machine GUI acceptance result.
 - See the [1.0.2 upgrade and testing guide](docs/releases/1.0.2.md) before testing against existing data.
+
+### Maintenance
+
+- Group Qt-free application services/contracts and desktop presentation components by responsibility. The release retains the existing layer boundaries rather than moving orchestration or SQL into QML.
 
 ## 1.0.1 - 2026-10-24
 

@@ -6,7 +6,7 @@ Version 1.0 is primarily validated for **C++ and Qt/QML projects on Windows usin
 
 Your workspace stays under your control. A model response is a proposal, not permission to modify files.
 
-Version **1.0.2** improves Run diagnostics, preserves incomplete cost estimates, includes stored memory compactions in project costs, and records unfinished compaction protocols for inspection after a process crash. It upgrades the database to schema **75**. See the [changelog](CHANGELOG.md) and [1.0.2 upgrade and testing guide](docs/releases/1.0.2.md).
+Version **1.0.2** adds explicit output-folder approvals and recorded workspace boundaries, improves Run diagnostics, preserves incomplete cost estimates, includes stored memory compactions in project costs, and records unfinished compaction protocols for inspection after a process crash. It upgrades the database to schema **75**. See the [changelog](CHANGELOG.md) and [1.0.2 upgrade and testing guide](docs/releases/1.0.2.md).
 
 ## Features
 
