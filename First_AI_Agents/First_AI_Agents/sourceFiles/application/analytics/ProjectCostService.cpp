@@ -5,8 +5,9 @@
 namespace ai::application {
 
 ProjectCostService::ProjectCostService(const ExecutionAnalyticsService& analytics,
-                                       const ProjectMemoryCompactionService& compactions)
-    : analytics_(analytics), compactions_(compactions)
+                                       const ProjectMemoryCompactionService& compactions,
+                                       const CompactionIntentReadModelService& intents)
+    : analytics_(analytics), compactions_(compactions), intents_(intents)
 {
 }
 
@@ -30,7 +31,11 @@ common::Result<ProjectCostSnapshot> ProjectCostService::projectCost(
     if (!records.success()) {
         return common::Result<ProjectCostSnapshot>::failure(*records.error());
     }
-    return composeProjectCost(ledger.value(), records.value(), fromInclusive, toExclusive);
+    auto composed = composeProjectCost(ledger.value(), records.value(), fromInclusive, toExclusive);
+    if (!composed.success()) return composed;
+    // Only now, with the money settled, ONE best-effort read of the intents. Its failure is a coverage state, never a money failure.
+    composed.value().compactionCoverage = intents_.read(projectId, fromInclusive, toExclusive).coverage;
+    return composed;
 }
 
 } // namespace ai::application

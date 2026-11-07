@@ -82,7 +82,7 @@ BackendBridge::BackendBridge(const QString& databasePathOverride,
     , chatController_(runtime_.chatService(), runtime_.providerCatalogService(), *projectContextController_,
           &runtime_.executionAnalyticsService(), this)
     , projectMemoryController_(runtime_.projectMemoryService(),
-          runtime_.projectMemoryCompactionService(), runtime_.providerCatalogService(), this)
+          runtime_.projectMemoryCompactionService(), runtime_.providerCatalogService(), runtime_.compactionIntentReadModel(), this)
     , projectController_(runtime_.projectService(), this)
     , projectVerificationSetupController_(
           std::make_unique<ProjectVerificationSetupController>(this))
@@ -95,6 +95,8 @@ BackendBridge::BackendBridge(const QString& databasePathOverride,
           runtime_.projectOutputApprovalService(), this))
     , projectCostController_(std::make_unique<ProjectCostController>(
           runtime_.projectCostService(), runtime_.providerCatalogService(), this))
+    , compactionIntentRecoveryController_(std::make_unique<CompactionIntentRecoveryController>(
+          runtime_.compactionIntentRecoveryReport(), runtime_.compactionIntentRecoveryError(), this))
     , taskController_(runtime_.taskService(), this)
     , runController_(runtime_.orchestrationService(), runtime_.artifactService(),
           runtime_.providerCatalogService(),
@@ -220,6 +222,7 @@ QObject* BackendBridge::credentials() noexcept { return &credentialController_; 
 QObject* BackendBridge::chats() noexcept { return &chatController_; }
 QObject* BackendBridge::executionAnalytics() noexcept { return &executionAnalyticsController_; }
 QObject* BackendBridge::projectCost() noexcept { return projectCostController_.get(); }
+QObject* BackendBridge::compactionRecovery() noexcept { return compactionIntentRecoveryController_.get(); }
 QObject* BackendBridge::comparisons() noexcept { return &comparisonController_; }
 QObject* BackendBridge::agentSessions() noexcept { return &agentSessionController_; }
 QObject* BackendBridge::manifest() noexcept { return &manifestController_; }

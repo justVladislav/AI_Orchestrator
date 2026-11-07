@@ -172,7 +172,8 @@ struct Fixture {
     ExecutionAnalyticsService analytics {ledger, catalog};
     test_support::ScriptedCompactionIntentRepository intents;
     ProjectMemoryCompactionService compactionService {memory, compactions, intents, projects, providers, catalog, clients};
-    ProjectCostService service {analytics, compactionService};
+    CompactionIntentReadModelService intentReadModel {intents};
+    ProjectCostService service {analytics, compactionService, intentReadModel};
 };
 
 inline std::chrono::system_clock::time_point at(int seconds)

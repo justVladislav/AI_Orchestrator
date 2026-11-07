@@ -41,6 +41,9 @@ qt_add_library(AIOrchestrator_Backend STATIC
     src/SettingsController.cpp
     src/ProjectMemoryController.cpp
     src/ProjectMemoryOutcomeProjection.cpp
+    src/CompactionCoverageProjection.cpp
+    src/CompactionIntentRecoveryProjection.cpp
+    src/CompactionIntentRecoveryController.cpp
     src/ProjectContextController.cpp
     src/PromptWorkshopController.cpp
     src/FollowUpPlanController.cpp
@@ -86,6 +89,9 @@ qt_add_library(AIOrchestrator_Backend STATIC
     include/ai/ui/SettingsController.hpp
     include/ai/ui/ProjectMemoryController.hpp
     include/ai/ui/ProjectMemoryOutcomeProjection.hpp
+    include/ai/ui/CompactionCoverageProjection.hpp
+    include/ai/ui/CompactionIntentRecoveryProjection.hpp
+    include/ai/ui/CompactionIntentRecoveryController.hpp
     include/ai/ui/ProjectContextController.hpp
     include/ai/ui/PromptWorkshopController.hpp
     include/ai/ui/FollowUpPlanController.hpp
@@ -116,6 +122,7 @@ add_executable(AIOrchestrator_QtAdapter_tests
     tests/ProjectMemoryOutcomeProjectionTests.cpp
     tests/ProjectMemoryOutcomeControllerTests.cpp
     tests/ProjectCostQtTests.cpp
+    tests/CompactionCoverageQtTests.cpp
 )
 
 # Keep the Core-only test runtime away from the GUI executable. A partial Qt

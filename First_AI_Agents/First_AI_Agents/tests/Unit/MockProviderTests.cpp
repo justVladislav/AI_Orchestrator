@@ -61,6 +61,7 @@ int runProviderExecutionBudgetTests();
 int runCostCalculationTests();
 int runExecutionAnalyticsServiceTests();
 int runProjectCostTests();
+int runCompactionCoverageTests();
 int runProjectOutputApprovalServiceTests();
 
 namespace {
@@ -123,7 +124,8 @@ int runTests(int argc, char** argv)
         return runExecutionAnalyticsServiceTests();
     }
     if (argc == 2 && std::string(argv[1]) == "--project-cost-only") {
-        return runProjectCostTests();
+        if (runProjectCostTests() != 0) return 1;
+        return runCompactionCoverageTests();
     }
     // This project currently uses one small executable as the test runner.
     // Each subsystem exposes a run*Tests function and the runner aggregates them.
@@ -177,6 +179,7 @@ int runTests(int argc, char** argv)
     if (runCostCalculationTests() != 0) return 1;
     if (runExecutionAnalyticsServiceTests() != 0) return 1;
     if (runProjectCostTests() != 0) return 1;
+    if (runCompactionCoverageTests() != 0) return 1;
     if (runProjectOutputApprovalServiceTests() != 0) return 1;
 
     std::cout << "All tests passed\n";

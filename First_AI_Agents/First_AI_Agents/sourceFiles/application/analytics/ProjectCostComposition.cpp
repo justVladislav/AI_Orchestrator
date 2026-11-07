@@ -1,5 +1,7 @@
 #include "ai/application/analytics/ProjectCostComposition.hpp"
 
+#include "ai/application/conversations/CompactionCreatedAtWindow.hpp"
+
 #include <algorithm>
 #include <unordered_map>
 #include <unordered_set>
@@ -24,8 +26,7 @@ bool inWindow(const ProjectMemoryCompactionRecord& record,
     const std::optional<std::chrono::system_clock::time_point>& fromInclusive,
     const std::optional<std::chrono::system_clock::time_point>& toExclusive)
 {
-    return (!fromInclusive.has_value() || record.createdAt >= *fromInclusive)
-        && (!toExclusive.has_value() || record.createdAt < *toExclusive);
+    return inCreatedAtWindow(record.createdAt, fromInclusive, toExclusive);
 }
 
 } // namespace

@@ -81,6 +81,8 @@ int runProjectMemoryOutcomeProjectionTests();
 int runProjectMemoryOutcomeControllerTests();
 // A1-min: the project cost estimate at the Qt boundary (ProjectCostQtTests.cpp).
 int runProjectCostQtTests();
+// B3-III: the Qt boundary of the compaction recording coverage (CompactionCoverageQtTests.cpp).
+int runCompactionCoverageQtTests();
 
 namespace {
 
@@ -6694,7 +6696,7 @@ void testProjectMemoryHistorySnapshotIsOneReadWithItsOwnUnavailableStateAndStore
     StubProviderClientFactory clients;
     ai::application::test_support::ScriptedCompactionIntentRepository intents;
     ai::application::ProjectMemoryCompactionService compaction(memory, history, intents, projects, providers, models, clients);
-    ProjectMemoryController controller(runtime.projectMemoryService(), compaction, runtime.providerCatalogService());
+    ProjectMemoryController controller(runtime.projectMemoryService(), compaction, runtime.providerCatalogService(), runtime.compactionIntentReadModel());
     QStringList errors;
     QObject::connect(&controller, &ProjectMemoryController::errorOccurred, &controller,
         [&](const QString& code, const QString&) { errors << code; });
@@ -6959,7 +6961,7 @@ int main(int argc, char* argv[])
         return projection == 0 && controller == 0 ? 0 : 1;
     }
     // Scoped run of the A1-min feature tests only: the same function as the full run below, which also runs it.
-    if (argc == 2 && std::string(argv[1]) == "--project-cost-only") return runProjectCostQtTests();
+    if (argc == 2 && std::string(argv[1]) == "--project-cost-only") return runProjectCostQtTests() != 0 ? 1 : runCompactionCoverageQtTests();
     bool stressConfigured = false;
     const int stressIterations = qEnvironmentVariableIntValue(
         "AI_ORCHESTRATOR_B6_STRESS_ITERATIONS", &stressConfigured);
@@ -7047,5 +7049,6 @@ int main(int argc, char* argv[])
     if (runProjectMemoryOutcomeProjectionTests() != 0) return 1;
     if (runProjectMemoryOutcomeControllerTests() != 0) return 1;
     if (runProjectCostQtTests() != 0) return 1;
+    if (runCompactionCoverageQtTests() != 0) return 1;
     return 0;
 }

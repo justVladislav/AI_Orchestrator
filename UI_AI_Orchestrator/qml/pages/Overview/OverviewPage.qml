@@ -917,7 +917,7 @@ Item {
                     objectName: "tokensMetricCard"
                     Layout.fillWidth: true
                     hostWindow: page.hostWindow; colors: page.colors
-                    iconText: "T"; title: qsTr("Tokens")
+                    iconText: "T"; title: qsTr("Recorded tokens")
                     value: page.costLoadState === "available" ? page.formatTokens(page.costTokens) : "—"
                     detail: page.costLoadState === "unavailable"
                             ? qsTr("Token usage could not be read")

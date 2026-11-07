@@ -34,6 +34,12 @@ public:
     // Called inside recordIntentObserved after the outcome is decided (e.g. to request a stop right after an admission).
     std::function<void(const ProjectMemoryCompactionIntent&, const CompactionIntentWriteOutcome&)> onRecord;
 
+    // B3-III read side: what listIntents answers (rows of the asked project) or a scripted failure; counted apart from otherCalls so
+    // the dispatch tests' "the service never reads" assertions are unaffected.
+    std::vector<ProjectMemoryCompactionIntent> listRows;
+    std::optional<common::Error> listFailure;
+    mutable int listCalls {0};
+
     std::vector<ProjectMemoryCompactionIntent> recorded;
     mutable std::vector<CompactionIntentIdentity> proofExpected;
     int recordCalls {0};
@@ -63,10 +69,15 @@ public:
         return common::Result<std::optional<ProjectMemoryCompactionIntent>>::ok(std::nullopt);
     }
     [[nodiscard]] common::Result<std::vector<ProjectMemoryCompactionIntent>> listIntents(
-        const ProjectId&, std::optional<CompactionIntentState>) const override
+        const ProjectId& projectId, std::optional<CompactionIntentState>) const override
     {
-        ++otherCalls;
-        return common::Result<std::vector<ProjectMemoryCompactionIntent>>::ok({});
+        ++listCalls;
+        if (listFailure.has_value()) return common::Result<std::vector<ProjectMemoryCompactionIntent>>::failure(*listFailure);
+        std::vector<ProjectMemoryCompactionIntent> selected;
+        for (const auto& row : listRows) {
+            if (row.projectId == projectId) selected.push_back(row);
+        }
+        return common::Result<std::vector<ProjectMemoryCompactionIntent>>::ok(std::move(selected));
     }
     [[nodiscard]] common::Result<std::vector<ProjectMemoryCompactionIntent>> listIntentsByState(CompactionIntentState) const override
     {

@@ -36,6 +36,7 @@
 #include "../test_support/QtTestSupport.hpp"
 #include "ProjectMemoryOutcomeQmlTests.hpp"
 #include "ProjectCostQmlTests.hpp"
+#include "CompactionCoverageQmlTests.hpp"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -1944,6 +1945,7 @@ int main(int argc, char* argv[])
     // Scoped run of the A1-min project cost scenarios only: the same function as in the full run below.
     if (argc == 2 && std::string(argv[1]) == "--project-cost-only") {
         runProjectCostQmlTests(engine, window, projectsPage->property("colors"));
+        runCompactionCoverageQmlTests(engine, window, projectsPage->property("colors"));
         assert(qmlWarnings.isEmpty() && "QML runtime warnings were emitted");
         checkpoint("project cost scenarios passed");
         return 0;
@@ -2429,6 +2431,8 @@ int main(int argc, char* argv[])
     assert(runCount >= 1 && "liveProjectsModel must count completed run for the project");
     // A1-min: no dialog is open now - the real page with POSITIVE stored data, its provider mapping and a real tap on Details.
     checkProjectCostOverviewPagePositive(overviewPage, workspace.databasePath, projectId.toStdString());
+    // B3-III: the same live page with an Open compaction protocol seeded after the startup, and a real memory panel over the same bridge.
+    checkCompactionCoverageOverviewPage(engine, window, projectsPage->property("colors"), overviewPage, workspace.databasePath, projectId.toStdString());
 
     const QDateTime futureDate = QDateTime::currentDateTime().addDays(1);
     assert(overviewFromDatePicker->setProperty("selectedDate", futureDate));
@@ -2701,6 +2705,7 @@ int main(int argc, char* argv[])
     runProjectMemoryCostTests(engine, window, projectsPage->property("colors"));
     runProjectMemoryOutcomeQmlTests(engine, window, projectsPage->property("colors"));
     runProjectCostQmlTests(engine, window, projectsPage->property("colors"));
+    runCompactionCoverageQmlTests(engine, window, projectsPage->property("colors"));
 
     // Durable Run warnings (a diagnostic artifact that could not be stored): a Run without any has no section; with
     // warnings the section appears and shows every one of them.

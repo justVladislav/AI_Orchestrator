@@ -311,6 +311,8 @@ struct Rig {
     ProviderCatalogService catalog {providers, models};
     ai::application::test_support::ScriptedCompactionIntentRepository intents;
     ProjectMemoryCompactionService service {memory, repository, intents, projects, providers, models, factory};
+    // B3-III: the const reader of the scripted intent port (its rows and its scripted read failure) for the history's intent section.
+    ai::application::CompactionIntentReadModelService intentReader {intents};
     std::unique_ptr<ProjectMemoryController> controller;
 
     explicit Rig(const std::string& projectId = "cp1")
@@ -318,7 +320,7 @@ struct Rig {
         seedCatalog(providers, models);
         require(projects.insert(projectNamed(projectId)).success(), "setup: project");
         for (int index = 0; index < 3; ++index) memory.segments.push_back(segmentFor(projectId, "seg" + std::to_string(index)));
-        controller = std::make_unique<ProjectMemoryController>(memoryService, service, catalog);
+        controller = std::make_unique<ProjectMemoryController>(memoryService, service, catalog, intentReader);
     }
 };
 

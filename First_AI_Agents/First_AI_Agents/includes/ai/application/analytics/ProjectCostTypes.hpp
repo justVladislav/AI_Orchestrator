@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ai/application/analytics/ExecutionAnalyticsTypes.hpp"
+#include "ai/application/conversations/CompactionCoverageTypes.hpp"
 
 #include <cstdint>
 #include <string>
@@ -97,6 +98,10 @@ struct ProviderProjectCost {
 struct ProjectCostSnapshot {
     ProjectCostAggregate totals;
     std::vector<ProviderProjectCost> providers;
+    // B3-III: the recording coverage of the compaction intents in the same scope - a SEPARATE statement next to the money. It is not in
+    // any aggregate, not in the price state, not in the evidence counts, the provider/model rows or the compaction record count. A
+    // default value is Unavailable (the composition itself does not read intents; ProjectCostService attaches the observation).
+    CompactionCoverageObservation compactionCoverage;
 };
 
 } // namespace ai::application

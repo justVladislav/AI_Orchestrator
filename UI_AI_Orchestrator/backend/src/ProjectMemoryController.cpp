@@ -1,6 +1,7 @@
 #include <ai/ui/ProjectMemoryController.hpp>
 
 #include <ai/application/context/RunContextAssembler.hpp>
+#include <ai/ui/CompactionCoverageProjection.hpp>
 #include <ai/ui/ProjectMemoryOutcomeProjection.hpp>
 
 #include <QDateTime>
@@ -64,8 +65,9 @@ ProjectMemoryController::ProjectMemoryController(
     ai::application::ProjectMemoryService& memoryService,
     ai::application::ProjectMemoryCompactionService& compactionService,
     ai::application::ProviderCatalogService& catalog,
+    const ai::application::CompactionIntentReadModelService& intents,
     QObject* parent)
-    : QObject(parent), memoryService_(memoryService), compactionService_(compactionService), catalog_(catalog)
+    : QObject(parent), memoryService_(memoryService), compactionService_(compactionService), catalog_(catalog), intents_(intents)
 {
 }
 
@@ -98,8 +100,17 @@ QVariantMap ProjectMemoryController::compactionHistorySnapshot(const QString& pr
         {"state", QStringLiteral("available")},
         {"rows", QVariantList {}},
         {"errorCode", QString {}},
-        {"errorMessage", QString {}}};
+        {"errorMessage", QString {}},
+        // Nothing is measured without a project: state "none", no counts, no rows (never a zero).
+        {"intents", QVariantMap {
+            {"projectId", projectId}, {"state", QStringLiteral("none")},
+            {"coverage", ai::ui::compaction_coverage::coverageMap(std::nullopt)}, {"rows", QVariantList {}},
+            {"errorCode", QString {}}, {"errorMessage", QString {}}}}};
     if (projectId.isEmpty()) return snapshot;
+
+    // The intent section is its own read of its own source: it is made whatever the record read does, and the record read is made
+    // whatever it does. ONE Application read gives the counts and the rows of the section.
+    snapshot["intents"] = ai::ui::compaction_coverage::intentSectionMap(projectId, intents_.read(projectId.toStdString()));
 
     const auto result = compactionService_.listCompactionRecords(projectId.toStdString());
     if (!result.success()) {

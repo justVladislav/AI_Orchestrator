@@ -291,3 +291,18 @@ QVariantMap projectMemoryOutcomeMap(const QString& projectId, const ai::applicat
         ? tr("The diagnostics are incomplete: at least one cause was lost or shortened.") : QString {};
     return map;
 }
+
+QString compactionDiagnosticStageSlug(ai::application::CompactionDiagnosticStage stage)
+{
+    return QString::fromLatin1(stageSlug(stage));
+}
+
+QString compactionDiagnosticStageText(ai::application::CompactionDiagnosticStage stage)
+{
+    return stageText(stage);
+}
+
+QVariantMap compactionNativeDetailMap(const std::optional<ai::application::CompactionNativeDetail>& detail)
+{
+    return nativeMap(detail);
+}

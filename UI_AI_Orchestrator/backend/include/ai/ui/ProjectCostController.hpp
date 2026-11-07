@@ -8,6 +8,9 @@
 #include <QDateTime>
 #include <QObject>
 #include <QString>
+#include <QVariantMap>
+
+#include <optional>
 
 /**
  * A1-min: the project cost estimate for the Overview, over ProjectCostService (ledger + stored memory compactions).
@@ -46,6 +49,10 @@ class ProjectCostController final : public QObject
     Q_PROPERTY(qulonglong incompletePriceCount READ incompletePriceCount NOTIFY summaryChanged)
     // Why the provider chart does or does not draw bars: "cost" | "tokens" | "incomplete" | "unavailable" | "empty".
     Q_PROPERTY(QString shareBasis READ shareBasis NOTIFY summaryChanged)
+    // B3-III: the recording coverage of the compaction intents of the SAME scope and of the SAME read as the money (see
+    // ai::ui::compaction_coverage::coverageMap). A SEPARATE statement: it is in no amount, price state or count above. "none" while idle
+    // or after a failed money read (cleared together with the summary), "unavailable" when only the intent read failed (the money stays).
+    Q_PROPERTY(QVariantMap coverage READ coverage NOTIFY summaryChanged)
     Q_PROPERTY(QAbstractItemModel* providers READ providers CONSTANT)
 
 public:
@@ -70,6 +77,7 @@ public:
     [[nodiscard]] qulonglong incompletePriceCount() const noexcept;
     [[nodiscard]] QString shareBasis() const { return providers_.sharesBasis(); }
     [[nodiscard]] QAbstractItemModel* providers() noexcept { return &providers_; }
+    [[nodiscard]] QVariantMap coverage() const;
 
     Q_INVOKABLE bool refreshProject(const QString& projectId);
     Q_INVOKABLE bool refreshProjectRange(const QString& projectId,
@@ -89,6 +97,7 @@ private:
     ai::application::ProviderCatalogService& catalog_;
     ProjectCostProviderModel providers_;
     ai::application::ProjectCostAggregate totals_;
+    std::optional<ai::application::CompactionCoverageObservation> coverage_;
     QString loadState_ {QStringLiteral("idle")};
     QString scopeId_;
     QString errorCode_;

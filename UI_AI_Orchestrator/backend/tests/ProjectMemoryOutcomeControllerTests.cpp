@@ -380,7 +380,8 @@ void testARealConflictSavesOneFailedAccountingRowAndTheSignalAndReadbackAgree()
     ProviderCatalogService catalog(providers, models);
     ai::application::test_support::ScriptedCompactionIntentRepository intents;
     ProjectMemoryCompactionService service(memory, compaction, intents, projects, providers, models, factory);
-    ProjectMemoryController controller(memoryService, service, catalog);
+    ai::application::CompactionIntentReadModelService intentReader(intents);
+    ProjectMemoryController controller(memoryService, service, catalog, intentReader);
     QObject listener;
     std::vector<std::pair<QString, QVariantMap>> outcomes;
     QStringList errors;

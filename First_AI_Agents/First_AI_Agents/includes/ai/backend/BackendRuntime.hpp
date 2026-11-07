@@ -38,6 +38,7 @@
 #include "ai/application/verification/ManifestVerificationManualHandoffReadModelService.hpp"
 #include "ai/application/proposals/ProposalReviewService.hpp"
 #include "ai/application/conversations/ProjectMemoryService.hpp"
+#include "ai/application/conversations/CompactionIntentReadModelService.hpp"
 #include "ai/application/conversations/CompactionIntentRecoveryReport.hpp"
 #include "ai/application/conversations/ProjectMemoryCompactionService.hpp"
 #include "ai/application/planning/OutcomeBriefReadModelService.hpp"
@@ -302,6 +303,10 @@ public:
     /// A1-min: read-only project cost estimate composed from the execution ledger and the stored memory-compaction
     /// records. Best-effort sequential reads (not an atomic snapshot); it writes nothing and reprices nothing.
     [[nodiscard]] ai::application::ProjectCostService& projectCostService() noexcept;
+
+    /// B3-III: the read-only reader of the compaction intents of a project (counts and rows from one strict read) for the project
+    /// memory history. It cannot write, mark, close or recover.
+    [[nodiscard]] const ai::application::CompactionIntentReadModelService& compactionIntentReadModel() const noexcept;
 
     /// Deterministic, LLM-free project memory writer (Task B of
     /// PROJECT_MEMORY_PLAN.md). RunManager already calls this best-effort on

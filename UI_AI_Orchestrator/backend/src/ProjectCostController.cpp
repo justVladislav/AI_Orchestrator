@@ -1,5 +1,6 @@
 #include "ai/ui/ProjectCostController.hpp"
 
+#include "ai/ui/CompactionCoverageProjection.hpp"
 #include "ai/ui/ProjectCostProjection.hpp"
 
 #include <chrono>
@@ -13,6 +14,8 @@ ProjectCostController::ProjectCostController(ai::application::ProjectCostService
     : QObject(parent), costs_(costs), catalog_(catalog), providers_(this)
 {
 }
+
+QVariantMap ProjectCostController::coverage() const { return ai::ui::compaction_coverage::coverageMap(coverage_); }
 
 QString ProjectCostController::priceState() const { return project_cost::priceStateName(totals_); }
 QString ProjectCostController::costText() const { return project_cost::costText(totals_); }
@@ -54,6 +57,7 @@ bool ProjectCostController::refreshProjectRange(
 void ProjectCostController::clear()
 {
     totals_ = {};
+    coverage_.reset();
     loadState_ = QStringLiteral("idle");
     scopeId_.clear();
     errorCode_.clear();
@@ -66,6 +70,7 @@ bool ProjectCostController::fail(const QString& scopeId, const QString& code, co
 {
     // Replace the whole state first: both observers (the properties and the signal) must see a consistent "unavailable".
     totals_ = {};
+    coverage_.reset();   // never a stale coverage next to a failed money read
     loadState_ = QStringLiteral("unavailable");
     scopeId_ = scopeId;
     errorCode_ = code;
@@ -109,6 +114,7 @@ bool ProjectCostController::apply(
         rows.push_back(std::move(row));
     }
     totals_ = result.value().totals;
+    coverage_ = result.value().compactionCoverage;   // from the same snapshot: the controller never reads the intents itself
     loadState_ = QStringLiteral("available");
     scopeId_ = scopeId;
     errorCode_.clear();

@@ -149,6 +149,8 @@ set(APPLICATION_SOURCES
     sourceFiles/application/conversations/ProjectMemoryCompactionIntentPolicy.cpp
     sourceFiles/application/conversations/ProjectMemoryCompactionIntentTracker.cpp
     sourceFiles/application/conversations/CompactionIntentRecovery.cpp
+    sourceFiles/application/conversations/CompactionCoveragePolicy.cpp
+    sourceFiles/application/conversations/CompactionIntentReadModelService.cpp
     sourceFiles/application/context/ProjectContextSnapshot.cpp
     sourceFiles/application/context/ProjectContextSnapshotService.cpp
     sourceFiles/application/execution/RunInterfaceContract.cpp
@@ -864,6 +866,7 @@ if(AI_ORCHESTRATOR_BUILD_PERSISTENCE_TESTS)
         tests/Unit/ProjectCostRuntimeTests.cpp
         tests/Unit/CompactionIntentRuntimeTests.cpp
         tests/Unit/CompactionIntentRecoveryRuntimeTests.cpp
+        tests/Unit/CompactionCoverageRuntimeTests.cpp
     )
     target_compile_features(AIOrchestrator_BackendRuntime_tests PRIVATE cxx_std_20)
     # The fail-closed intent port is a runtime-private detail header (never an exported include path).
@@ -1071,6 +1074,7 @@ add_executable(${TARGET_NAME}_tests
     tests/Unit/CostCalculationTests.cpp
     tests/Unit/ExecutionAnalyticsServiceTests.cpp
     tests/Unit/ProjectCostTests.cpp
+    tests/Unit/CompactionCoverageTests.cpp
     tests/Unit/ProjectOutputApprovalServiceTests.cpp
 )
 target_compile_features(${TARGET_NAME}_tests PRIVATE cxx_std_20)

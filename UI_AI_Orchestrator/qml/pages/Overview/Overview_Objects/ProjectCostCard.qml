@@ -34,6 +34,13 @@ Rectangle {
         return "—"
     }
 
+    // B3-III: the recording coverage of the SAME read (a map, or undefined for a stub). It is shown apart from the money below.
+    readonly property var coverageMap: card.cost.coverage !== undefined ? card.cost.coverage : null
+    readonly property bool coverageHasOperations: card.coverageMap !== null && card.coverageMap.state === "available"
+                                                   && card.coverageMap.hasCounts === true
+                                                   && (Number(card.coverageMap.openOperations) > 0
+                                                       || Number(card.coverageMap.unresolvedOperations) > 0)
+
     readonly property string loadState: cost.loadState
     readonly property bool available: loadState === "available"
     readonly property bool unavailable: loadState === "unavailable"
@@ -64,7 +71,8 @@ Rectangle {
         if (!card.available)
             return qsTr("No project selected")
         if (card.nothingRecorded)
-            return qsTr("No recorded model executions or memory compactions yet")
+            return card.coverageHasOperations ? qsTr("No stored cost entries")
+                                              : qsTr("No recorded model executions or memory compactions yet")
         if (card.onlyNoPriceRecords)
             return qsTr("%1 memory compaction records have no price data").arg(card.cost.compactionNoneCount)
         if (card.cost.priceState === "partial")
@@ -174,6 +182,15 @@ Rectangle {
                 wrapMode: Text.WrapAnywhere
             }
 
+            // B3-III: the recording coverage of the compaction intents, apart from the amount and the price state: it never changes them.
+            CompactionCoverageBlock {
+                objectName: "compactionCoverageBlock"
+                Layout.fillWidth: true
+                hostWindow: card.hostWindow
+                colors: card.colors
+                coverage: card.coverageMap
+            }
+
             // What the estimate is based on (not a claim that every operation was recorded).
             Text {
                 objectName: "projectCostCoverage"
@@ -204,6 +221,17 @@ Rectangle {
                 visible: card.available && card.detailsOpen
                 text: qsTr("Operations that were interrupted or never recorded may be missing.")
                 color: card.colors.textSecondary
+                font.pixelSize: card.hostWindow.dp(10)
+                wrapMode: Text.WordWrap
+            }
+
+            Text {
+                objectName: "projectCostDetailsTokens"
+                Layout.fillWidth: true
+                visible: card.available && card.detailsOpen
+                text: qsTr("Recorded tokens and costs include only stored entries; an operation without a confirmed final recording may have used tokens that are not counted.")
+                color: card.colors.textSecondary
+                textFormat: Text.PlainText
                 font.pixelSize: card.hostWindow.dp(10)
                 wrapMode: Text.WordWrap
             }

@@ -62,3 +62,9 @@
 
 // The amount of a stored compaction cost as the history shows it: "$" and four decimals (the same text as S1).
 [[nodiscard]] QString compactionAmountText(std::uint64_t costMicros);
+
+// The same words and maps the outcome uses, for the other compaction surfaces (the startup recovery report): the slug and the text of a
+// diagnostic stage, and the native detail as {present, code, extendedCode, message, text} (present=false when none; never a 0).
+[[nodiscard]] QString compactionDiagnosticStageSlug(ai::application::CompactionDiagnosticStage stage);
+[[nodiscard]] QString compactionDiagnosticStageText(ai::application::CompactionDiagnosticStage stage);
+[[nodiscard]] QVariantMap compactionNativeDetailMap(const std::optional<ai::application::CompactionNativeDetail>& detail);

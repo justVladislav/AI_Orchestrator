@@ -4,6 +4,7 @@ qt_add_executable(AIOrchestrator_QmlFrontend_tests
     QmlFrontendSmokeTest.cpp
     ProjectMemoryOutcomeQmlTests.cpp
     ProjectCostQmlTests.cpp
+    CompactionCoverageQmlTests.cpp
 )
 
 # Own output directory, isolated from appUI_AI_Orchestrator's deployment root,

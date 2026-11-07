@@ -2,6 +2,7 @@
 
 #include "ai/backend/StartupRecovery.hpp"
 #include "ai/application/conversations/CompactionIntentRecovery.hpp"
+#include "ai/application/conversations/CompactionIntentReadModelService.hpp"
 #include "detail/UnavailableProjectMemoryCompactionIntentRepository.hpp"
 
 #include "ai/application/agents/AgentToolExecutionService.hpp"
@@ -1845,7 +1846,8 @@ struct BackendRuntime::Impl {
               *storage.projectMemoryCompactionIntentRepository,
               *storage.projectRepository, *storage.providerRepository, *storage.modelRepository,
               *providerClientFactory)
-        , projectCostService(executionAnalyticsService, projectMemoryCompactionService)
+        , compactionIntentReadModel(*storage.projectMemoryCompactionIntentRepository)
+        , projectCostService(executionAnalyticsService, projectMemoryCompactionService, compactionIntentReadModel)
         , runManager(*storage.projectRepository, *storage.runRepository, workflowRouter,
               &projectMemoryService, &pathClaimRegistry, &modelExecutionService,
               &manifestWorkLedgerService)
@@ -2158,6 +2160,9 @@ struct BackendRuntime::Impl {
     application::ProjectMemoryCompactionService projectMemoryCompactionService;
     // A1-min: read-only composition of executionAnalyticsService and projectMemoryCompactionService. It keeps references to
     // both, so it MUST be declared after both (members are built in declaration order). It owns no data and writes nothing.
+    // B3-III: the const reader of the compaction intents (counts + rows from ONE strict read). It holds the intent port by const
+    // reference, so it can neither write nor recover; declared right before the services that use it.
+    application::CompactionIntentReadModelService compactionIntentReadModel;
     application::ProjectCostService projectCostService;
     application::RunManager runManager;
     application::ProjectService projectService;
@@ -2426,6 +2431,11 @@ application::ExecutionAnalyticsService& BackendRuntime::executionAnalyticsServic
 application::ProjectCostService& BackendRuntime::projectCostService() noexcept
 {
     return impl_->projectCostService;
+}
+
+const application::CompactionIntentReadModelService& BackendRuntime::compactionIntentReadModel() const noexcept
+{
+    return impl_->compactionIntentReadModel;
 }
 
 application::ProjectMemoryService& BackendRuntime::projectMemoryService() noexcept

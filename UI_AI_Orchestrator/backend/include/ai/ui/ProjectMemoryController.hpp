@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ai/application/catalog/ExecutionProfileTypes.hpp>
+#include <ai/application/conversations/CompactionIntentReadModelService.hpp>
 #include <ai/application/conversations/ProjectMemoryCompactionService.hpp>
 #include <ai/application/conversations/ProjectMemoryService.hpp>
 #include <ai/application/catalog/ProviderCatalogService.hpp>
@@ -30,6 +31,7 @@ public:
         ai::application::ProjectMemoryService&,
         ai::application::ProjectMemoryCompactionService&,
         ai::application::ProviderCatalogService&,
+        const ai::application::CompactionIntentReadModelService& intents,
         QObject* parent = nullptr);
     ~ProjectMemoryController() override;
 
@@ -51,6 +53,12 @@ public:
     // record - priceState (none|known|partial|unknown), costText (the stored amount, "" unless known or partial),
     // costMicros, priceIncomplete. The cost is the record's own (never recomputed from the catalog) and is shown whatever the
     // status: a Failed or Cancelled record keeps the usage it was paid for.
+    //
+    // B3-III: the same snapshot carries a SEPARATE section "intents" - the unfinished protocols of the project (Open / Unresolved):
+    // {projectId, state ("available" | "unavailable" | "none"), coverage (see compaction_coverage::coverageMap), rows, errorCode,
+    // errorMessage}. Its coverage and its rows come from ONE Application read. The two sections are independent: a failed record read
+    // empties only the record rows, a failed intent read only the intent section. The intent section's error travels IN the snapshot -
+    // it is never sent through errorOccurred, which the panel owns for the record, segment and operation errors.
     Q_INVOKABLE QVariantMap compactionHistorySnapshot(const QString& projectId);
 
     // The rows of compactionHistorySnapshot() - a compatibility view; it reads (and reports a failed read) on its own.
@@ -105,6 +113,7 @@ private:
     ai::application::ProjectMemoryService& memoryService_;
     ai::application::ProjectMemoryCompactionService& compactionService_;
     ai::application::ProviderCatalogService& catalog_;
+    const ai::application::CompactionIntentReadModelService& intents_;
     std::optional<std::jthread> worker_;
     QString compactingProjectId_;
 };

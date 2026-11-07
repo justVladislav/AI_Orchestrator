@@ -34,6 +34,11 @@ ColumnLayout {
     // unrelated error with the same code or message is never taken for it and never cleared by a history recovery.
     property string historyErrorText: ""
     property bool historyReadActive: false
+    // B3-III: the unfinished compaction protocols (Open / Unresolved) of THIS project - the "intents" section of the SAME history
+    // snapshot, or null. Its own read error is inside it; it never goes through historyErrorText, errorText or the operation outcome.
+    property var intentSection: null
+    // B3-III: the startup recovery report of the whole database (a map), or null for a backend without it. Not tied to projectId.
+    readonly property var recoveryReport: (panel.backend && panel.backend.compactionRecovery) ? panel.backend.compactionRecovery.report : null
     // The segments read has its own error slot, owned the same way (segmentsReadActive), so a segments failure, a history
     // failure and an operation failure never overwrite or clear one another - also when their code and message are equal.
     property string segmentsErrorText: ""
@@ -76,6 +81,7 @@ ColumnLayout {
             panel.historySnapshot = []
             panel.historyState = "available"
             panel.historyErrorText = ""
+            panel.intentSection = null
             return
         }
         // ONE read per refresh: the state and the rows below come from the same snapshot. A failed read replaces the list
@@ -91,6 +97,7 @@ ColumnLayout {
         }
         panel.historyState = snapshot.state
         panel.historySnapshot = snapshot.rows
+        panel.intentSection = snapshot.intents !== undefined ? snapshot.intents : null
         if (snapshot.state === "unavailable" && panel.historyErrorText.length === 0)
             panel.historyErrorText = snapshot.errorMessage
     }
@@ -134,6 +141,7 @@ ColumnLayout {
         panel.errorText = ""
         panel.segmentsErrorText = ""
         panel.historyErrorText = ""
+        panel.intentSection = null
     }
 
     onProjectIdChanged: {
@@ -209,6 +217,14 @@ ColumnLayout {
                 onClicked: panel.clearMemoryRequested()
             }
         }
+    }
+
+    // B3-III: the database-wide startup recovery report (read-only, all projects); never cleared by a change of project.
+    ProjectMemoryStartupRecovery {
+        Layout.fillWidth: true
+        hostWindow: panel.hostWindow
+        colors: panel.colors
+        report: panel.recoveryReport
     }
 
     Text {
@@ -442,6 +458,14 @@ ColumnLayout {
         color: panel.colors.error
         wrapMode: Text.WordWrap
         font.pixelSize: panel.hostWindow.dp(10)
+    }
+
+    // B3-III: unfinished protocols, apart from the records below; no amount, no price state.
+    ProjectMemoryUnfinishedProtocols {
+        Layout.fillWidth: true
+        hostWindow: panel.hostWindow
+        colors: panel.colors
+        snapshot: panel.intentSection
     }
 
     Text {
