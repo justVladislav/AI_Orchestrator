@@ -147,6 +147,7 @@ set(APPLICATION_SOURCES
     sourceFiles/application/conversations/ProjectMemoryCompactionService.cpp
     sourceFiles/application/conversations/ProjectMemoryCompactionAccounting.cpp
     sourceFiles/application/conversations/ProjectMemoryCompactionIntentPolicy.cpp
+    sourceFiles/application/conversations/ProjectMemoryCompactionIntentTracker.cpp
     sourceFiles/application/context/ProjectContextSnapshot.cpp
     sourceFiles/application/context/ProjectContextSnapshotService.cpp
     sourceFiles/application/execution/RunInterfaceContract.cpp
@@ -741,6 +742,7 @@ if(AI_ORCHESTRATOR_BUILD_PERSISTENCE_TESTS)
           tests/Unit/SqliteCompactionWriteCertaintyTests.cpp
           tests/Unit/SqliteCompactionIntentTests.cpp
           tests/Unit/SqliteCompactionIntentMigrationTests.cpp
+          tests/Unit/CompactionIntentDispatchSqliteTests.cpp
       )
     target_compile_features(AIOrchestrator_Persistence_tests PRIVATE cxx_std_20)
     # The pre-migration backup tests drive the closed fault seam of the persistence-private helper (never an exported include path).
@@ -858,8 +860,11 @@ if(AI_ORCHESTRATOR_BUILD_PERSISTENCE_TESTS)
         tests/Unit/AgentToolExecutionServiceTests.cpp
         tests/Unit/ProjectMemoryCompactionAccountingSqliteTests.cpp
         tests/Unit/ProjectCostRuntimeTests.cpp
+        tests/Unit/CompactionIntentRuntimeTests.cpp
     )
     target_compile_features(AIOrchestrator_BackendRuntime_tests PRIVATE cxx_std_20)
+    # The fail-closed intent port is a runtime-private detail header (never an exported include path).
+    target_include_directories(AIOrchestrator_BackendRuntime_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/sourceFiles/backend)
     target_link_libraries(AIOrchestrator_BackendRuntime_tests
         PRIVATE
             AIOrchestrator::BackendRuntime
@@ -1001,6 +1006,7 @@ add_executable(${TARGET_NAME}_tests
     tests/Unit/ProjectMemoryServiceTests.cpp
     tests/Unit/ProjectMemoryCompactionAccountingTests.cpp
     tests/Unit/CompactionIntentPolicyTests.cpp
+    tests/Unit/CompactionIntentDispatchServiceTests.cpp
     tests/Unit/ProjectMemoryCompactionPersistenceServiceTests.cpp
     tests/Unit/ChangeProposalTests.cpp
     tests/Unit/RunPathClaimRegistryTests.cpp

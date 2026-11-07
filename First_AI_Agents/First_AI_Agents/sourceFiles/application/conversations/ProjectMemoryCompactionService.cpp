@@ -2,6 +2,7 @@
 
 #include "ai/application/conversations/ChatContextAssembler.hpp"
 #include "ai/application/conversations/ProjectMemoryCompactionAccounting.hpp"
+#include "ai/application/conversations/ProjectMemoryCompactionIntentTracker.hpp"
 #include "ai/application/budget/CostCalculation.hpp"
 #include "ai/application/IdGenerator.hpp"
 #include "ai/application/Sha256.hpp"
@@ -65,10 +66,17 @@ void takeFirstWrite(ProjectMemoryCompactionOutcome& outcome, const CompactionPer
     if (write.diagnosticsIncomplete) outcome.diagnosticsIncomplete = true;
 }
 
+// A final write is CONFIRMED only when the storage says both: success and Committed. Never inferred from the call's result or from
+// accounting == Saved (a Saved can also come from an identical row found after a failed insert).
+bool isConfirmedCommit(const CompactionPersistOutcome& write) noexcept
+{
+    return write.result.success() && write.state == CompactionPersistState::Committed;
+}
+
 // A terminal record (Failed / Cancelled) is written by ONE insert. The result is the failure OF THAT INSERT (the terminal cause stays
 // in the record, which is also returned as observedRecord); there is no second insert.
-ProjectMemoryCompactionOutcome finishWithTerminalInsert(
-    IProjectMemoryCompactionRepository& repository, ProjectMemoryCompactionRecord record, bool responseObserved)
+ProjectMemoryCompactionOutcome finishWithTerminalInsert(IProjectMemoryCompactionRepository& repository,
+    CompactionIntentTracker& intent, ProjectMemoryCompactionRecord record, bool responseObserved)
 {
     const CompactionPersistOutcome persisted = repository.insertCompactionRecordObserved(record);
     ProjectMemoryCompactionOutcome outcome;
@@ -80,12 +88,13 @@ ProjectMemoryCompactionOutcome finishWithTerminalInsert(
         ? common::Result<ProjectMemoryCompactionRecord>::ok(record)
         : common::Result<ProjectMemoryCompactionRecord>::failure(*persisted.result.error());
     outcome.observedRecord = std::move(record);
+    intent.conclude(outcome, isConfirmedCommit(persisted));
     return outcome;
 }
 
 // The Completed record is written by the ONE atomic commit. If that fails, the usage the provider already charged for may get its
 // own Failed row - once, and only on proof (accounting::decideFallback). The result stays the primary failure either way.
-ProjectMemoryCompactionOutcome finishWithCommit(IProjectMemoryCompactionRepository& repository,
+ProjectMemoryCompactionOutcome finishWithCommit(IProjectMemoryCompactionRepository& repository, CompactionIntentTracker& intent,
     ProjectMemoryCompactionRecord record, ProjectMemorySegment resultSegment)
 {
     const CompactionPersistOutcome primary = repository.commitSuccessfulCompactionObserved(record, std::move(resultSegment));
@@ -96,6 +105,7 @@ ProjectMemoryCompactionOutcome finishWithCommit(IProjectMemoryCompactionReposito
         outcome.accounting = accounting::accountingOfWrite(primary);
         outcome.result = common::Result<ProjectMemoryCompactionRecord>::ok(record);
         outcome.observedRecord = std::move(record);
+        intent.conclude(outcome, isConfirmedCommit(primary));
         return outcome;
     }
 
@@ -108,6 +118,7 @@ ProjectMemoryCompactionOutcome finishWithCommit(IProjectMemoryCompactionReposito
         if (decision.reason.has_value()) {
             accounting::appendDiagnostic(outcome.diagnostics, outcome.diagnosticsIncomplete, *decision.reason);
         }
+        intent.conclude(outcome, /*finalWriteConfirmed=*/false);   // no further final write: the pair proof decides what is known
         return outcome;
     }
 
@@ -134,9 +145,12 @@ ProjectMemoryCompactionOutcome finishWithCommit(IProjectMemoryCompactionReposito
             accounting::appendDiagnostic(outcome.diagnostics, outcome.diagnosticsIncomplete, *resolution.lookupCause);
         }
         accounting::appendDiagnostic(outcome.diagnostics, outcome.diagnosticsIncomplete, resolution.diagnostic);
+        // The insert failed: an identical row found by the lookup is NOT a confirmed write of this call.
+        intent.conclude(outcome, /*finalWriteConfirmed=*/false);
         return outcome;
     }
     outcome.accounting = accounting::accountingOfWrite(written);
+    intent.conclude(outcome, isConfirmedCommit(written));
     return outcome;
 }
 
@@ -145,11 +159,12 @@ ProjectMemoryCompactionOutcome finishWithCommit(IProjectMemoryCompactionReposito
 ProjectMemoryCompactionService::ProjectMemoryCompactionService(
     IProjectMemoryRepository& memoryRepository,
     IProjectMemoryCompactionRepository& compactionRepository,
+    IProjectMemoryCompactionIntentRepository& intentRepository,
     IProjectRepository& projects,
     IProviderRepository& providers,
     IModelRepository& models,
     IProviderClientFactory& clients)
-    : memoryRepository_(memoryRepository), compactionRepository_(compactionRepository),
+    : memoryRepository_(memoryRepository), compactionRepository_(compactionRepository), intentRepository_(intentRepository),
       projects_(projects), providers_(providers), models_(models), clients_(clients)
 {
 }
@@ -253,18 +268,39 @@ ProjectMemoryCompactionOutcome ProjectMemoryCompactionService::compactObserved(
         record.errorMessage = "Compaction was cancelled";
     };
 
+    // B3-II-A: the intent shares the identity of the record prepared above (one id, one clock reading). It is only written - once -
+    // right before a request could be issued; every path that ends earlier leaves it untouched (admission NotApplicable).
+    CompactionIntentTracker intent(intentRepository_, record);
+
     // A stop that arrived before anything was sent prevents the call: ONE Cancelled terminal record with no usage (0/0/NULL = no
-    // recorded estimate, not a claim that nothing was spent), no client resolved or called, the source segments untouched.
+    // recorded estimate, not a claim that nothing was spent), no client resolved or called, no intent written, the source segments
+    // untouched.
     if (stopToken.stop_requested()) {
         markCancelled();
-        return finishWithTerminalInsert(compactionRepository_, std::move(record), /*responseObserved=*/false);
+        return finishWithTerminalInsert(compactionRepository_, intent, std::move(record), /*responseObserved=*/false);
     }
 
     auto clientResult = clients_.clientFor(provider.id, provider.kind);
-    // ONE call. sendObserved() is send() plus the received-but-discarded response of a call that was cancelled.
-    ProviderChatOutcome outcome = clientResult.success()
-        ? clientResult.value()->sendObserved(request, stopToken)
-        : ProviderChatOutcome {common::Result<ProviderChatResponse>::failure(*clientResult.error()), std::nullopt};
+    ProviderChatOutcome outcome {common::Result<ProviderChatResponse>::failure(common::Error {}), std::nullopt};
+    if (!clientResult.success()) {
+        // No client, no request, no intent: the same Failed terminal record as before B3.
+        outcome = ProviderChatOutcome {common::Result<ProviderChatResponse>::failure(*clientResult.error()), std::nullopt};
+    } else {
+        // Admission: the request below is reachable ONLY through a confirmed, new intent row of this call. A refusal is a complete
+        // outcome of its own - no request, no record, no accounting.
+        CompactionIntentTracker::Admission admission = intent.admit();
+        if (!admission.dispatch) return std::move(*admission.refusal);
+        // A stop that arrived after the admission needs no request: the call ends as an ordinary Cancelled terminal record (the
+        // closing trigger takes the intent with it). No response exists, so there is no usage to keep.
+        if (stopToken.stop_requested()) {
+            outcome = ProviderChatOutcome {
+                common::Result<ProviderChatResponse>::failure(common::Error {"provider.cancelled", "Compaction was cancelled"}),
+                std::nullopt};
+        } else {
+            // ONE call. sendObserved() is send() plus the received-but-discarded response of a call that was cancelled.
+            outcome = clientResult.value()->sendObserved(request, stopToken);
+        }
+    }
     const common::Result<ProviderChatResponse>& response = outcome.result;
 
     // Whether a successful provider response was RECEIVED (the usage below is its usage): stated from the branch that read it,
@@ -328,11 +364,11 @@ ProjectMemoryCompactionOutcome ProjectMemoryCompactionService::compactObserved(
 
             record.status = ProjectMemoryCompactionStatus::Completed;
             record.resultSegmentId = resultSegment.id;
-            return finishWithCommit(compactionRepository_, std::move(record), std::move(resultSegment));
+            return finishWithCommit(compactionRepository_, intent, std::move(record), std::move(resultSegment));
         }
     }
 
-    return finishWithTerminalInsert(compactionRepository_, std::move(record), responseObserved);
+    return finishWithTerminalInsert(compactionRepository_, intent, std::move(record), responseObserved);
 }
 
 common::Result<std::vector<ProjectMemoryCompactionRecord>> ProjectMemoryCompactionService::listCompactionRecords(

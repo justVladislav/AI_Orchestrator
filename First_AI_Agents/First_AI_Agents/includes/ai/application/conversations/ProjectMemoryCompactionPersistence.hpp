@@ -39,7 +39,9 @@ enum class CompactionDiagnosticStage {
     FallbackWrite,      // reserved for the service: the failed accounting fallback insert
     FallbackRollback,   // reserved for the service
     FallbackProofRead,  // reserved for the service
-    IdentityCheck       // reserved for the service: the comparison with an already stored row
+    IdentityCheck,      // reserved for the service: the comparison with an already stored row
+    IntentWrite,        // B3-II-A: the write of the compaction intent (admission), or a cleanup of that write
+    IntentProofRead     // B3-II-A: the one read that observes the intent/record pair, or its finding
 };
 
 struct CompactionDiagnostic {

@@ -28,6 +28,7 @@ int runRunContextAssemblerTests();
 int runProjectMemoryServiceTests();
 int runProjectMemoryCompactionAccountingTests();
 int runCompactionIntentPolicyTests();
+int runCompactionIntentDispatchServiceTests();
 int runProjectMemoryCompactionPersistenceServiceTests();
 int runChangeProposalTests();
 int runRunPathClaimRegistryTests();
@@ -110,6 +111,7 @@ int runTests(int argc, char** argv)
     if (argc == 2 && std::string(argv[1]) == "--project-memory-compaction-accounting-only") {
         if (runProjectMemoryCompactionAccountingTests() != 0) return 1;
         if (runCompactionIntentPolicyTests() != 0) return 1;
+        if (runCompactionIntentDispatchServiceTests() != 0) return 1;
         return runProjectMemoryCompactionPersistenceServiceTests();
     }
     if (argc == 2 && std::string(argv[1]) == "--cost-calculation-only") {
@@ -140,6 +142,7 @@ int runTests(int argc, char** argv)
     runProjectMemoryServiceTests();
     if (runProjectMemoryCompactionAccountingTests() != 0) return 1;
     if (runCompactionIntentPolicyTests() != 0) return 1;
+    if (runCompactionIntentDispatchServiceTests() != 0) return 1;
     if (runProjectMemoryCompactionPersistenceServiceTests() != 0) return 1;
     runChangeProposalTests();
     runRunPathClaimRegistryTests();

@@ -2,6 +2,7 @@
 // The repository replays exactly the outcomes a test gives it and records every call, so each test states what the storage
 // said and checks what the service did with it: how many provider calls, how many writes, which record, which accounting verdict,
 // and that nothing the storage reported (health, native codes, causes) got lost. The checks use throwing require().
+#include "CompactionIntentTestSupport.hpp"
 #include "ai/application/conversations/ProjectMemoryCompactionAccounting.hpp"
 #include "ai/application/conversations/ProjectMemoryCompactionService.hpp"
 #include "ai/application/inmemory/InMemoryRepositories.hpp"
@@ -178,7 +179,8 @@ struct Fixture {
     ScriptedRepository repository;
     ScriptedClient client;
     ClientFactory factory {client};
-    ProjectMemoryCompactionService service {memory, repository, projects, providers, models, factory};
+    test_support::ScriptedCompactionIntentRepository intents;
+    ProjectMemoryCompactionService service {memory, repository, intents, projects, providers, models, factory};
     std::string projectId {"cp1"};
     std::string providerId {"prov1"};
     std::string modelId {"model1"};
@@ -792,7 +794,7 @@ void testALegacyRepositoryFailureIsUnknownAndNeverClaimsARollback()
 {
     Fixture base;
     LegacyRepository legacy;
-    ProjectMemoryCompactionService service(base.memory, legacy, base.projects, base.providers, base.models, base.factory);
+    ProjectMemoryCompactionService service(base.memory, legacy, base.intents, base.projects, base.providers, base.models, base.factory);
     const auto outcome = service.compactObserved(base.projectId, base.providerId, base.modelId, {});
     require(legacy.commits == 1 && legacy.inserts == 0, "one commit through the default observed method and NO fallback insert");
     require(!outcome.result.success() && outcome.result.error()->code == "legacy.commit_failed" && outcome.accounting == A::Unknown

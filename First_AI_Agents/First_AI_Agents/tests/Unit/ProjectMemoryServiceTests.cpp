@@ -8,6 +8,7 @@
 #include "ai/application/execution/IWorkflowResolver.hpp"
 #include "ai/application/execution/MockWorkflowRunner.hpp"
 #include "ai/application/execution/OrchestrationService.hpp"
+#include "CompactionIntentTestSupport.hpp"
 #include "ai/application/conversations/ProjectMemoryCompactionService.hpp"
 #include "ai/application/conversations/ProjectMemoryService.hpp"
 #include "ai/application/projects/ProjectService.hpp"
@@ -762,10 +763,11 @@ struct CompactionFixture {
     InMemoryModelRepository models;
     FakeProjectMemoryRepository memoryRepository;
     FakeProjectMemoryCompactionRepository compactionRepository {memoryRepository};
+    test_support::ScriptedCompactionIntentRepository intents;
     FakeCompactionProviderClient client;
     FakeCompactionProviderClientFactory clientFactory {client};
     ProjectMemoryCompactionService service {
-        memoryRepository, compactionRepository, projects, providers, models, clientFactory};
+        memoryRepository, compactionRepository, intents, projects, providers, models, clientFactory};
     Project project {makeProject("cp1", "Compaction Project")};
     Provider provider {makeProvider("prov1")};
     Model model {makeModel("model1", "prov1")};
@@ -1177,7 +1179,7 @@ ProjectMemoryCompactionRecord runCancelled(CompactionFixture& fixture, IProvider
 {
     FakeCompactionProviderClientFactory factory {client};
     ProjectMemoryCompactionService service {
-        fixture.memoryRepository, fixture.compactionRepository, fixture.projects, fixture.providers, fixture.models, factory};
+        fixture.memoryRepository, fixture.compactionRepository, fixture.intents, fixture.projects, fixture.providers, fixture.models, factory};
     fixture.seedSegments(2);
     const SourceSnapshot before = sourceSnapshotOf(fixture);
     const auto result = service.compact(fixture.project.id, fixture.provider.id, model.id, stop.get_token());
@@ -1335,7 +1337,7 @@ void testACancelledCompactionTakesTheUsageFromExactlyOnePlace()
         client.discarded = receivedResponse(40, 15);
         FakeCompactionProviderClientFactory factory {client};
         ProjectMemoryCompactionService service {
-            fixture.memoryRepository, fixture.compactionRepository, fixture.projects, fixture.providers, fixture.models, factory};
+            fixture.memoryRepository, fixture.compactionRepository, fixture.intents, fixture.projects, fixture.providers, fixture.models, factory};
         const auto result = service.compact(fixture.project.id, fixture.provider.id, fixture.model.id, std::stop_token {});
         require(result.success() && result.value().status == ProjectMemoryCompactionStatus::Failed
                 && result.value().inputTokens == 0 && !result.value().costPriceKnown.has_value() && !result.value().resultSegmentId.has_value(),

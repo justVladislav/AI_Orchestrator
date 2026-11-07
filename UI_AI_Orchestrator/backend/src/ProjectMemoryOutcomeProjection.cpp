@@ -50,6 +50,8 @@ const char* stageSlug(CompactionDiagnosticStage stage) noexcept
     case CompactionDiagnosticStage::FallbackRollback: return "fallback_rollback";
     case CompactionDiagnosticStage::FallbackProofRead: return "fallback_proof_read";
     case CompactionDiagnosticStage::IdentityCheck: return "identity_check";
+    case CompactionDiagnosticStage::IntentWrite: return "intent_write";
+    case CompactionDiagnosticStage::IntentProofRead: return "intent_proof_read";
     }
     return "primary_write";
 }
@@ -64,6 +66,8 @@ QString stageText(CompactionDiagnosticStage stage)
     case CompactionDiagnosticStage::FallbackRollback: return tr("Fallback rollback");
     case CompactionDiagnosticStage::FallbackProofRead: return tr("Fallback verification read");
     case CompactionDiagnosticStage::IdentityCheck: return tr("Identity check");
+    case CompactionDiagnosticStage::IntentWrite: return tr("Intent write");
+    case CompactionDiagnosticStage::IntentProofRead: return tr("Intent verification read");
     }
     return tr("Write");
 }

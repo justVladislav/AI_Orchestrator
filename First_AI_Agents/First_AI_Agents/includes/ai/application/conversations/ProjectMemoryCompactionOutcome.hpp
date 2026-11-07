@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ai/application/conversations/ProjectMemoryCompactionIntentOutcome.hpp"
 #include "ai/application/conversations/ProjectMemoryCompactionPersistence.hpp"
 #include "ai/application/conversations/ProjectMemoryCompactionTypes.hpp"
 #include "ai/common/Result.hpp"
@@ -52,6 +53,11 @@ struct ProjectMemoryCompactionOutcome {
     std::vector<CompactionDiagnostic> diagnostics;
     // A cause was lost or cut (the list was full, a text was shortened, or a layer below could not record it).
     bool diagnosticsIncomplete {false};
+
+    // B3-II-A: the intent of this call (admission before the request, the observation after the final writes). A separate axis: it
+    // never changes `result`, `accounting` or `observedRecord`. A call that ended before a client existed (a stop, a refused
+    // lookup, a failed client resolution) has admission NotApplicable.
+    CompactionIntentTrace intent;
 };
 
 } // namespace ai::application

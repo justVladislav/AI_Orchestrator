@@ -66,6 +66,58 @@ CompactionIntentAdmission compactionIntentAdmissionOf(const CompactionIntentWrit
     return mayDispatch(outcome) ? CompactionIntentAdmission::Admitted : CompactionIntentAdmission::NotAdmitted;
 }
 
+ProjectMemoryCompactionIntent makeCompactionIntent(const ProjectMemoryCompactionRecord& prepared)
+{
+    ProjectMemoryCompactionIntent intent;
+    intent.id = prepared.id;
+    intent.projectId = prepared.projectId;
+    intent.providerId = prepared.providerId;
+    intent.modelId = prepared.modelId;
+    intent.sourceSegmentIds = prepared.sourceSegmentIds;
+    intent.sourceContentHash = prepared.sourceContentHash;
+    intent.createdAt = prepared.createdAt;
+    return intent;   // state Open, no mark: the defaults
+}
+
+common::Error compactionIntentRefusalError(const CompactionIntentWriteOutcome& outcome)
+{
+    if (!outcome.persist.result.success() && outcome.persist.result.error()->code == kIntentDuplicateIdCode) {
+        return common::Error {kIntentDuplicateIdCode, kIntentDuplicateIdMessage};
+    }
+    return common::Error {kIntentNotRecordedCode, kIntentNotRecordedMessage};
+}
+
+bool compactionIntentNeedsProof(CompactionIntentAdmission admission, bool finalWriteConfirmed) noexcept
+{
+    return admission != CompactionIntentAdmission::NotApplicable && !finalWriteConfirmed;
+}
+
+std::vector<CompactionDiagnostic> inIntentWritePhase(const std::vector<CompactionDiagnostic>& causes)
+{
+    std::vector<CompactionDiagnostic> moved = causes;
+    for (auto& cause : moved) {
+        switch (cause.stage) {
+        case CompactionDiagnosticStage::Rollback:
+        case CompactionDiagnosticStage::PrimaryWrite: cause.stage = CompactionDiagnosticStage::IntentWrite; break;
+        case CompactionDiagnosticStage::ProofRead: cause.stage = CompactionDiagnosticStage::IntentProofRead; break;
+        case CompactionDiagnosticStage::FallbackWrite:
+        case CompactionDiagnosticStage::FallbackRollback:
+        case CompactionDiagnosticStage::FallbackProofRead:
+        case CompactionDiagnosticStage::IdentityCheck:
+        case CompactionDiagnosticStage::IntentWrite:
+        case CompactionDiagnosticStage::IntentProofRead: break;
+        }
+    }
+    return moved;
+}
+
+std::vector<CompactionDiagnostic> inIntentProofPhase(const std::vector<CompactionDiagnostic>& causes)
+{
+    std::vector<CompactionDiagnostic> moved = causes;
+    for (auto& cause : moved) cause.stage = CompactionDiagnosticStage::IntentProofRead;
+    return moved;
+}
+
 CompactionIntentObservation classifyCompactionOperation(const CompactionIntentIdentity& expected,
     const std::optional<ProjectMemoryCompactionIntent>& intent, const std::optional<CompactionIntentIdentity>& record)
 {

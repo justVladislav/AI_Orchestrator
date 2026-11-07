@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ai/application/conversations/IProjectMemoryCompactionIntentRepository.hpp"
 #include "ai/application/conversations/IProjectMemoryCompactionRepository.hpp"
 #include "ai/application/conversations/IProjectMemoryRepository.hpp"
 #include "ai/application/conversations/ProjectMemoryCompactionOutcome.hpp"
@@ -40,6 +41,11 @@ namespace ai::application {
 // usage (Saved / NotSaved / Unknown / NotApplicable) is reported by
 // compactObserved(), together with the storage health, the native codes and the
 // secondary causes. See ProjectMemoryCompactionOutcome.hpp.
+//
+// B3-II-A: a request is issued only after the call has written its compaction intent and the write is confirmed (the intent port is an
+// explicit dependency; there is no mode without it). A call whose intent is not confirmed never calls the provider, writes no record
+// and reports project_memory.intent_not_recorded / project_memory.intent_duplicate_id. The intent is closed by the storage in the same
+// transaction as the final record; what the call knows about it afterwards is outcome.intent (see CompactionIntentTracker).
 class ProjectMemoryCompactionService final {
 public:
     static constexpr std::size_t kMaxSourceSegments = 256;
@@ -49,6 +55,7 @@ public:
     ProjectMemoryCompactionService(
         IProjectMemoryRepository& memoryRepository,
         IProjectMemoryCompactionRepository& compactionRepository,
+        IProjectMemoryCompactionIntentRepository& intentRepository,
         IProjectRepository& projects,
         IProviderRepository& providers,
         IModelRepository& models,
@@ -74,6 +81,7 @@ public:
 private:
     IProjectMemoryRepository& memoryRepository_;
     IProjectMemoryCompactionRepository& compactionRepository_;
+    IProjectMemoryCompactionIntentRepository& intentRepository_;
     IProjectRepository& projects_;
     IProviderRepository& providers_;
     IModelRepository& models_;

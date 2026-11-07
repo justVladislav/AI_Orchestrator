@@ -1,6 +1,7 @@
 #include "ai/backend/BackendRuntime.hpp"
 
 #include "ai/backend/StartupRecovery.hpp"
+#include "detail/UnavailableProjectMemoryCompactionIntentRepository.hpp"
 
 #include "ai/application/agents/AgentToolExecutionService.hpp"
 #include "ai/application/execution/ExecutionManifestReadModelService.hpp"
@@ -1281,6 +1282,7 @@ struct BackendRuntime::Impl {
         std::unique_ptr<application::IComparisonSessionRepository> comparisonSessionRepository;
         std::unique_ptr<application::IProjectMemoryRepository> projectMemoryRepository;
         std::unique_ptr<application::IProjectMemoryCompactionRepository> projectMemoryCompactionRepository;
+        std::unique_ptr<application::IProjectMemoryCompactionIntentRepository> projectMemoryCompactionIntentRepository;
         std::unique_ptr<application::IChangeProposalRepository> changeProposalRepository;
         std::unique_ptr<application::IAgentToolSessionRepository> agentToolSessionRepository;
         std::unique_ptr<application::IAgentToolAuditRepository> agentToolAuditRepository;
@@ -1373,6 +1375,7 @@ struct BackendRuntime::Impl {
                 std::make_unique<UnavailableComparisonSessionRepository>(reason),
                 std::make_unique<UnavailableProjectMemoryRepository>(reason),
                 std::make_unique<UnavailableProjectMemoryCompactionRepository>(reason),
+                std::make_unique<detail::UnavailableProjectMemoryCompactionIntentRepository>(reason),
                 std::make_unique<UnavailableChangeProposalRepository>(reason),
                 std::make_unique<UnavailableAgentToolSessionRepository>(reason),
                 std::make_unique<UnavailableAgentToolAuditRepository>(reason),
@@ -1411,6 +1414,7 @@ struct BackendRuntime::Impl {
             std::make_unique<infrastructure::SqliteComparisonSessionRepository>(database),
             std::make_unique<infrastructure::SqliteProjectMemoryRepository>(database),
             std::make_unique<infrastructure::SqliteProjectMemoryCompactionRepository>(database),
+            std::make_unique<infrastructure::SqliteProjectMemoryCompactionIntentRepository>(database),
             std::make_unique<infrastructure::SqliteChangeProposalRepository>(database),
             std::make_unique<infrastructure::SqliteAgentToolSessionRepository>(database),
             std::make_unique<infrastructure::SqliteAgentToolAuditRepository>(database),
@@ -1836,6 +1840,7 @@ struct BackendRuntime::Impl {
         , projectMemoryService(*storage.projectMemoryRepository)
         , projectMemoryCompactionService(
               *storage.projectMemoryRepository, *storage.projectMemoryCompactionRepository,
+              *storage.projectMemoryCompactionIntentRepository,
               *storage.projectRepository, *storage.providerRepository, *storage.modelRepository,
               *providerClientFactory)
         , projectCostService(executionAnalyticsService, projectMemoryCompactionService)

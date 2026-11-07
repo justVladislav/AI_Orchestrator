@@ -26,6 +26,7 @@ namespace {
 namespace fs = std::filesystem;
 using namespace ai::application;
 using ai::infrastructure::SqliteDatabase;
+using ai::infrastructure::SqliteProjectMemoryCompactionIntentRepository;
 using ai::infrastructure::SqliteProjectMemoryCompactionRepository;
 using ai::infrastructure::SqliteProjectMemoryRepository;
 namespace policy = ai::application::compaction_accounting;
@@ -111,6 +112,7 @@ struct Fixture {
     std::shared_ptr<SqliteDatabase> database;
     std::unique_ptr<SqliteProjectMemoryRepository> memory;
     std::unique_ptr<SqliteProjectMemoryCompactionRepository> compaction;
+    std::unique_ptr<SqliteProjectMemoryCompactionIntentRepository> intents;   // B3-II-A: the real intent port, an explicit dependency
     InMemoryProjectRepository projects;
     InMemoryProviderRepository providers;
     InMemoryModelRepository models;
@@ -167,6 +169,7 @@ struct Fixture {
     ~Fixture()
     {
         service.reset();
+        intents.reset();
         compaction.reset();
         memory.reset();
         database.reset();
@@ -190,6 +193,7 @@ struct Fixture {
     void open()
     {
         service.reset();
+        intents.reset();
         compaction.reset();
         memory.reset();
         database.reset();
@@ -198,7 +202,8 @@ struct Fixture {
         database = std::move(opened.value());
         memory = std::make_unique<SqliteProjectMemoryRepository>(database);
         compaction = std::make_unique<SqliteProjectMemoryCompactionRepository>(database);
-        service = std::make_unique<ProjectMemoryCompactionService>(*memory, *compaction, projects, providers, models, factory);
+        intents = std::make_unique<SqliteProjectMemoryCompactionIntentRepository>(database);
+        service = std::make_unique<ProjectMemoryCompactionService>(*memory, *compaction, *intents, projects, providers, models, factory);
     }
 
     ProjectMemoryCompactionOutcome run() { return service->compactObserved("cp1", "prov1", "model1", {}); }

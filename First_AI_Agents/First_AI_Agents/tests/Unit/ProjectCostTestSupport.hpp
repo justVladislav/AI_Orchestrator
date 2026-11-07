@@ -6,6 +6,7 @@
 
 #include "ai/application/analytics/ExecutionAnalyticsService.hpp"
 #include "ai/application/analytics/ProjectCostService.hpp"
+#include "CompactionIntentTestSupport.hpp"
 #include "ai/application/conversations/ProjectMemoryCompactionService.hpp"
 #include "ai/application/inmemory/InMemoryRepositories.hpp"
 
@@ -169,7 +170,8 @@ struct Fixture {
     InMemoryProjectRepository projects;
     InMemoryProviderRepository providers;
     ExecutionAnalyticsService analytics {ledger, catalog};
-    ProjectMemoryCompactionService compactionService {memory, compactions, projects, providers, catalog, clients};
+    test_support::ScriptedCompactionIntentRepository intents;
+    ProjectMemoryCompactionService compactionService {memory, compactions, intents, projects, providers, catalog, clients};
     ProjectCostService service {analytics, compactionService};
 };
 

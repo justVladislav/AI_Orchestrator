@@ -1,3 +1,4 @@
+#include <CompactionIntentTestSupport.hpp>
 #include <ai/application/proposals/ChangeProposalService.hpp>
 #include <ai/application/proposals/ChangeProposalTypes.hpp>
 #include <ai/application/execution/ExecutionAcceptanceContract.hpp>
@@ -6691,7 +6692,8 @@ void testProjectMemoryHistorySnapshotIsOneReadWithItsOwnUnavailableStateAndStore
     ai::application::InMemoryProviderRepository providers;
     ai::application::InMemoryModelRepository models;
     StubProviderClientFactory clients;
-    ai::application::ProjectMemoryCompactionService compaction(memory, history, projects, providers, models, clients);
+    ai::application::test_support::ScriptedCompactionIntentRepository intents;
+    ai::application::ProjectMemoryCompactionService compaction(memory, history, intents, projects, providers, models, clients);
     ProjectMemoryController controller(runtime.projectMemoryService(), compaction, runtime.providerCatalogService());
     QStringList errors;
     QObject::connect(&controller, &ProjectMemoryController::errorOccurred, &controller,

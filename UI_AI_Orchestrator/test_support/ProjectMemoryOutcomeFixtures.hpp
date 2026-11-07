@@ -4,6 +4,7 @@
 // wires the REAL ProjectMemoryController over the REAL ProjectMemoryCompactionService. No network, no database, no provider.
 // The repository replays PRODUCTION phases (Rollback, ProofRead, PrimaryWrite); it never pre-marks the service's fallback phases.
 #include <ai/application/catalog/ProviderCatalogService.hpp>
+#include <CompactionIntentTestSupport.hpp>
 #include <ai/application/conversations/ProjectMemoryCompactionService.hpp>
 #include <ai/application/conversations/ProjectMemoryService.hpp>
 #include <ai/application/inmemory/InMemoryRepositories.hpp>
@@ -308,7 +309,8 @@ struct Rig {
     ClientFactory factory {client};
     ProjectMemoryService memoryService {memory};
     ProviderCatalogService catalog {providers, models};
-    ProjectMemoryCompactionService service {memory, repository, projects, providers, models, factory};
+    ai::application::test_support::ScriptedCompactionIntentRepository intents;
+    ProjectMemoryCompactionService service {memory, repository, intents, projects, providers, models, factory};
     std::unique_ptr<ProjectMemoryController> controller;
 
     explicit Rig(const std::string& projectId = "cp1")

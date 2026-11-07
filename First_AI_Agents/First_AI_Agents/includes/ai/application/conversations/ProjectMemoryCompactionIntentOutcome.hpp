@@ -35,6 +35,26 @@ enum class CompactionIntentObservation { NotObserved, IntentPresent, FinalRecord
 //   AtomicPairRead     the one consistent read of the port (observeOperation).
 enum class CompactionIntentObservationSource { None, ConfirmedFinalWrite, AtomicPairRead };
 
+// B3-II-A: what ONE compaction call knows about its own intent, kept apart from the record accounting (ProjectMemoryCompactionOutcome
+// keeps its meaning; this is a second axis). Every default is the conservative one.
+//   admission      whether THIS call obtained the right to issue its request (NotApplicable: it never tried).
+//   writeState     the fate of the admission write of the LAST attempt; nullopt exactly when admission is NotApplicable (that is not
+//                  Unknown). Never rewritten by an observation.
+//   writeNative    the native detail of a failed admission write. It never replaces the primary/fallback native detail of a RECORD write.
+//   observation    what the single pair proof (or the confirmed final write) says about the operation afterwards.
+//   source         where the observation comes from; None when nothing was observed.
+//   proofNative    the native detail of a failed proof read.
+// "Admitted == false" is a control-flow fact of this call only (it did not issue its request); nothing here says what the storage or
+// the provider holds for the id.
+struct CompactionIntentTrace {
+    CompactionIntentAdmission admission {CompactionIntentAdmission::NotApplicable};
+    std::optional<CompactionPersistState> writeState;
+    std::optional<CompactionNativeDetail> writeNative;
+    CompactionIntentObservation observation {CompactionIntentObservation::NotObserved};
+    CompactionIntentObservationSource source {CompactionIntentObservationSource::None};
+    std::optional<CompactionNativeDetail> proofNative;
+};
+
 // The write of a NEW intent. `persist.state == Committed` and `newIntentInserted` together are the only admission; a duplicate
 // intent id, an operation id already used by a final record and every Unknown/NotCommitted/refused result are not.
 struct CompactionIntentWriteOutcome {
