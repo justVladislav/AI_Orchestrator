@@ -1,5 +1,19 @@
 # SQLite decomposition: review and implementation design
 
+## Reading this document in 1.0.2
+
+The schema-70 migration invariants and phase-by-phase test results below are
+historical acceptance criteria for the 1.0.1 structural extraction, not the
+current database version. The extraction and public-header split are complete.
+Version 1.0.2 uses schema 75 and adds compaction write certainty, connection
+health, and intent storage as separate feature changes. Current ownership is
+documented in the [SQLite implementation guide](../../First_AI_Agents/First_AI_Agents/sourceFiles/infrastructure/sqlite/README.md).
+The [1.0.2 release guide](../releases/1.0.2.md) describes migration and testing.
+Do not restart the historical phase-2 task or change applied migrations merely
+to make the older examples match the latest schema.
+
+## Historical extraction record
+
 Status: phases 1, 2A and 2B implemented; of the feature batches, batch 3
 (`sqlite/catalog/`: providers, models and execution profiles), batch 4
 (`sqlite/projects/` and `sqlite/settings/`: projects, tasks, workspace state, project

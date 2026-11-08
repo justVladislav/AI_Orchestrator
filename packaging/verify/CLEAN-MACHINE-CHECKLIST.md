@@ -17,7 +17,7 @@ with `AIOrchestrator-<version>-win-x64.zip.sha256` before you start.
 ## 1. Automatic part (first start, database, second start)
 
 ```powershell
-.\Test-PortablePackage.ps1 -PackageDir C:\AIO\AIOrchestrator-1.0.0-win-x64 -Interactive
+.\Test-PortablePackage.ps1 -PackageDir C:\AIO\AIOrchestrator-1.0.2-win-x64 -ExpectedSchema 75 -ProjectName 'RC check project' -Interactive
 ```
 
 It starts the real application twice and writes `package-check-report.txt`. It refuses to run if the profile already has a database.
@@ -28,7 +28,7 @@ It starts the real application twice and writes `package-check-report.txt`. It r
 |---|---|---|---|
 | 1 | Window title bar / taskbar | Look at the application | The window is titled **AI Orchestrator**, the icon is the application icon (not a blank one) |
 | 2 | Left navigation > **Projects** > button **New project** | In the *New project* dialog fill **Name** = exactly **`RC check project`**, the project folder field with an existing folder (for example `C:/AIO-work`, create it first), and **Description** with any text; press **Create project**. If the dialog asks for anything else, write down what | The project appears in the list; no error message |
-| 3 | Left navigation > **Settings** > Diagnostics | Read *Application version* and *Database status* | Version reads **1.0.0**; *Database status* does not say "unavailable" |
+| 3 | Left navigation > **Settings** > Diagnostics | Read *Application version* and *Database status* | Version reads **1.0.2**; *Database status* does not say "unavailable" |
 | 4 | Left navigation > **Settings** > **Data and privacy** > **Verification folder** | Look at the field and the line under it | The field is empty, its grey placeholder shows a folder under the user's Temp, the line says **In use: ...** and the **Use default** button is dimmed |
 | 5 | Same row | Type `relative\folder` and press **Apply** | A red line says the folder must be an absolute path; **Use default** stays dimmed (nothing was stored) |
 | 6 | Same row | Type `C:\AIO-vf` (a folder that does not exist yet) and press **Apply** (or Enter) | The line says **In use: C:\AIO-vf**; the folder now exists in Explorer; **Use default** is enabled |
@@ -50,12 +50,12 @@ starts the application again and asks:
 Run the script **instead of** step 1, on a clean profile, with the copy of the older database:
 
 ```powershell
-.\Test-PortablePackage.ps1 -PackageDir C:\AIO\AIOrchestrator-1.0.0-win-x64 -ExistingDb C:\AIO\old-copy.sqlite -ExpectedSchema 70
+.\Test-PortablePackage.ps1 -PackageDir C:\AIO\AIOrchestrator-1.0.2-win-x64 -ExistingDb C:\AIO\old-copy.sqlite -ExpectedSchema 75
 ```
 
-Expected: `schema version 70` after the first normal close, and the old projects are visible in the window (open Projects after the run).
+Expected: `schema version 75` after the first normal close, and the old projects are visible in the window (open Projects after the run).
 
-The hand-off folder contains `upgrade-fixture-v67.sqlite`: a SYNTHETIC schema-67 database made with the code of commit 0cd9ff4 (one project **Upgrade fixture project**, one completed Mock Run **Fixture run**, one provider and one model; no real data). Use it as the copy: after the run the Projects page lists **Upgrade fixture project** and the Runs page lists **Fixture run** as completed (its two artifact files are not part of the fixture, so opening one reports that the file is missing - that is expected). The same upgrade was already verified on the build machine (`upgrade-v67-to-v70-report.txt`).
+Use a synthetic database or an explicitly approved copy of older data. An upgrade fixture and a clean-machine upgrade result are not implied by the release assets. The earlier schema-67-to-70 experiment does not establish schema-75 GUI acceptance. Never use the owner's live profile for this check.
 
 ## 3b. Verification setup of a project (needs Visual Studio with the C++ workload and a Qt MSVC 64-bit kit on that computer)
 

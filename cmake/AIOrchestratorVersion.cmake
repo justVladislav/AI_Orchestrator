@@ -11,7 +11,7 @@
 # For a stable release, keep AIO_VERSION_PRERELEASE empty. To start the next release, change the three numbers.
 set(AIO_VERSION_MAJOR 1)
 set(AIO_VERSION_MINOR 0)
-set(AIO_VERSION_PATCH 1)
+set(AIO_VERSION_PATCH 2)
 set(AIO_VERSION_PRERELEASE "")
 
 set(AIO_VERSION_CORE "${AIO_VERSION_MAJOR}.${AIO_VERSION_MINOR}.${AIO_VERSION_PATCH}")

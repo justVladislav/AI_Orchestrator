@@ -6,6 +6,15 @@ these implementation headers or access native SQLite handles.
 
 ## Ownership
 
+- Schema 75 adds compaction intents; schema 74 retains nullable compaction price
+  completeness and schema 73 updates only the old, untouched Sol catalog seed.
+  Historical financial amounts are not recalculated by these migrations.
+- `SqliteConnectionHealth` owns connection quarantine through the SQLite
+  authorizer. `SqliteTransactionScope` bounds rollback/recovery and preserves
+  native failure details. Compaction write outcomes distinguish committed,
+  not committed, and unknown from the separate connection-health state.
+  Other repositories still have their existing transaction implementations;
+  do not assume that all transaction entry points were migrated to this scope.
 - `SqliteConnection.hpp` defines the private `SqliteDatabase::Impl`. One database
   object owns one native connection and one mutex. Repositories retain that
   object through `shared_ptr`; extracting a repository must not open a separate
@@ -36,13 +45,18 @@ these implementation headers or access native SQLite handles.
   `SqliteChatMemoryRepository`, `SqliteProjectMemoryRepository` (including the bounded
   recent page read under one lock) and `SqliteProjectMemoryCompactionRepository` (the atomic
   commit that removes the source segments, inserts the result and records the provenance).
+- `conversations/SqliteProjectMemoryCompactionIntentRepository.cpp` owns strict
+  intent reads, guarded writes and the atomic record/intent proof observation.
+  Its reads refuse a known unusable connection before preparing SQL. Matching
+  final-record inserts close intents through schema-owned identity/close
+  triggers; an unknown write is not permission to retry a provider call.
 - `planning/` (batch 6) holds `SqliteRunDraftRepository`, `SqliteOutcomeBriefRepository` and
   `SqliteFollowUpPlanRepository`. The run draft group storage that the follow-up confirm also
   calls is declared in the private `planning/SqliteRunDraftGroupStorage.hpp`.
 - `roster/SqliteRosterMapping.hpp/.cpp` (the JSON string list and the roster assignment row shared
   by Runs and run drafts) and `execution/SqliteRunStatusMapping.hpp/.cpp` (the stored Run status,
   shared by the Run reader, the work ledger and the Outcome Brief reader) are small private
-  helpers; batch 7 will add the Run code to `execution/`.
+  helpers used by the focused `execution/` implementations.
 - `settings/` (batch 4) holds `SqliteApplicationSettingsRepository` (the optimistic-revision
   update and the enum mapping) and `SqliteVerificationScratchSettingRepository` (the
   singleton upsert and the path encoding). Permission and safety checks of the scratch
